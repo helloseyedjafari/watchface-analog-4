@@ -63,3 +63,10 @@ After editing, run both generators, then `python3 -m unittest discover -s tests`
 existing `GalaxyWatch7_API36` (large round). `scripts/avd_shot.sh <avd> <even-port>` boots one
 headless, installs the face and saves `docs/screenshots/<avd>.png`. The committed captures also
 include `all-slots-hidden.png` and `ambient.png`.
+
+## CI and releases
+
+`.github/workflows/ci.yml` runs the tests, the format validator and a debug build on every push and
+pull request to `main`. Pushing a tag such as `v1.0.0` runs `release.yml`, which publishes a GitHub
+Release with `AnalogPlus-debug.apk`, plus `AnalogPlus-release.apk` when the signing secrets
+(`KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`) are set.

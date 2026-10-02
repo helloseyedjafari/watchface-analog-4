@@ -6,3 +6,5 @@ local.properties
 tools/bin/
 tools/*.log
 __pycache__/
+*.jks
+dist/

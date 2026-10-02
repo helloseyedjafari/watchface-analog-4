@@ -15,9 +15,26 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        create("release") {
+            // In CI the workflow decodes KEYSTORE_BASE64 to app/keystore.jks.
+            // Locally (no keystore) this stays unset and release builds unsigned.
+            val ks = file("keystore.jks")
+            if (ks.exists()) {
+                storeFile = ks
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS") ?: "analogplus"
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (file("keystore.jks").exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 }
