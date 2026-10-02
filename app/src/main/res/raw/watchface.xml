@@ -10,8 +10,8 @@
     <ComplicationSlot slotId="0" name="top" isCustomizable="TRUE"
         supportedTypes="SHORT_TEXT RANGED_VALUE MONOCHROMATIC_IMAGE SMALL_IMAGE EMPTY"
         x="150" y="106" width="150" height="76">
-      <Variant mode="AMBIENT" target="alpha" value="0"/>
-      <DefaultProviderPolicy defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>
+      <Variant mode="AMBIENT" target="alpha" value="170"/>
+      <DefaultProviderPolicy primaryProvider="com.samsung.android.watch.weather/com.samsung.android.watch.weather.complication.WeatherComplicationService" primaryProviderType="SHORT_TEXT" defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>
       <BoundingBox x="0" y="0" width="150" height="76"/>
       <Complication type="SHORT_TEXT">
         <PartImage x="62" y="2" width="26" height="26" tintColor="#ffffffff">
@@ -65,7 +65,7 @@
     <ComplicationSlot slotId="1" name="right" isCustomizable="TRUE"
         supportedTypes="SHORT_TEXT RANGED_VALUE MONOCHROMATIC_IMAGE SMALL_IMAGE EMPTY"
         x="277" y="236" width="90" height="76">
-      <Variant mode="AMBIENT" target="alpha" value="0"/>
+      <Variant mode="AMBIENT" target="alpha" value="170"/>
       <DefaultProviderPolicy defaultSystemProvider="WATCH_BATTERY" defaultSystemProviderType="SHORT_TEXT"/>
       <BoundingBox x="0" y="0" width="90" height="76"/>
       <Complication type="SHORT_TEXT">
@@ -119,8 +119,8 @@
     </ComplicationSlot>
     <ComplicationSlot slotId="2" name="left" isCustomizable="TRUE"
         supportedTypes="SHORT_TEXT RANGED_VALUE MONOCHROMATIC_IMAGE SMALL_IMAGE EMPTY"
-        x="83" y="236" width="90" height="76">
-      <Variant mode="AMBIENT" target="alpha" value="0"/>
+        x="83" y="211" width="90" height="76">
+      <Variant mode="AMBIENT" target="alpha" value="170"/>
       <DefaultProviderPolicy primaryProvider="com.seyedjafari.prayertimes/com.seyedjafari.prayertimes.wear.complication.NextPrayerComplicationService" primaryProviderType="SHORT_TEXT" defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>
       <BoundingBox x="0" y="0" width="90" height="76"/>
       <Complication type="SHORT_TEXT">
@@ -175,7 +175,7 @@
     <ComplicationSlot slotId="3" name="bottom" isCustomizable="TRUE"
         supportedTypes="SHORT_TEXT RANGED_VALUE MONOCHROMATIC_IMAGE SMALL_IMAGE EMPTY"
         x="175" y="300" width="100" height="76">
-      <Variant mode="AMBIENT" target="alpha" value="0"/>
+      <Variant mode="AMBIENT" target="alpha" value="170"/>
       <DefaultProviderPolicy defaultSystemProvider="STEP_COUNT" defaultSystemProviderType="SHORT_TEXT"/>
       <BoundingBox x="0" y="0" width="100" height="76"/>
       <Complication type="SHORT_TEXT">
@@ -248,7 +248,6 @@
       </Ellipse>
     </PartDraw>
     <PartDraw name="cap_core" x="0" y="0" width="450" height="450">
-      <Variant mode="AMBIENT" target="alpha" value="0"/>
       <Ellipse x="213.75" y="213.75" width="22.5" height="22.5">
         <Fill color="#ffe22b07"/>
       </Ellipse>

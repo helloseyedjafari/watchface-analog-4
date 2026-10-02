@@ -1,0 +1,65 @@
+# Analog Plus — Wear OS watch face
+
+A Wear OS watch face that looks like Samsung's stock analog face, with **four** complication slots
+instead of two, and every slot hideable. It is a code-free
+[Watch Face Format](https://developer.android.com/training/wearables/wff) v3 app: XML plus PNG
+images, no Kotlin or Java.
+
+| Original (reference) | This face on the Galaxy Watch |
+|---|---|
+| ![original](docs/reference/original-watchface.png) | ![real watch](docs/screenshots/galaxy-watch-real.png) |
+
+## Complication slots
+
+| Slot | Default | If that provider is missing |
+|---|---|---|
+| Top | Samsung Weather (`com.samsung.android.watch.weather`) | Empty |
+| Right | Watch battery (system provider) | always available |
+| Left | Next prayer from the `com.seyedjafari.prayertimes` Wear app | Empty (blank, no error) |
+| Bottom | Step count (system provider) | always available |
+
+Weather: Samsung's weather complication exists on the watch, so it is the top slot's default. On a
+watch without it, pick weather once in the editor.
+
+**Hide a slot:** long-press the face, tap *Customize*, pick the slot, choose *Empty*. An empty slot
+draws nothing. With all four empty the face is a plain analog dial. Defaults are only starting points:
+any slot can show any provider (short text, ranged value, icon, small image).
+
+**Always-on mode:** the dial and hands dim, the second hand is hidden, and the complications stay
+visible, dimmed. The red centre disc is drawn unchanged.
+
+## Requirements
+
+Wear OS 5.1 (API 35) or later, because auto-sizing complication text needs Watch Face Format v3.
+Package: `com.seyedjafari.analogwatchface`.
+
+## Build and install
+
+```bash
+pip3 install -r requirements.txt     # Pillow, for the image generator only
+./gradlew assembleDebug              # app/build/outputs/apk/debug/app-debug.apk
+scripts/install.sh <adb-serial>      # build, install, activate (emulators)
+```
+
+On a real Samsung watch the activation broadcast is ignored: after installing, long-press the
+current face and pick *Analog Plus*. Pair the watch for installs with Wireless debugging, as described
+in the `prayertime-widgets` README. Note that `adb install -r` keeps the saved complication choices:
+run `adb uninstall com.seyedjafari.analogwatchface` first to see a variant's real defaults.
+
+## Changing the design
+
+All geometry lives in two generators, so images and XML cannot drift apart:
+
+- `tools/gen_assets.py`: dial and hand PNGs (measured from `docs/reference/original-watchface.png`).
+- `tools/build_face.py`: `app/src/main/res/raw/watchface.xml`. Slot boxes are in the face's
+  450 x 450 space; `--all-empty` writes a variant with every default removed.
+
+After editing, run both generators, then `python3 -m unittest discover -s tests` and
+`scripts/validate.sh` (Google's `wff-validator`, downloaded into `tools/bin` on first use).
+
+## Emulator matrix
+
+`scripts/create_avds.sh` creates small round, square and rectangular Wear OS 6 AVDs next to the
+existing `GalaxyWatch7_API36` (large round). `scripts/avd_shot.sh <avd> <even-port>` boots one
+headless, installs the face and saves `docs/screenshots/<avd>.png`. The committed captures also
+include `all-slots-hidden.png` and `ambient.png`.

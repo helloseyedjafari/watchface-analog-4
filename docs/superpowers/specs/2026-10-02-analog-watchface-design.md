@@ -94,7 +94,7 @@ format's 450-unit space:
 |---|---|---|---|---|
 | Top | 50 / 32 | 150, 106, 150, 76 | Weather (see open items) | Empty |
 | Right | 72 / 61 | 277, 236, 90, 76 | Battery (red icon, grey text) | System battery provider |
-| Left | 28 / 61 | 83, 236, 90, 76 | Next prayer (`com.seyedjafari.prayertimes` `NextPrayerComplicationService`) | Empty |
+| Left | 28 / 55 | 83, 211, 90, 76 | Next prayer (`com.seyedjafari.prayertimes` `NextPrayerComplicationService`) | Empty |
 | Bottom | 50 / 75 | 175, 300, 100, 76 | Step count | System step provider |
 
 - Supported types: short text, ranged value and small image, so the user can pick any provider
@@ -112,8 +112,9 @@ complications. The choice persists per slot.
 
 ### Always-on display
 
-Hands and ticks only, dimmed. Complications are hidden or reduced to monochrome and low
-brightness to save battery and avoid burn-in.
+Dimmed dial and hands. The complications stay visible, dimmed (alpha 170), and the red centre
+disc is drawn unchanged. The second hand is hidden. Changed 2026-10-02 after the owner tried the face on
+the real watch: they want complications and the centre dot to stay in always-on mode.
 
 ### Adaptivity
 

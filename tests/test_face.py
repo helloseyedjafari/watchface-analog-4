@@ -66,10 +66,16 @@ class SlotTest(unittest.TestCase):
                 apart = ax + aw <= bx or bx + bw <= ax or ay + ah <= by or by + bh <= ay
                 self.assertTrue(apart, f"slots {ida} and {idb} overlap")
 
-    def test_slots_are_hidden_in_ambient_mode(self):
+    def test_slots_stay_visible_but_dimmed_in_ambient_mode(self):
         for s in _slots():
             variants = [(v.get("mode"), v.get("target"), v.get("value")) for v in s.findall("Variant")]
-            self.assertIn(("AMBIENT", "alpha", "0"), variants, f"slot {s.get('slotId')}")
+            self.assertIn(("AMBIENT", "alpha", str(bf.AMBIENT_SLOT_ALPHA)), variants,
+                          f"slot {s.get('slotId')}")
+            self.assertNotIn(("AMBIENT", "alpha", "0"), variants, f"slot {s.get('slotId')} hidden")
+
+    def test_red_cap_is_drawn_unchanged_in_ambient_mode(self):
+        core = next(p for p in _root().iter("PartDraw") if p.get("name") == "cap_core")
+        self.assertEqual(core.findall("Variant"), [], "a variant would dim or hide the red cap")
 
     def test_all_complication_text_shrinks_to_fit_and_ellipsises(self):
         texts = [t for s in _slots() for t in s.iter("Text")]
@@ -77,6 +83,11 @@ class SlotTest(unittest.TestCase):
         for t in texts:
             self.assertEqual(t.get("isAutoSize"), "TRUE")
             self.assertEqual(t.get("ellipsis"), "TRUE")
+
+    def test_top_slot_prefers_weather_and_falls_back_to_empty(self):
+        policy = _slots()[0].find("DefaultProviderPolicy")
+        self.assertEqual(policy.get("primaryProvider"), bf.WEATHER_COMPONENT)
+        self.assertEqual(policy.get("defaultSystemProvider"), "EMPTY")
 
     def test_prayer_slot_prefers_the_prayer_app_and_falls_back_to_empty(self):
         policy = _slots()[2].find("DefaultProviderPolicy")

@@ -22,6 +22,10 @@ RED = "#ffe22b07"
 WHITE = "#ffffffff"
 GREY = "#ff8c8c8c"
 
+# Ambient (always-on) brightness of the complications; the red cap is drawn unchanged
+# (dimming it with alpha blends the red into the white ring and turns it pink).
+AMBIENT_SLOT_ALPHA = 170
+
 
 def n(v: float) -> str:
     """Format a coordinate: at most 2 decimals, no trailing zeros."""
@@ -40,12 +44,17 @@ EMPTY_POLICY = '<DefaultProviderPolicy defaultSystemProvider="EMPTY" defaultSyst
 PRAYER_COMPONENT = ("com.seyedjafari.prayertimes/"
                     "com.seyedjafari.prayertimes.wear.complication.NextPrayerComplicationService")
 
+WEATHER_COMPONENT = ("com.samsung.android.watch.weather/"
+                     "com.samsung.android.watch.weather.complication.WeatherComplicationService")
+
 SLOTS = [
-    Slot(0, "top", 150, 106, 150, 76, WHITE, WHITE, EMPTY_POLICY),
+    Slot(0, "top", 150, 106, 150, 76, WHITE, WHITE,
+         f'<DefaultProviderPolicy primaryProvider="{WEATHER_COMPONENT}" primaryProviderType="SHORT_TEXT" '
+         'defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>'),
     Slot(1, "right", 277, 236, 90, 76, RED, GREY,
          '<DefaultProviderPolicy defaultSystemProvider="WATCH_BATTERY" '
          'defaultSystemProviderType="SHORT_TEXT"/>'),
-    Slot(2, "left", 83, 236, 90, 76, WHITE, WHITE,
+    Slot(2, "left", 83, 211, 90, 76, WHITE, WHITE,
          f'<DefaultProviderPolicy primaryProvider="{PRAYER_COMPONENT}" primaryProviderType="SHORT_TEXT" '
          'defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>'),
     Slot(3, "bottom", 175, 300, 100, 76, WHITE, WHITE,
@@ -86,7 +95,7 @@ def _slot_xml(slot: Slot) -> str:
     return f"""    <ComplicationSlot slotId="{slot.slot_id}" name="{slot.name}" isCustomizable="TRUE"
         supportedTypes="SHORT_TEXT RANGED_VALUE MONOCHROMATIC_IMAGE SMALL_IMAGE EMPTY"
         x="{n(slot.x)}" y="{n(slot.y)}" width="{n(slot.w)}" height="{n(slot.h)}">
-      <Variant mode="AMBIENT" target="alpha" value="0"/>
+      <Variant mode="AMBIENT" target="alpha" value="{AMBIENT_SLOT_ALPHA}"/>
       {slot.policy}
       <BoundingBox x="0" y="0" width="{n(slot.w)}" height="{n(slot.h)}"/>
       <Complication type="SHORT_TEXT">
@@ -157,7 +166,6 @@ def build(all_empty: bool = False) -> str:
     <PartDraw name="cap_ring" x="0" y="0" width="{SPACE}" height="{SPACE}">
 {ring}    </PartDraw>
     <PartDraw name="cap_core" x="0" y="0" width="{SPACE}" height="{SPACE}">
-      <Variant mode="AMBIENT" target="alpha" value="0"/>
 {core}    </PartDraw>
   </Scene>
 </WatchFace>
