@@ -14,38 +14,38 @@
       <DefaultProviderPolicy primaryProvider="com.samsung.android.watch.weather/com.samsung.android.watch.weather.complication.WeatherComplicationService" primaryProviderType="SHORT_TEXT" defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>
       <BoundingBox x="0" y="0" width="150" height="76"/>
       <Complication type="SHORT_TEXT">
-        <PartImage x="62" y="2" width="26" height="26" tintColor="#ffffffff">
+        <PartImage x="64" y="2" width="22" height="22" tintColor="#ffffffff">
           <Image resource="[COMPLICATION.MONOCHROMATIC_IMAGE]"/>
         </PartImage>
-        <PartText x="0" y="28" width="150" height="28">
+        <PartText x="0" y="24" width="150" height="32">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="22" weight="NORMAL" color="#ffffffff">
+            <Font family="SYNC_TO_DEVICE" size="26" weight="NORMAL" color="#ffffffff">
               <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template>
             </Font>
           </Text>
         </PartText>
         <PartText x="0" y="56" width="150" height="20">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="13" weight="NORMAL" color="#ff8c8c8c">
+            <Font family="SYNC_TO_DEVICE" size="16" weight="NORMAL" color="#ff8c8c8c">
               <Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template>
             </Font>
           </Text>
         </PartText>
       </Complication>
       <Complication type="RANGED_VALUE">
-        <PartImage x="62" y="2" width="26" height="26" tintColor="#ffffffff">
+        <PartImage x="64" y="2" width="22" height="22" tintColor="#ffffffff">
           <Image resource="[COMPLICATION.MONOCHROMATIC_IMAGE]"/>
         </PartImage>
-        <PartText x="0" y="28" width="150" height="28">
+        <PartText x="0" y="24" width="150" height="32">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="22" weight="NORMAL" color="#ffffffff">
+            <Font family="SYNC_TO_DEVICE" size="26" weight="NORMAL" color="#ffffffff">
               <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template>
             </Font>
           </Text>
         </PartText>
         <PartText x="0" y="56" width="150" height="20">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="13" weight="NORMAL" color="#ff8c8c8c">
+            <Font family="SYNC_TO_DEVICE" size="16" weight="NORMAL" color="#ff8c8c8c">
               <Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template>
             </Font>
           </Text>
@@ -69,38 +69,38 @@
       <DefaultProviderPolicy defaultSystemProvider="WATCH_BATTERY" defaultSystemProviderType="SHORT_TEXT"/>
       <BoundingBox x="0" y="0" width="90" height="76"/>
       <Complication type="SHORT_TEXT">
-        <PartImage x="32" y="2" width="26" height="26" tintColor="#ffe22b07">
+        <PartImage x="32" y="0" width="26" height="26" tintColor="#ffe22b07">
           <Image resource="[COMPLICATION.MONOCHROMATIC_IMAGE]"/>
         </PartImage>
-        <PartText x="0" y="28" width="90" height="28">
+        <PartText x="0" y="24" width="90" height="32">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="22" weight="NORMAL" color="#ff8c8c8c">
+            <Font family="SYNC_TO_DEVICE" size="26" weight="NORMAL" color="#ff8c8c8c">
               <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template>
             </Font>
           </Text>
         </PartText>
         <PartText x="0" y="56" width="90" height="20">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="13" weight="NORMAL" color="#ff8c8c8c">
+            <Font family="SYNC_TO_DEVICE" size="16" weight="NORMAL" color="#ff8c8c8c">
               <Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template>
             </Font>
           </Text>
         </PartText>
       </Complication>
       <Complication type="RANGED_VALUE">
-        <PartImage x="32" y="2" width="26" height="26" tintColor="#ffe22b07">
+        <PartImage x="32" y="0" width="26" height="26" tintColor="#ffe22b07">
           <Image resource="[COMPLICATION.MONOCHROMATIC_IMAGE]"/>
         </PartImage>
-        <PartText x="0" y="28" width="90" height="28">
+        <PartText x="0" y="24" width="90" height="32">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="22" weight="NORMAL" color="#ff8c8c8c">
+            <Font family="SYNC_TO_DEVICE" size="26" weight="NORMAL" color="#ff8c8c8c">
               <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template>
             </Font>
           </Text>
         </PartText>
         <PartText x="0" y="56" width="90" height="20">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="13" weight="NORMAL" color="#ff8c8c8c">
+            <Font family="SYNC_TO_DEVICE" size="16" weight="NORMAL" color="#ff8c8c8c">
               <Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template>
             </Font>
           </Text>
@@ -124,38 +124,38 @@
       <DefaultProviderPolicy primaryProvider="com.seyedjafari.prayertimes/com.seyedjafari.prayertimes.wear.complication.NextPrayerComplicationService" primaryProviderType="SHORT_TEXT" defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>
       <BoundingBox x="0" y="0" width="90" height="76"/>
       <Complication type="SHORT_TEXT">
-        <PartImage x="32" y="2" width="26" height="26" tintColor="#ffffffff">
+        <PartImage x="34" y="2" width="22" height="22" tintColor="#ffffffff">
           <Image resource="[COMPLICATION.MONOCHROMATIC_IMAGE]"/>
         </PartImage>
-        <PartText x="0" y="28" width="90" height="28">
+        <PartText x="0" y="24" width="90" height="32">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="22" weight="NORMAL" color="#ffffffff">
+            <Font family="SYNC_TO_DEVICE" size="26" weight="NORMAL" color="#ffffffff">
               <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template>
             </Font>
           </Text>
         </PartText>
         <PartText x="0" y="56" width="90" height="20">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="13" weight="NORMAL" color="#ff8c8c8c">
+            <Font family="SYNC_TO_DEVICE" size="16" weight="NORMAL" color="#ff8c8c8c">
               <Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template>
             </Font>
           </Text>
         </PartText>
       </Complication>
       <Complication type="RANGED_VALUE">
-        <PartImage x="32" y="2" width="26" height="26" tintColor="#ffffffff">
+        <PartImage x="34" y="2" width="22" height="22" tintColor="#ffffffff">
           <Image resource="[COMPLICATION.MONOCHROMATIC_IMAGE]"/>
         </PartImage>
-        <PartText x="0" y="28" width="90" height="28">
+        <PartText x="0" y="24" width="90" height="32">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="22" weight="NORMAL" color="#ffffffff">
+            <Font family="SYNC_TO_DEVICE" size="26" weight="NORMAL" color="#ffffffff">
               <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template>
             </Font>
           </Text>
         </PartText>
         <PartText x="0" y="56" width="90" height="20">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="13" weight="NORMAL" color="#ff8c8c8c">
+            <Font family="SYNC_TO_DEVICE" size="16" weight="NORMAL" color="#ff8c8c8c">
               <Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template>
             </Font>
           </Text>
@@ -179,38 +179,38 @@
       <DefaultProviderPolicy defaultSystemProvider="STEP_COUNT" defaultSystemProviderType="SHORT_TEXT"/>
       <BoundingBox x="0" y="0" width="100" height="76"/>
       <Complication type="SHORT_TEXT">
-        <PartImage x="37" y="2" width="26" height="26" tintColor="#ffffffff">
+        <PartImage x="39" y="2" width="22" height="22" tintColor="#ffffffff">
           <Image resource="[COMPLICATION.MONOCHROMATIC_IMAGE]"/>
         </PartImage>
-        <PartText x="0" y="28" width="100" height="28">
+        <PartText x="0" y="24" width="100" height="32">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="22" weight="NORMAL" color="#ffffffff">
+            <Font family="SYNC_TO_DEVICE" size="26" weight="NORMAL" color="#ffffffff">
               <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template>
             </Font>
           </Text>
         </PartText>
         <PartText x="0" y="56" width="100" height="20">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="13" weight="NORMAL" color="#ff8c8c8c">
+            <Font family="SYNC_TO_DEVICE" size="16" weight="NORMAL" color="#ff8c8c8c">
               <Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template>
             </Font>
           </Text>
         </PartText>
       </Complication>
       <Complication type="RANGED_VALUE">
-        <PartImage x="37" y="2" width="26" height="26" tintColor="#ffffffff">
+        <PartImage x="39" y="2" width="22" height="22" tintColor="#ffffffff">
           <Image resource="[COMPLICATION.MONOCHROMATIC_IMAGE]"/>
         </PartImage>
-        <PartText x="0" y="28" width="100" height="28">
+        <PartText x="0" y="24" width="100" height="32">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="22" weight="NORMAL" color="#ffffffff">
+            <Font family="SYNC_TO_DEVICE" size="26" weight="NORMAL" color="#ffffffff">
               <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template>
             </Font>
           </Text>
         </PartText>
         <PartText x="0" y="56" width="100" height="20">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="13" weight="NORMAL" color="#ff8c8c8c">
+            <Font family="SYNC_TO_DEVICE" size="16" weight="NORMAL" color="#ff8c8c8c">
               <Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template>
             </Font>
           </Text>

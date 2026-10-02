@@ -89,6 +89,18 @@ class SlotTest(unittest.TestCase):
         self.assertEqual(policy.get("primaryProvider"), bf.WEATHER_COMPONENT)
         self.assertEqual(policy.get("defaultSystemProvider"), "EMPTY")
 
+    def test_icons_share_one_centre_line_and_only_the_battery_icon_is_larger(self):
+        sizes = {}
+        for s in _slots():
+            block = next(c for c in s.findall("Complication") if c.get("type") == "SHORT_TEXT")
+            icon = block.find("PartImage")
+            x, y, w, h = (float(icon.get(k)) for k in ("x", "y", "width", "height"))
+            self.assertAlmostEqual(y + h / 2, bf.ICON_CENTER_Y, delta=0.01, msg=s.get("name"))
+            self.assertAlmostEqual(x + w / 2, float(s.get("width")) / 2, delta=0.01, msg=s.get("name"))
+            sizes[s.get("name")] = w
+        self.assertEqual(sizes, {"top": bf.ICON_SIZE, "right": bf.BATTERY_ICON_SIZE,
+                                 "left": bf.ICON_SIZE, "bottom": bf.ICON_SIZE})
+
     def test_prayer_slot_prefers_the_prayer_app_and_falls_back_to_empty(self):
         policy = _slots()[2].find("DefaultProviderPolicy")
         self.assertIn("NextPrayerComplicationService", policy.get("primaryProvider"))

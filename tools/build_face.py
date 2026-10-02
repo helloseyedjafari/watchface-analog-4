@@ -22,6 +22,16 @@ RED = "#ffe22b07"
 WHITE = "#ffffffff"
 GREY = "#ff8c8c8c"
 
+# Complication text sizes in format units (the text still shrinks to fit its box).
+TEXT_SIZE = 26
+TITLE_SIZE = 16
+# Icon above the text row. Every slot's icon is centred on the same line so neighbouring slots
+# align whatever the icon size; the battery icon is larger, as on the original face.
+ICON_SIZE = 22
+BATTERY_ICON_SIZE = 26
+ICON_CENTER_Y = 13
+TEXT_Y, TEXT_H = 24, 32
+
 # Ambient (always-on) brightness of the complications; the red cap is drawn unchanged
 # (dimming it with alpha blends the red into the white ring and turns it pink).
 AMBIENT_SLOT_ALPHA = 170
@@ -33,10 +43,11 @@ def n(v: float) -> str:
 
 
 class Slot:
-    def __init__(self, slot_id, name, x, y, w, h, icon_color, text_color, policy):
+    def __init__(self, slot_id, name, x, y, w, h, icon_color, text_color, policy, icon_size=ICON_SIZE):
         self.slot_id, self.name = slot_id, name
         self.x, self.y, self.w, self.h = x, y, w, h
         self.icon_color, self.text_color, self.policy = icon_color, text_color, policy
+        self.icon_size = icon_size
 
 
 # Fallback for every slot when its preferred provider is missing: show nothing.
@@ -53,7 +64,7 @@ SLOTS = [
          'defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>'),
     Slot(1, "right", 277, 236, 90, 76, RED, GREY,
          '<DefaultProviderPolicy defaultSystemProvider="WATCH_BATTERY" '
-         'defaultSystemProviderType="SHORT_TEXT"/>'),
+         'defaultSystemProviderType="SHORT_TEXT"/>', BATTERY_ICON_SIZE),
     Slot(2, "left", 83, 236, 90, 76, WHITE, WHITE,
          f'<DefaultProviderPolicy primaryProvider="{PRAYER_COMPONENT}" primaryProviderType="SHORT_TEXT" '
          'defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>'),
@@ -73,22 +84,23 @@ def _text(slot: Slot, expr: str, y: float, h: float, size: int, color: str) -> s
         </PartText>"""
 
 
-def _icon(slot: Slot, expr: str, size: float) -> str:
-    return f"""        <PartImage x="{n((slot.w - size) / 2)}" y="2" width="{n(size)}" height="{n(size)}" tintColor="{slot.icon_color}">
+def _icon(slot: Slot, expr: str, size: float, y: float | None = None) -> str:
+    if y is None:
+        y = ICON_CENTER_Y - size / 2
+    return f"""        <PartImage x="{n((slot.w - size) / 2)}" y="{n(y)}" width="{n(size)}" height="{n(size)}" tintColor="{slot.icon_color}">
           <Image resource="{expr}"/>
         </PartImage>"""
 
 
 def _slot_xml(slot: Slot) -> str:
-    icon_h = 26
-    text_y, text_h = icon_h + 2, 28
+    text_y, text_h = TEXT_Y, TEXT_H
     title_y, title_h = text_y + text_h, slot.h - (text_y + text_h)
     short_text = "\n".join([
-        _icon(slot, "[COMPLICATION.MONOCHROMATIC_IMAGE]", icon_h),
-        _text(slot, "[COMPLICATION.TEXT]", text_y, text_h, 22, slot.text_color),
-        _text(slot, "[COMPLICATION.TITLE]", title_y, title_h, 13, GREY),
+        _icon(slot, "[COMPLICATION.MONOCHROMATIC_IMAGE]", slot.icon_size),
+        _text(slot, "[COMPLICATION.TEXT]", text_y, text_h, TEXT_SIZE, slot.text_color),
+        _text(slot, "[COMPLICATION.TITLE]", title_y, title_h, TITLE_SIZE, GREY),
     ])
-    mono = _icon(slot, "[COMPLICATION.MONOCHROMATIC_IMAGE]", 40).replace('y="2"', f'y="{n((slot.h - 40) / 2)}"')
+    mono = _icon(slot, "[COMPLICATION.MONOCHROMATIC_IMAGE]", 40, (slot.h - 40) / 2)
     small = f"""        <PartImage x="{n((slot.w - 44) / 2)}" y="{n((slot.h - 44) / 2)}" width="44" height="44">
           <Image resource="[COMPLICATION.SMALL_IMAGE]"/>
         </PartImage>"""
@@ -140,7 +152,7 @@ def _ellipse(r_ref: float, color: str) -> str:
 
 def build(all_empty: bool = False) -> str:
     """Return the face XML. `all_empty` swaps every slot's default for Empty (hidden-slot check)."""
-    slots_in = [Slot(s.slot_id, s.name, s.x, s.y, s.w, s.h, s.icon_color, s.text_color, EMPTY_POLICY)
+    slots_in = [Slot(s.slot_id, s.name, s.x, s.y, s.w, s.h, s.icon_color, s.text_color, EMPTY_POLICY, s.icon_size)
                 for s in SLOTS] if all_empty else SLOTS
     ring = _ellipse(g.CAP_RING_R, "#ffffffff")
     core = _ellipse(g.CAP_RED_R, RED) + _ellipse(g.CAP_DOT_R, "#ff000000")
