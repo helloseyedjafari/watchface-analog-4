@@ -54,7 +54,7 @@ SLOTS = [
     Slot(1, "right", 277, 236, 90, 76, RED, GREY,
          '<DefaultProviderPolicy defaultSystemProvider="WATCH_BATTERY" '
          'defaultSystemProviderType="SHORT_TEXT"/>'),
-    Slot(2, "left", 83, 211, 90, 76, WHITE, WHITE,
+    Slot(2, "left", 83, 236, 90, 76, WHITE, WHITE,
          f'<DefaultProviderPolicy primaryProvider="{PRAYER_COMPONENT}" primaryProviderType="SHORT_TEXT" '
          'defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>'),
     Slot(3, "bottom", 175, 300, 100, 76, WHITE, WHITE,
