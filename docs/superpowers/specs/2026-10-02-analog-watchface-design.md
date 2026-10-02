@@ -1,7 +1,9 @@
 # Analog watch face with four complications — design
 
 Date: 2026-10-02
-Status: DRAFT — awaiting review
+Status: APPROVED 2026-10-02. Amended the same day after prototyping the dial, hands and face XML
+against Google's WFF validator and the emulator (version floor, measured slot positions, second
+hand as an image, weather note).
 
 ## Goal
 
@@ -31,7 +33,7 @@ Non-goals: Play Store listing, phone companion app, any custom rendering code.
 | Decision | Choice | Why |
 |---|---|---|
 | Format | Watch Face Format (declarative XML), `hasCode="false"` | Percent-based layout scales to every screen; system-rendered, so cheap on battery and AOD-safe; Google's current format |
-| Minimum version | Wear OS 4 (WFF v1 baseline), using the highest WFF version the target supports where a feature needs it | Covers the owner's Wear OS 6 watch and older Samsung watches |
+| Format version | WFF v3, so the floor is Wear OS 5.1 (API 35) | Auto-sizing text (`isAutoSize`) needs v3; the validator rejects it on v1 and v2. The owner's watch runs Wear OS 6. A manifest declares one version, so this is the floor for the whole face. |
 | Complication slots | 4 (top, right, left, bottom) | Fits the dial without colliding with numerals and hands |
 | Hiding | Per-slot, via the system's "Empty" data source | No custom code; the slot draws nothing |
 | Testing | Android emulator profiles, not only the real watch | Proves the sizing claim on real shapes |
@@ -61,9 +63,10 @@ analog-watchface/
 
 ### Layout units
 
-All geometry is in the format's percent-of-screen coordinates, with the centre at 50/50. The
-dial image and hands are authored square at 1024 px and scaled by the system. Nothing is
-positioned in pixels.
+All geometry is in the format's 450 x 450 reference space (centre 225, 225), which the system
+scales to the real screen, so it behaves like percent-of-screen. The dial image and hands are
+authored at 4 px per reference pixel (a 1920 px dial) and scaled by the system. Nothing is
+positioned in device pixels.
 
 ### Dial
 
@@ -74,18 +77,25 @@ parity is limited by the original being a Samsung system font.
 
 ### Hands
 
-- Hour and minute hands are images, rotated by the format's clock logic.
-- The second hand is a built-in line shape plus a centre cap, so it stays crisp at any size.
-- All three draw above the complications, as on the original.
+- All three hands are images (the format's `SecondHand` requires an image resource, so a built-in
+  line shape is not an option), rotated by the format's clock logic. They are authored at 4 px per
+  reference pixel so they stay sharp on larger screens. Hand geometry must be whole numbers in the
+  450-unit space, so the pivot is derived from the rounded box.
+- The centre cap (white ring, red disc, black dot) is vector shapes, so it stays crisp at any size.
+  The red disc and dot are hidden in ambient mode.
+- All of it draws above the complications, as on the original.
 
 ### Complication slots
 
-| Slot | Centre | Default data | Fallback if unavailable |
-|---|---|---|---|
-| Top | 50 / 27 | Weather | Empty |
-| Right | 73 / 60 | Battery (red icon, grey text) | System battery provider |
-| Left | 27 / 60 | Next prayer (`com.seyedjafari.prayertimes` `NextPrayerComplicationService`) | Empty |
-| Bottom | 50 / 73 | Step count | System step provider |
+Positions are measured from the reference capture. Centres in percent of the screen, boxes in the
+format's 450-unit space:
+
+| Slot | Centre | Box (x, y, w, h) | Default data | Fallback if unavailable |
+|---|---|---|---|---|
+| Top | 50 / 32 | 150, 106, 150, 76 | Weather (see open items) | Empty |
+| Right | 72 / 61 | 277, 236, 90, 76 | Battery (red icon, grey text) | System battery provider |
+| Left | 28 / 61 | 83, 236, 90, 76 | Next prayer (`com.seyedjafari.prayertimes` `NextPrayerComplicationService`) | Empty |
+| Bottom | 50 / 75 | 175, 300, 100, 76 | Step count | System step provider |
 
 - Supported types: short text, ranged value and small image, so the user can pick any provider
   the watch offers.
@@ -111,7 +121,7 @@ brightness to save battery and avoid burn-in.
 - Round screens show the full dial.
 - Square and rectangular screens show the same dial centred on black. Because all content is
   inside the inscribed circle, nothing is clipped.
-- A larger display scales the dial image up, so the PNGs are authored at 1024 px to stay sharp
+- A larger display scales the dial image up, so the PNGs are authored at 4 px per reference pixel to stay sharp
   above 480 px.
 
 ## Testing
@@ -134,14 +144,14 @@ brightness to save battery and avoid burn-in.
 
 These are facts to check, not design questions:
 
-- **Weather default.** WFF has no system weather provider. The plan should find the Samsung
-  Weather complication component on the watch and use it as the default provider if it can be
+- **Weather default.** WFF has no system weather *complication* provider (v2 added weather as a
+  built-in data source, which is not a complication and could not be hidden per slot). The Wear
+  emulator has no weather complication service either. The plan finds the Samsung Weather
+  complication component on the real watch and uses it as the default provider if it can be
   addressed that way. Otherwise the slot defaults to Empty and the owner picks weather in the
   editor once.
 - **Next-prayer default** only works when the prayer-times Wear app is installed on the same
   watch. Otherwise the slot is empty.
-- **WFF version.** Confirm the exact version number to declare in the manifest for Wear OS 4
-  as the floor.
 - **Samsung's editor.** Confirm on the real watch that "Empty" appears in Samsung's complication
   picker, and that the slot's default does not return after reboot.
 - **Watch connection.** The wireless-debugging session to the real watch dropped after the
