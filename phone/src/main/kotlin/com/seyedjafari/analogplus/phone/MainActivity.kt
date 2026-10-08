@@ -12,7 +12,14 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.seyedjafari.analogplus.facegen.FacePackager
@@ -27,6 +34,8 @@ import androidx.compose.runtime.snapshotFlow
 class AppModel(app: Application) : AndroidViewModel(app) {
     val store = Store(app)
     val state = EditorState(store.loadCurrent())
+    /** A design from a tapped link, waiting for the user to confirm that it replaces the current one. */
+    var pendingLinkDesign: DesignSettings? by mutableStateOf(null)
     val send = SendController(lazy { FacePackager(app) }, DataLayerSender(app), store, viewModelScope)
 
     init {
@@ -55,6 +64,15 @@ class MainActivity : ComponentActivity() {
         setContent {
             AnalogPlusTheme {
                 EditorScreen(model.state, model.store, model.send)
+                model.pendingLinkDesign?.let { incoming ->
+                    AlertDialog(
+                        onDismissRequest = { model.pendingLinkDesign = null },
+                        title = { Text("Load shared design?") },
+                        text = { Text("\"${incoming.name}\" will replace the design you are editing.") },
+                        confirmButton = { TextButton(onClick = { model.state.replace(incoming); model.pendingLinkDesign = null }) { Text("Load") } },
+                        dismissButton = { TextButton(onClick = { model.pendingLinkDesign = null }) { Text("Keep mine") } },
+                    )
+                }
             }
         }
     }
@@ -70,12 +88,16 @@ class MainActivity : ComponentActivity() {
         model.saveNow()
     }
 
-    /** A tapped `analogplus://design?d=...` link replaces the design being edited. */
+    /**
+     * A tapped `analogplus://design?d=...` link (any web page can fire one) never replaces the design being edited
+     * on its own: it is parsed and held until the user confirms.
+     */
     private fun loadFromIntent(intent: Intent?) {
         if (intent?.action != Intent.ACTION_VIEW) return
         val link = intent.dataString ?: return
-        val problem = loadShareLink(model.state, link)
-        Toast.makeText(this, problem ?: "Design loaded from link.", Toast.LENGTH_LONG).show()
+        val parsed = EditorState()
+        val problem = loadShareLink(parsed, link)
+        if (problem != null) Toast.makeText(this, problem, Toast.LENGTH_LONG).show() else model.pendingLinkDesign = parsed.design
     }
 }
 
