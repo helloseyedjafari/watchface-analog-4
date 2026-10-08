@@ -1,3 +1,5 @@
+import java.nio.file.Files
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
@@ -43,7 +45,7 @@ val cargoNdkBuild = tasks.register<Exec>("cargoNdkBuild") {
         val jniLibs = crate.dir("src/main/jniLibs").asFile
         jniLibs.listFiles { f -> f.isDirectory && f.name !in packjniAbis }?.forEach {
             // a symlinked folder is unlinked, never followed (deleteRecursively would delete what it points to)
-            if (java.nio.file.Files.isSymbolicLink(it.toPath())) java.nio.file.Files.delete(it.toPath()) else it.deleteRecursively()
+            if (Files.isSymbolicLink(it.toPath())) Files.delete(it.toPath()) else it.deleteRecursively()
         }
         val cargoOk = listOf("$home/.cargo/bin/cargo").any { File(it).canExecute() } ||
             System.getenv("PATH").split(File.pathSeparator).any { File(it, "cargo").canExecute() }
