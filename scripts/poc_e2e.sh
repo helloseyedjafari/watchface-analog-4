@@ -209,10 +209,19 @@ PY
       [ "$waited" -lt 40 ] || die "the face package $FACE_PKG did not appear within 40 s of the apply"
       sleep 2; waited=$((waited + 2))
     done
-    adbw logcat -c
-    adbw shell am broadcast -n "$WATCH_RECV" -a "$APP.DEBUG_ACTIVATE" >/dev/null
-    res="$(wait_log "$WATCH" AnalogPlusPush '"ok"' 30)" || die "no activation result within 30 s"
-    case "$res" in *'"ok":true'*|*'"ok": true'*) info "activated: {${res#*\{}" ;; *) die "activation failed: $res" ;; esac
+    # Even with the package present, the push service lists the face a little later ("no watch face installed" until
+    # then, about 15-30 s on the emulator): retry that one answer, nothing else.
+    local try=0
+    while :; do
+      adbw logcat -c
+      adbw shell am broadcast -n "$WATCH_RECV" -a "$APP.DEBUG_ACTIVATE" >/dev/null
+      res="$(wait_log "$WATCH" AnalogPlusPush '"ok"' 30)" || die "no activation result within 30 s"
+      case "$res" in
+        *'"ok":true'*|*'"ok": true'*) info "activated: {${res#*\{}"; break ;;
+        *'no watch face installed'*) try=$((try + 1)); [ "$try" -lt 12 ] || die "activation: the face was still not listed after 60 s: $res"; sleep 5 ;;
+        *) die "activation failed: $res" ;;
+      esac
+    done
   fi
   info "waiting $SETTLE s for the face to settle"; sleep "$SETTLE"
   local png="$SHOTS/$n-$name.png"
