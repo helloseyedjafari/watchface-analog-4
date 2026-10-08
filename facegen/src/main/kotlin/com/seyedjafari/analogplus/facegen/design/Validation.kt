@@ -56,6 +56,10 @@ fun DesignSettings.validate(): List<DesignError> {
     colour("ring.trackColor", ring.trackColor)
     range("ring.thicknessPx", ring.thicknessPx, 4, 40)
     range("ring.gapDegrees", ring.gapDegrees, 0, 30)
+    range("ring.startAngle", ring.startAngle, -360, 360)
+    if (background.kind == BackgroundKind.PHOTO && background.photoJpeg == null) {
+        err("background.photoJpeg", "a photo background needs a photo")
+    }
 
     slots.forEachIndexed { i, s ->
         colour("slots[$i].backgroundColor", s.backgroundColor)

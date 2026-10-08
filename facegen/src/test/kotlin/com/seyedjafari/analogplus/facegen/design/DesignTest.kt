@@ -224,4 +224,22 @@ class DesignTest {
         assertTrue(lum(light.handColor) < 80)
         assertTrue(lum(light.numeralColor) < 80)
     }
+
+    @Test fun photoBackgroundWithoutPhotoIsRejected() {
+        val d = DesignSettings(background = BackgroundDesign(BackgroundKind.PHOTO))
+        assertTrue(d.validate().any { it.field == "background.photoJpeg" })
+        assertTrue(d.copy(background = d.background.copy(photoJpeg = byteArrayOf(1))).validate().isEmpty())
+    }
+
+    @Test fun shareLinkOfAPhotoDesignComesBackAsSolid() {
+        val d = DesignSettings(background = BackgroundDesign(BackgroundKind.PHOTO, photoJpeg = byteArrayOf(1, 2)))
+        val back = DesignJson.fromShareLink(DesignJson.shareLink(d))
+        assertEquals(BackgroundKind.SOLID, back.background.kind)
+        assertTrue(back.validate().isEmpty())
+    }
+
+    @Test fun startAngleIsRangeChecked() {
+        assertTrue(DesignSettings(ring = RingDesign(startAngle = 400)).validate().any { it.field == "ring.startAngle" })
+        assertTrue(DesignSettings(ring = RingDesign(startAngle = -90)).validate().isEmpty())
+    }
 }

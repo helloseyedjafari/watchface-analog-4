@@ -29,7 +29,8 @@ object DesignJson {
         return LINK_PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(gz.toByteArray())
     }
 
-    /** Throws [IllegalArgumentException] for anything that is not a share link. Does not validate the design. */
+    /** Throws [IllegalArgumentException] for anything that is not a share link. Does not validate the design.
+ * A photo background arrives as a solid one because links carry no photo. */
     fun fromShareLink(s: String): DesignSettings {
         require(s.startsWith(LINK_PREFIX)) { "Not an Analog Plus share link (expected it to start with $LINK_PREFIX)" }
         val payload = s.removePrefix(LINK_PREFIX)
@@ -37,7 +38,11 @@ object DesignJson {
         try {
             val gz = Base64.getUrlDecoder().decode(payload)
             val text = GZIPInputStream(ByteArrayInputStream(gz)).use { it.readNBytesLimited(MAX_JSON_BYTES) }
-            return fromJson(String(text, Charsets.UTF_8))
+            val d = fromJson(String(text, Charsets.UTF_8))
+            // links never carry the photo, so a photo background falls back to its first colour
+            return if (d.background.kind == BackgroundKind.PHOTO && d.background.photoJpeg == null) {
+                d.copy(background = d.background.copy(kind = BackgroundKind.SOLID))
+            } else d
         } catch (e: IllegalArgumentException) { // bad base64, kotlinx SerializationException is one too
             throw IllegalArgumentException("The share link is damaged or not an Analog Plus design", e)
         } catch (e: IOException) {
