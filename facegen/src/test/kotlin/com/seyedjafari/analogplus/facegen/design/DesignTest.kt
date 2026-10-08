@@ -183,7 +183,7 @@ class DesignTest {
         assertTrue(link.length < 1000)
         val back = DesignJson.fromShareLink(link)
         assertNull(back.background.photoJpeg)
-        assertEquals(d.copy(background = d.background.copy(photoJpeg = null)), back)
+        assertEquals(d.copy(background = d.background.copy(kind = BackgroundKind.SOLID, photoJpeg = null)), back)
     }
     @Test fun shareLinkRejectsWrongPrefix() {
         val e = assertThrows(IllegalArgumentException::class.java) { DesignJson.fromShareLink("https://example.com/?d=abc") }
