@@ -46,6 +46,14 @@ current face and pick *Analog Plus*. Pair the watch for installs with Wireless d
 in the `prayertime-widgets` README. Note that `adb install -r` keeps the saved complication choices:
 run `adb uninstall com.seyedjafari.analogwatchface` first to see a variant's real defaults.
 
+## Builder POC
+
+A proof of concept for a paid builder app: a phone editor (free colours, movable complication slots, ring
+complications) builds and signs a face and pushes it to a Wear OS 6 watch with Watch Face Push. It lives in
+`facegen/`, `packjni/`, `protocol/`, `phone/` and `watch/` and does not change the face above. Install, usage, known
+limits, the real-device checklist and the emulator end-to-end run (`scripts/poc_e2e.sh`, screenshots in
+`docs/screenshots/poc/`) are in [`docs/poc/README.md`](docs/poc/README.md).
+
 ## Changing the design
 
 All geometry lives in two generators, so images and XML cannot drift apart:

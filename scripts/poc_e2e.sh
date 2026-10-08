@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+# End-to-end proof for the builder POC, on two unpaired emulators (the real Data Layer path is not exercised here:
+# the phone app builds the face via its debug receiver, adb relays the APK, the watch debug receiver applies it).
+#
+#   scripts/poc_e2e.sh [--with-tests] [--keep-emulators]     (env POC_SETTLE_SECONDS, default 25)
+#
+# Builds and installs both apps, then for three designs (A default, B blue accent with the top slot moved, C quarter
+# rings with a green accent): build on the phone, relay, apply on the watch, screenshot, and assert the centre disc
+# colour and that the version number went up. Finally checks that exactly one face is installed.
+# --with-tests also runs the unit tests and the device test suites of every module (slow).
+# Emulators that were already running are left running; the ones this script started are stopped on exit.
+# Screenshots: docs/screenshots/poc/<n>-<design>.png.   Exit code is nonzero when any step or assertion fails.
+set -euo pipefail
+source "$(dirname "$0")/_env.sh"
+
+PHONE_AVD="1_Pixel_8_API_33"; PHONE_PORT=5562; PHONE="emulator-$PHONE_PORT"
+WATCH_AVD="GalaxyWatch7_API36"; WATCH_PORT=5560; WATCH="emulator-$WATCH_PORT"
+APP="com.seyedjafari.analogplus"
+FACE_PKG="$APP.watchfacepush.analog"
+PHONE_RECV="$APP/$APP.phone.DebugBuildReceiver"
+WATCH_RECV="$APP/$APP.watch.DebugApplyReceiver"
+SHOTS="$ROOT/docs/screenshots/poc"
+SETTLE="${POC_SETTLE_SECONDS:-25}"   # seconds between applying a face and the screenshot
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/poc_e2e.XXXXXX")"
+
+WITH_TESTS=no; KEEP=no
+for a in "$@"; do
+  case "$a" in
+    --with-tests) WITH_TESTS=yes ;;
+    --keep-emulators) KEEP=yes ;;
+    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+    *) echo "unknown argument: $a" >&2; exit 2 ;;
+  esac
+done
+
+STARTED=()
+step() { printf '\n== %s\n' "$*"; }
+info() { printf '   %s\n' "$*"; }
+die()  { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+cleanup() {
+  rm -rf "$WORK"
+  if [ "$KEEP" = no ]; then
+    for s in ${STARTED[@]+"${STARTED[@]}"}; do info "stopping $s"; "$ADB" -s "$s" emu kill >/dev/null 2>&1 || true; done
+  fi
+}
+trap cleanup EXIT
+
+adbp() { "$ADB" -s "$PHONE" "$@"; }
+adbw() { "$ADB" -s "$WATCH" "$@"; }
+
+boot_done() { [ "$("$ADB" -s "$1" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; }
+
+ensure_emulator() { # avd port
+  local avd="$1" port="$2" serial="emulator-$2" tries=0
+  if "$ADB" devices | grep -q "^$serial[[:space:]]*device"; then
+    info "$serial already running"
+  else
+    info "starting $avd on port $port (headless)"
+    "$EMULATOR" -avd "$avd" -port "$port" -no-window -no-audio -no-snapshot -no-boot-anim >"$WORK/emulator-$port.log" 2>&1 &
+    STARTED+=("$serial")
+    "$ADB" wait-for-device >/dev/null 2>&1 || true
+  fi
+  until boot_done "$serial"; do
+    tries=$((tries + 1)); [ "$tries" -le 100 ] || die "$serial did not finish booting in 5 minutes"
+    sleep 3
+  done
+  info "$serial booted"
+}
+
+# Polls logcat on a device until a line matching the regex shows up (log was cleared before the action).
+wait_log() { # serial tag regex seconds -> prints the matching line
+  local serial="$1" tag="$2" re="$3" secs="$4" i=0 line
+  while [ "$i" -lt "$secs" ]; do
+    line="$("$ADB" -s "$serial" logcat -d -s "$tag:I" 2>/dev/null | tr -d '\r' | grep -E "$re" | tail -1 || true)"
+    if [ -n "$line" ]; then printf '%s' "$line"; return 0; fi
+    sleep 1; i=$((i + 1))
+  done
+  return 1
+}
+
+# ---------------------------------------------------------------- 1. emulators
+step "1. emulators"
+ensure_emulator "$PHONE_AVD" "$PHONE_PORT"
+ensure_emulator "$WATCH_AVD" "$WATCH_PORT"
+adbw shell dumpsys battery unplug >/dev/null   # the emulator boots "charging", which covers the face with the charging screen
+
+# ---------------------------------------------------------------- 2. build and install
+step "2. build and install"
+"$ROOT/gradlew" -p "$ROOT" :phone:assembleDebug :watch:assembleDebug -q
+PHONE_APK="$ROOT/phone/build/outputs/apk/debug/phone-debug.apk"
+WATCH_APK="$ROOT/watch/build/outputs/apk/debug/watch-debug.apk"
+for f in "$PHONE_APK" "$WATCH_APK"; do [ -f "$f" ] || die "missing build output $f"; done
+adbp install -r "$PHONE_APK" >/dev/null && info "phone app installed on $PHONE"
+adbw uninstall "$APP" >/dev/null 2>&1 || true        # fresh install: the one-shot activation is available again
+adbw install -r "$WATCH_APK" >/dev/null && info "watch app installed on $WATCH"
+# PUSH_WATCH_FACES is granted at install time (pm grant refuses it); SET_PUSHED_WATCH_FACE_AS_ACTIVE is a runtime permission.
+adbw shell pm grant "$APP" com.google.wear.permission.SET_PUSHED_WATCH_FACE_AS_ACTIVE
+PERMS="$(adbw shell dumpsys package "$APP" | tr -d '\r')"
+for p in PUSH_WATCH_FACES SET_PUSHED_WATCH_FACE_AS_ACTIVE; do
+  grep -q "com.google.wear.permission.$p: granted=true" <<<"$PERMS" || die "permission $p is not granted"
+done
+info "permissions granted"
+
+# ---------------------------------------------------------------- 3 + 4. three designs
+mkdir -p "$SHOTS"
+rm -f "$SHOTS"/*.png
+PREV_VERSION=0
+PHONE_FILES="/sdcard/Android/data/$APP/files/relay"
+
+# Reads the pixel colour at the watch centre and checks it against the expected accent. Python + Pillow.
+check_disc() { # png expectedHex
+  python3 -I - "$1" "$2" <<'PY'
+import sys
+from PIL import Image
+png, want = sys.argv[1], sys.argv[2].lstrip("#")
+want = tuple(int(want[i:i + 2], 16) for i in (0, 2, 4))
+im = Image.open(png).convert("RGB")
+cx, cy = im.width // 2, im.height // 2
+tol, r = 24, 6
+hits, best = 0, None
+for dx in range(-r, r + 1):
+    for dy in range(-r, r + 1):
+        p = im.getpixel((cx + dx, cy + dy))
+        if all(abs(p[i] - want[i]) <= tol for i in range(3)):
+            hits += 1
+            best = best or p
+total = (2 * r + 1) ** 2
+centre = im.getpixel((cx, cy))
+print(f"   screenshot {im.width}x{im.height}, centre pixel {centre}, {hits}/{total} pixels within {tol} of {want}")
+sys.exit(0 if hits >= 20 else 1)
+PY
+}
+
+run_design() { # index name expectedAccentHex activate(yes|no) ["extra am extras as ONE string, # quoted for the device shell"]
+  local n="$1" name="$2" accent="$3" activate="$4" extras="${5:-}"
+  step "3.$n design $name (expect disc $accent)"
+  adbp logcat -c; adbw logcat -c
+  adbp shell "am broadcast -n $PHONE_RECV -a $APP.DEBUG_BUILD --es template Classic $extras" >/dev/null
+  local line; line="$(wait_log "$PHONE" AnalogPlusBuild 'AnalogPlusBuild (ok|FAILED)' 120)" || die "no AnalogPlusBuild line within 120 s"
+  case "$line" in *"AnalogPlusBuild ok"*) ;; *) die "phone build failed: $line" ;; esac
+  info "$line"
+  local dir="$WORK/$n"; mkdir -p "$dir"
+  for f in face.apk face.token face.version; do adbp pull "$PHONE_FILES/$f" "$dir/$f" >/dev/null 2>&1; done
+  local version token; version="$(tr -d '[:space:]' <"$dir/face.version")"; token="$(tr -d '[:space:]' <"$dir/face.token")"
+  [ "$version" -gt "$PREV_VERSION" ] || die "phone version $version is not higher than the previous $PREV_VERSION"
+  adbw push "$dir/face.apk" /data/local/tmp/face.apk >/dev/null 2>&1
+  adbw shell "am broadcast -n $WATCH_RECV -a $APP.DEBUG_APPLY --es path /data/local/tmp/face.apk --es token '$token' --ei versionCode $version" >/dev/null
+  local res; res="$(wait_log "$WATCH" AnalogPlusPush '"ok"' 60)" || die "no AnalogPlusPush result within 60 s"
+  local json="{${res#*\{}"
+  info "watch: $json"
+  python3 -I - "$json" "$version" "$PREV_VERSION" <<'PY' || die "watch result is not ok, or its version is wrong (see above)"
+import json, sys
+r = json.loads(sys.argv[1]); want, prev = int(sys.argv[2]), int(sys.argv[3])
+assert r["ok"] is True, r
+assert int(r["versionCode"]) == want, ("version", r, want)
+assert int(r["versionCode"]) > prev, ("not higher than previous", r, prev)
+PY
+  info "watch applied version $version (previous $PREV_VERSION)"
+  PREV_VERSION="$version"
+  if [ "$activate" = yes ]; then
+    adbw logcat -c
+    adbw shell am broadcast -n "$WATCH_RECV" -a "$APP.DEBUG_ACTIVATE" >/dev/null
+    res="$(wait_log "$WATCH" AnalogPlusPush '"ok"' 30)" || die "no activation result within 30 s"
+    case "$res" in *'"ok":true'*|*'"ok": true'*) info "activated: {${res#*\{}" ;; *) die "activation failed: $res" ;; esac
+  fi
+  info "waiting $SETTLE s for the face to settle"; sleep "$SETTLE"
+  local png="$SHOTS/$n-$name.png"
+  adbw exec-out screencap -p >"$png"
+  check_disc "$png" "$accent" || die "centre disc colour of $png is not $accent"
+  info "ok: $png"
+}
+
+run_design 1 default      "#E22B07" yes
+run_design 2 blue-moveTop "#1E6BFF" no "--es accent '#FF1E6BFF' --ez moveTop true"
+run_design 3 quarterRings "#22C55E" no "--es accent '#FF22C55E' --ez quarterRings true"
+
+# ---------------------------------------------------------------- 4b. exactly one face installed
+step "4. installed faces"
+FACES="$(adbw shell pm list packages 2>/dev/null | tr -d '\r' | grep -E "^package:$APP\.watchfacepush\." || true)"
+info "Analog Plus face packages: ${FACES:-none}"
+[ "$FACES" = "package:$FACE_PKG" ] || die "expected exactly one face package ($FACE_PKG)"
+INSTALLED_VERSION="$(adbw shell dumpsys package "$FACE_PKG" | tr -d '\r' | grep -m1 -oE 'versionCode=[0-9]+' | cut -d= -f2 || true)"
+info "installed versionCode: ${INSTALLED_VERSION:-unknown}"
+[ "${INSTALLED_VERSION:-}" = "$PREV_VERSION" ] || die "installed versionCode '${INSTALLED_VERSION:-}' is not the last pushed version $PREV_VERSION"
+
+step "E2E PASSED"
+for f in "$SHOTS"/*.png; do info "watch screenshot: $f"; done
+
+# ---------------------------------------------------------------- 5. optional test suites
+if [ "$WITH_TESTS" = yes ]; then
+  step "5. unit tests"
+  "$ROOT/gradlew" -p "$ROOT" testDebugUnitTest
+  step "5. device tests, facegen + packjni + phone on $PHONE (under the phone emulator lock)"
+  ANDROID_SERIAL="$PHONE" "$ROOT/scripts/with_phone_emulator_lock.sh" "$ROOT/gradlew" -p "$ROOT" \
+    :facegen:connectedDebugAndroidTest :packjni:connectedDebugAndroidTest :phone:connectedDebugAndroidTest
+  step "5. device tests, watch on $WATCH"
+  # The e2e leaves the watch app, its face and its one-shot activation installed; the watch tests need a clean slate
+  # (gradle removes the app after its own run, so only this first run needs the uninstall). The face goes with the app.
+  adbw uninstall "$APP" >/dev/null 2>&1 || true
+  ANDROID_SERIAL="$WATCH" "$ROOT/gradlew" -p "$ROOT" :watch:connectedDebugAndroidTest
+  step "ALL TESTS PASSED"
+fi
