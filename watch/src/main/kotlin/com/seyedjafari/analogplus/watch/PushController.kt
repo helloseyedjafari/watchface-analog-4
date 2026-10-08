@@ -30,7 +30,14 @@ internal class PrefsPushStore(private val prefs: SharedPreferences) : PushStore 
 
 enum class ActiveState { ACTIVE, NOT_ACTIVE, UNKNOWN }
 
-data class PushStatus(val installedVersion: Long?, val active: ActiveState, val lastError: String?)
+/** What the system reports about the pushed face. [Unknown] means the service could not be asked, not that there is no face. */
+sealed interface InstalledState {
+    data object None : InstalledState
+    data class Version(val versionCode: Long) : InstalledState
+    data class Unknown(val reason: String) : InstalledState
+}
+
+data class PushStatus(val installed: InstalledState, val active: ActiveState, val lastError: String?)
 
 /**
  * Installs and updates the one pushed face and activates it once. Never removes a face and never throws:
@@ -44,8 +51,6 @@ class PushController internal constructor(
         LibraryPushBackend(context),
         PrefsPushStore(context.applicationContext.getSharedPreferences("analogplus_push", Context.MODE_PRIVATE)),
     )
-
-    private val lock = Mutex()
 
     suspend fun apply(apk: File, token: String, versionCode: Int): ResultMessage = lock.withLock {
         record(versionCode) {
@@ -75,14 +80,17 @@ class PushController internal constructor(
     }
 
     suspend fun status(): PushStatus {
-        val installed = try { backend.list().firstOrNull() } catch (e: Exception) { rethrowCancellation(e); null }
-        val active = when {
-            installed == null -> ActiveState.NOT_ACTIVE
-            else -> try {
-                if (backend.isActive(installed.packageName)) ActiveState.ACTIVE else ActiveState.NOT_ACTIVE
-            } catch (e: Exception) { rethrowCancellation(e); ActiveState.UNKNOWN }
+        val face = try {
+            backend.list().firstOrNull()
+        } catch (e: Exception) {
+            rethrowCancellation(e)
+            return PushStatus(InstalledState.Unknown(describe(e)), ActiveState.UNKNOWN, store.lastError)
         }
-        return PushStatus(installed?.versionCode, active, store.lastError)
+        if (face == null) return PushStatus(InstalledState.None, ActiveState.NOT_ACTIVE, store.lastError)
+        val active = try {
+            if (backend.isActive(face.packageName)) ActiveState.ACTIVE else ActiveState.NOT_ACTIVE
+        } catch (e: Exception) { rethrowCancellation(e); ActiveState.UNKNOWN }
+        return PushStatus(InstalledState.Version(face.versionCode), active, store.lastError)
     }
 
     val activationDone: Boolean get() = store.activated
@@ -112,6 +120,12 @@ class PushController internal constructor(
     private fun rethrowCancellation(e: Exception) { if (e is CancellationException) throw e }
 
     companion object {
+        /**
+         * One lock for the whole process: the receivers, the debug receiver and the activity each build their own
+         * controller, and the system allows only one add/update/activate at a time.
+         */
+        private val lock = Mutex()
+
         const val VERSION_NOT_HIGHER = "version not higher"
     }
 }
