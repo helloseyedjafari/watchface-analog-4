@@ -520,4 +520,13 @@ class SlotRingXmlTest {
         }
         assertEquals(2, ringSlots(ring(RingLayout.HALVES) { it.copy(thicknessPx = 10) }).count { it.descendants("PartText").size == 1 })
     }
+
+    @Test fun ringTextContrastsWithTheTrackNotTheSegmentColour() {
+        fun textColour(track: String) = ringSlots(ring(RingLayout.HALVES) { it.copy(trackColor = track, colors = listOf("#FFE22B07")) })
+            .first().descendants("Font").single().getAttribute("color")
+        assertEquals("#FFFFFFFF", textColour("#33FFFFFF")) // the default see-through white track over black: dark
+        assertEquals("#FFFFFFFF", textColour("#FF303030"))
+        assertEquals("#FF000000", textColour("#FFEEEEEE"))
+        assertEquals("#FFFFFFFF", textColour("#00FFFFFF")) // fully transparent: the black screen
+    }
 }

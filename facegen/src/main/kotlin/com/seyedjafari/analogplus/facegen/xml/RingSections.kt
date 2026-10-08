@@ -4,6 +4,7 @@ import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.RingCaps
 import com.seyedjafari.analogplus.facegen.design.RingDesign
 import com.seyedjafari.analogplus.facegen.design.RingLayout
+import com.seyedjafari.analogplus.facegen.design.parseArgb
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
@@ -31,6 +32,18 @@ object RingSections {
         RingLayout.HALVES -> 2
         RingLayout.THIRDS -> 3
         RingLayout.QUARTERS -> 4
+    }
+
+    /**
+     * The text sits on the track (and under the value arc), so it takes the colour that contrasts with the TRACK, not the
+     * segment colour (red text on a grey band is unreadable): white on dark tracks, black on light ones.
+     * Alpha counts: a see-through track shows the black screen.
+     */
+    internal fun textColourOn(track: String): String {
+        val argb = parseArgb(track) ?: return "#FFFFFFFF"
+        val a = (argb ushr 24) / 255.0
+        val lum = (0.2126 * ((argb shr 16) and 255) + 0.7152 * ((argb shr 8) and 255) + 0.0722 * (argb and 255)) / 255.0 * a
+        return if (lum < 0.5) "#FFFFFFFF" else "#FF000000"
     }
 
     private fun n(v: Double): String = "%.2f".format(java.util.Locale.ROOT, v).trimEnd('0').trimEnd('.').ifEmpty { "0" }
@@ -87,7 +100,7 @@ object RingSections {
         // a band thinner than a readable line of text shows the track only
         val textPart = if (t < MIN_TEXT_BAND) "" else """        <PartText x="$tx" y="$ty" width="$TEXT_BOX_W" height="$boxH" pivotX="0.5" pivotY="0.5" angle="${n(textAngle)}">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="$fontSize" weight="NORMAL" color="$colour">
+            <Font family="SYNC_TO_DEVICE" size="$fontSize" weight="NORMAL" color="${textColourOn(r.trackColor)}">
               <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template>
             </Font>
           </Text>
