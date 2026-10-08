@@ -56,8 +56,8 @@ object SlotSections {
 
     private fun cornerRadius(s: SlotDesign): Double = minOf(16.0, s.h / 2.0, s.w / 2.0)
 
-    private fun icon(s: SlotDesign, size: Double, y: Double, expr: String = "[COMPLICATION.MONOCHROMATIC_IMAGE]") =
-        """        <PartImage x="${n((s.w - size) / 2)}" y="${n(y)}" width="${n(size)}" height="${n(size)}" tintColor="${s.iconColor}">
+    private fun icon(s: SlotDesign, accent: String, size: Double, y: Double, expr: String = "[COMPLICATION.MONOCHROMATIC_IMAGE]") =
+        """        <PartImage x="${n((s.w - size) / 2)}" y="${n(y)}" width="${n(size)}" height="${n(size)}" tintColor="${s.iconColor ?: accent}">
           <Image resource="$expr"/>
         </PartImage>"""
 
@@ -80,13 +80,13 @@ object SlotSections {
         val titleColor = if (s.textColor.equals(DEFAULT_TEXT_COLOR, ignoreCase = true)) GREY_TITLE else s.textColor
 
         val textRows = buildList {
-            if (d.showIcons) add(icon(s, iconSize, 13 * k - iconSize / 2))
+            if (d.showIcons) add(icon(s, d.accent, iconSize, 13 * k - iconSize / 2))
             add(text(s, "[COMPLICATION.TEXT]", textY, textH, d.complicationTextSize, s.textColor))
             if (d.showTitles) add(text(s, "[COMPLICATION.TITLE]", titleY, titleH, d.complicationTitleSize, titleColor))
         }.joinToString("\n")
         val mono = minOf(40.0, s.w.toDouble(), s.h.toDouble())
         val small = minOf(44.0, s.w.toDouble(), s.h.toDouble())
-        val monoRow = icon(s, mono, (s.h - mono) / 2)
+        val monoRow = icon(s, d.accent, mono, (s.h - mono) / 2)
         val smallRow = """        <PartImage x="${n((s.w - small) / 2)}" y="${n((s.h - small) / 2)}" width="${n(small)}" height="${n(small)}">
           <Image resource="[COMPLICATION.SMALL_IMAGE]"/>
         </PartImage>"""

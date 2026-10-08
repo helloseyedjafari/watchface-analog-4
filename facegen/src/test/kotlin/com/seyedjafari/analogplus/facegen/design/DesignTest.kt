@@ -204,7 +204,8 @@ class DesignTest {
     @Test fun defaultSlotsAreTodaysFace() {
         assertEquals(
             listOf(
-                SlotDesign(0, "top", 150, 106, 150, 76), SlotDesign(1, "right", 277, 236, 90, 76),
+                SlotDesign(0, "top", 150, 106, 150, 76),
+                SlotDesign(1, "right", 277, 236, 90, 76, textColor = "#FF8C8C8C", iconColor = null), // grey text, accent icon
                 SlotDesign(2, "left", 83, 236, 90, 76), SlotDesign(3, "bottom", 175, 300, 100, 76),
             ),
             defaultSlots(),

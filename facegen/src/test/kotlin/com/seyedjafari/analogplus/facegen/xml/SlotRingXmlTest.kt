@@ -139,7 +139,8 @@ class SlotRingXmlTest {
 
     @Test fun nonDefaultSlotColoursReachTheXml() {
         val s = defaultSlots().take(1).map { it.copy(textColor = "#FF112233", iconColor = "#FF445566") }
-        val xml = x(DesignSettings(slots = s))
+        val full = x(DesignSettings(slots = s))
+        val xml = full.substring(full.indexOf("<ComplicationSlot"), full.lastIndexOf("</ComplicationSlot>")) // hands and cap are white
         assertTrue(xml.contains("""color="#FF112233""""))
         assertTrue(xml.contains("""tintColor="#FF445566""""))
         assertFalse(xml.contains("#ffffffff", ignoreCase = true))

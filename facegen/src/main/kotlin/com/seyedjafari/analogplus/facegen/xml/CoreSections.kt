@@ -2,6 +2,7 @@ package com.seyedjafari.analogplus.facegen.xml
 
 import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.facegen.design.parseArgb
 import com.seyedjafari.analogplus.facegen.design.NumeralMode
 import com.seyedjafari.analogplus.facegen.design.SecondHandStyle
 import kotlin.math.PI
@@ -21,9 +22,8 @@ object CoreSections {
     /** Hands and centre cap: drawn over the complications. */
     val afterComplications: List<XmlSection> = listOf(HandsSection, CapSection)
 
-    /** Colour of the Scene itself: the design colour for a SOLID background, black otherwise. */
-    fun sceneColor(d: DesignSettings): String =
-        if (d.background.kind == BackgroundKind.SOLID) d.background.color else "#FF000000"
+    /** The Scene itself is always black; every background is a layer, so ambient mode can hide it. */
+    fun sceneColor(@Suppress("UNUSED_PARAMETER") d: DesignSettings): String = "#FF000000"
 
     /** Side of the square `num_N` images (format units). The renderer draws the upright digits centred in it. */
     const val NUMERAL_BOX = 48
@@ -45,12 +45,18 @@ internal fun fmt(v: Double): String {
 
 private fun alphaOf(percent: Int): String = "%02X".format((percent * 255 / 100.0).roundToInt())
 
-/** SOLID is the Scene colour (nothing drawn); GRADIENT and PHOTO draw full-screen layers hidden in ambient. */
+/** Every background kind is a full-screen layer hidden in ambient (opaque black solid is the bare Scene). */
 object BackgroundSection : XmlSection {
     override fun render(d: DesignSettings): String {
         val bg = d.background
         return when (bg.kind) {
-            BackgroundKind.SOLID -> ""
+            // opaque black is the Scene colour already
+            BackgroundKind.SOLID -> if (parseArgb(bg.color) == 0xFF000000.toInt()) "" else """    <PartDraw name="background_solid" x="0" y="0" width="450" height="450">
+      $AMBIENT_HIDE
+      <Rectangle x="0" y="0" width="450" height="450">
+        <Fill color="${bg.color}"/>
+      </Rectangle>
+    </PartDraw>"""
             BackgroundKind.GRADIENT -> """    <PartDraw name="background_gradient" x="0" y="0" width="450" height="450">
       $AMBIENT_HIDE
       <Rectangle x="0" y="0" width="450" height="450">

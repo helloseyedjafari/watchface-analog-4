@@ -127,10 +127,16 @@ class CoreXmlTest {
         for (name in listOf("cap_ring", "cap_core")) assertEquals(0, d.partDraw(name)!!.count("Variant"))
     }
 
-    @Test fun solidBackgroundIsTheSceneColour() {
-        val d = doc(DesignSettings(background = BackgroundDesign(color = "#FFF4F1EA")))
-        assertEquals("#FFF4F1EA", (d.getElementsByTagName("Scene").item(0) as Element).getAttribute("backgroundColor"))
-        assertEquals(0, d.count("LinearGradient"))
+    @Test fun solidBackgroundIsALayerHiddenInAmbient() {
+        val x = FaceXml.watchFaceXml(DesignSettings(background = BackgroundDesign(color = "#FFF4F1EA")))
+        val layer = x.substringAfter("""name="background_solid"""").substringBefore("</PartDraw>")
+        assertTrue(layer.contains("""<Variant mode="AMBIENT" target="alpha" value="0"/>"""))
+        assertTrue(layer.contains("""<Fill color="#FFF4F1EA"/>"""))
+        assertEquals("#FF000000", (doc(DesignSettings(background = BackgroundDesign(color = "#FFF4F1EA"))).getElementsByTagName("Scene").item(0) as Element).getAttribute("backgroundColor"))
+    }
+
+    @Test fun opaqueBlackSolidNeedsNoLayer() {
+        assertFalse(FaceXml.watchFaceXml(DesignSettings()).contains("background_solid"))
     }
 
     @Test fun gradientBackgroundWritesLinearGradient() {

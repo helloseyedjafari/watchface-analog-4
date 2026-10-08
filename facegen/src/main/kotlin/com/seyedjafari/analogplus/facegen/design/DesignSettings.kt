@@ -23,7 +23,7 @@ enum class BackgroundKind { SOLID, GRADIENT, PHOTO }
 data class SlotDesign(
     val id: Int, val name: String, val x: Int, val y: Int, val w: Int, val h: Int,
     val shape: SlotShape = SlotShape.BOX, val backgroundColor: Argb? = null,
-    val textColor: Argb = "#FFFFFFFF", val iconColor: Argb = "#FFFFFFFF",
+    val textColor: Argb = "#FFFFFFFF", val iconColor: Argb? = "#FFFFFFFF", // null = accent
 )
 
 @Serializable
@@ -85,7 +85,7 @@ data class DesignSettings(
 /** The four complication slots of today's face. */
 fun defaultSlots(): List<SlotDesign> = listOf(
     SlotDesign(0, "top", 150, 106, 150, 76),
-    SlotDesign(1, "right", 277, 236, 90, 76),
+    SlotDesign(1, "right", 277, 236, 90, 76, textColor = "#FF8C8C8C", iconColor = null),
     SlotDesign(2, "left", 83, 236, 90, 76),
     SlotDesign(3, "bottom", 175, 300, 100, 76),
 )
