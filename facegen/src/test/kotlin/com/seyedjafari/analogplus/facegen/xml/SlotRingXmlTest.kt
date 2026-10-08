@@ -445,7 +445,7 @@ class SlotRingXmlTest {
         assertEquals("WATCH_BATTERY", ps[0].getAttribute("defaultSystemProvider"))
         assertEquals("RANGED_VALUE", ps[0].getAttribute("defaultSystemProviderType"))
         assertEquals("STEP_COUNT", ps[1].getAttribute("defaultSystemProvider"))
-        assertEquals("GOAL_PROGRESS", ps[1].getAttribute("defaultSystemProviderType"))
+        assertEquals("SHORT_TEXT", ps[1].getAttribute("defaultSystemProviderType")) // the type every step provider delivers
         for (p in ps.drop(2)) {
             assertEquals("EMPTY", p.getAttribute("defaultSystemProvider")); assertEquals("EMPTY", p.getAttribute("defaultSystemProviderType"))
         }

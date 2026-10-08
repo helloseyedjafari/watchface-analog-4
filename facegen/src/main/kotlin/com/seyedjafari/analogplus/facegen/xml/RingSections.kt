@@ -87,10 +87,13 @@ object RingSections {
           </Text>
         </PartText>"""
 
-        // owner's defaults: the first segment shows the watch battery, the second the step count, the rest start empty
+        // owner's defaults: the first segment shows the watch battery, the second the step count, the rest start empty.
+        // The step count is SHORT_TEXT, not GOAL_PROGRESS: the emulator's step provider delivers only text, and a default
+        // whose type the provider cannot deliver leaves the slot NOT_CONFIGURED, drawing nothing, not even the track.
+        // (The user can pick a goal-progress provider in the system editor.)
         val policy = when (i) {
             0 -> """<DefaultProviderPolicy defaultSystemProvider="WATCH_BATTERY" defaultSystemProviderType="RANGED_VALUE"/>"""
-            1 -> """<DefaultProviderPolicy defaultSystemProvider="STEP_COUNT" defaultSystemProviderType="GOAL_PROGRESS"/>"""
+            1 -> """<DefaultProviderPolicy defaultSystemProvider="STEP_COUNT" defaultSystemProviderType="SHORT_TEXT"/>"""
             else -> """<DefaultProviderPolicy defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>"""
         }
 
