@@ -1,7 +1,9 @@
 # Configurable watch face (Analog Plus settings) — design
 
 Date: 2026-10-08
-Status: DRAFT 2026-10-08, awaiting owner review.
+Status: ON HOLD 2026-10-08. The owner chose a builder app (onboarding, free values, Watch Face Push)
+instead of this code-free configurable face. The settings catalogue below stays the input for the
+builder spec. Revive this spec only if the push-API spike fails on the owner's watch.
 Parent: `2026-10-02-analog-watchface-design.md` (the original face). That spec is not edited; where
 this one changes a decision from it, the change is listed under "Changes to the original spec".
 
