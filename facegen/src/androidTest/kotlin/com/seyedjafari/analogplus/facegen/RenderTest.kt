@@ -87,6 +87,41 @@ class RenderTest {
         assertEquals(Color.BLUE, bm.getPixel(38, 300))
     }
 
+    @Test fun ambientHandImagesOnlyForDarkHands() {
+        for (d in Templates.all + DesignSettings()) {
+            val r = ResourceRenderer.render(d, ctx)
+            assertNull(r.named("hour_ambient.png")); assertNull(r.named("minute_ambient.png"))
+        }
+        val dark = DesignSettings(handColor = "#FF1A1A1A", inlayColor = "#FF6E6E6E", background = BackgroundDesign(color = "#FFF4F1EA"))
+        val r = ResourceRenderer.render(dark, ctx)
+        val normal = r.named("hour.png")!!.bitmap()
+        val hour = r.named("hour_ambient.png")!!.bitmap(); val minute = r.named("minute_ambient.png")!!.bitmap()
+        assertEquals(normal.width to normal.height, hour.width to hour.height)
+        assertEquals(76 to 828, minute.width to minute.height)
+        // body pixel (outside the inlay) is the light hand colour, inlay is the light inlay colour; the normal hand stays dark
+        assertEquals(Color.parseColor("#FFE6E6E6"), hour.getPixel(38 - 6 * 4, 300))
+        assertEquals(Color.parseColor("#FF9A9A9A"), hour.getPixel(38, 300))
+        assertEquals(Color.parseColor("#FFE6E6E6"), minute.getPixel(38 - 6 * 4, 400))
+        assertEquals(Color.parseColor("#FF1A1A1A"), normal.getPixel(38 - 6 * 4, 300))
+        assertTrue("small", r.named("hour_ambient.png")!!.bytes.size < 8 * 1024 && r.named("minute_ambient.png")!!.bytes.size < 12 * 1024)
+        // same set of other images
+        assertEquals(ResourceRenderer.render(DesignSettings(), ctx).map { it.name }.toSet() + setOf("hour_ambient.png", "minute_ambient.png"),
+            r.map { it.name }.toSet())
+    }
+
+    @Test fun everyImageTheXmlNamesIsRendered() {
+        val designs = Templates.all + DesignSettings() + listOf(
+            DesignSettings(handColor = "#FF1A1A1A", numeralColor = "#FF111111", tickColor = "#FF222222"),
+            DesignSettings(handColor = "#FF1A1A1A", secondHand = SecondHandStyle.HIDDEN, numerals = NumeralMode.QUARTERS),
+        )
+        for (d in designs) {
+            val have = ResourceRenderer.render(d, ctx).map { it.name.removeSuffix(".png") }.toSet()
+            val xml = com.seyedjafari.analogplus.facegen.xml.FaceXml.watchFaceXml(d)
+            val named = Regex("""resource="([a-z_0-9]+)"""").findAll(xml).map { it.groupValues[1] }.toSet()
+            assertTrue("${d.name}: ${named - have}", have.containsAll(named))
+        }
+    }
+
     @Test fun numeralsFollowTheMode() {
         fun names(m: NumeralMode) = ResourceRenderer.render(DesignSettings(numerals = m), ctx)
             .map { it.name }.filter { it.startsWith("num_") }.sorted()

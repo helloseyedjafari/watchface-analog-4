@@ -213,18 +213,12 @@ class DesignTest {
     }
     @Test fun everyTemplateIsValid() = Templates.all.forEach { assertTrue(it.name, it.validate().isEmpty()) }
     @Test fun templateSet() {
-        assertEquals(listOf("Classic", "Midnight", "Light", "Neon", "Minimal"), Templates.all.map { it.name })
+        assertEquals(listOf("Classic", "Midnight", "Neon", "Minimal"), Templates.all.map { it.name })
         assertEquals(Templates.all.size, Templates.all.map { it.name }.toSet().size)
         assertEquals(DesignSettings(), Templates.all[0])
         assertEquals(Templates.all.size, Templates.all.toSet().size)
     }
-    @Test fun lightTemplateIsLight() {
-        val light = Templates.all.first { it.name == "Light" }
-        fun lum(c: String): Int { val v = parseArgb(c)!!; return ((v shr 16 and 255) + (v shr 8 and 255) + (v and 255)) / 3 }
-        assertTrue(lum(light.background.color) > 200)
-        assertTrue(lum(light.handColor) < 80)
-        assertTrue(lum(light.numeralColor) < 80)
-    }
+    @Test fun lightTemplateIsGone() = assertTrue(Templates.all.none { it.name == "Light" })
 
     @Test fun photoBackgroundWithoutPhotoIsRejected() {
         val d = DesignSettings(background = BackgroundDesign(BackgroundKind.PHOTO))
