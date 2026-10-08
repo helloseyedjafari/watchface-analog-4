@@ -32,9 +32,20 @@ sealed interface SendUi {
 /** True while a send is in flight (the button is disabled). */
 val SendUi.isBusy: Boolean get() = this is SendUi.Building || this is SendUi.Sending
 
+/** Shown when the watch refuses a face and this phone signs with another key than for the face the watch holds. */
+const val KEY_MISMATCH_TEXT =
+    "This phone is signing with a different key than the face on your watch. The watch only accepts updates from the " +
+        "original key. Remove the old Analog Plus app from the watch (uninstall it and install it again; this removes " +
+        "the pushed face), then send again."
+
 /**
- * Runs "Send to watch": validate, take a fresh version number, build off the main thread, hand the face to [sender].
- * One send at a time. Every failure ends as [SendUi.Error] with text a person can act on.
+ * Runs "Send to watch": validate, then (off the main thread) take a fresh version number, build, and hand the face to
+ * [sender]. One send at a time. Every failure ends as [SendUi.Error] with text a person can act on.
+ *
+ * [keyFingerprint] names the key this phone signs with ([signingKeyFingerprintProvider]); the one behind the last
+ * accepted face is kept in [store]. A watch refusal while the two differ is explained as a key mismatch. A null
+ * fingerprint (no provider, unreadable key) switches the explanation off.
+ * [buildDispatcher] runs all blocking work of a send (counter write, key read, build).
  */
 class SendController(
     private val builder: FaceBuilder,
@@ -42,9 +53,14 @@ class SendController(
     private val store: Store,
     private val scope: CoroutineScope,
     private val buildDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val keyFingerprint: () -> String? = { null },
 ) {
-    constructor(packager: Lazy<FacePackager>, sender: FaceSender, store: Store, scope: CoroutineScope) :
-        this(FaceBuilder { d, v -> packager.value.build(d, v) }, sender, store, scope)
+    constructor(
+        packager: Lazy<FacePackager>, sender: FaceSender, store: Store, scope: CoroutineScope,
+        keyFingerprint: () -> String? = { null },
+    ) : this(
+        FaceBuilder { d, v -> packager.value.build(d, v) }, sender, store, scope, Dispatchers.Default, keyFingerprint,
+    )
 
     private val _state = MutableStateFlow<SendUi>(SendUi.Idle)
     val state: StateFlow<SendUi> = _state.asStateFlow()
@@ -67,7 +83,17 @@ class SendController(
 
     private suspend fun run(design: DesignSettings) {
         try {
-            val version = store.nextVersionCode() // persisted before the build, so a failed build never reuses it
+            val version = try {
+                // persisted before the build, so a failed build never reuses it
+                withContext(buildDispatcher) { store.nextVersionCode() }
+            } catch (e: VersionCounterException) {
+                _state.value = SendUi.Error(e.message ?: "Could not save the version counter; free some storage and try again.")
+                return
+            }
+            val (currentKey, previousKey) = withContext(buildDispatcher) {
+                (try { keyFingerprint() } catch (e: Exception) { null }) to store.lastSentKeyFingerprint()
+            }
+            val keyChanged = currentKey != null && previousKey != null && currentKey != previousKey
             val bundle = try {
                 withContext(buildDispatcher) { builder.build(design, version) }
             } catch (e: CancellationException) {
@@ -79,8 +105,10 @@ class SendController(
             sender.send(bundle).collect { s ->
                 _state.value = when (s) {
                     is SendState.Done ->
-                        if (s.result.ok) SendUi.Success(s.result.versionCode)
-                        else SendUi.Error("The watch refused the face: ${s.result.error ?: "unknown reason"}")
+                        if (s.result.ok) {
+                            if (currentKey != null) withContext(buildDispatcher) { store.saveSentKeyFingerprint(currentKey) }
+                            SendUi.Success(s.result.versionCode)
+                        } else SendUi.Error(refusalText(s.result.error, keyChanged))
                     is SendState.Failed -> SendUi.Error(s.text)
                     else -> SendUi.Sending(s)
                 }
@@ -93,6 +121,13 @@ class SendController(
         } catch (e: Exception) {
             _state.value = SendUi.Error("Could not send the face: ${e.message ?: e.javaClass.simpleName}")
         }
+    }
+
+    private fun refusalText(error: String?, keyChanged: Boolean): String {
+        val raw = "The watch refused the face: ${error ?: "unknown reason"}"
+        // a lower version number is not a key problem; any other refusal under a changed key probably is
+        if (!keyChanged || error?.contains("version not higher", ignoreCase = true) == true) return raw
+        return "$KEY_MISMATCH_TEXT\n\n(The watch said: ${error ?: "unknown reason"})"
     }
 
     private fun buildErrorText(e: Throwable): String = when (e) {

@@ -6,6 +6,7 @@ import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import java.io.File
+import java.io.IOException
 import java.time.Instant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -19,8 +20,9 @@ import kotlinx.serialization.json.jsonPrimitive
 interface KeyValueStore {
     fun getString(key: String): String?
     fun getLong(key: String, default: Long): Long
-    /** Must be durable when it returns (SharedPreferences `commit`). */
+    /** Must be durable when it returns (SharedPreferences `commit`). Best effort: a failed write is not reported. */
     fun putString(key: String, value: String)
+    /** Must be durable when it returns; throws [IOException] when the write failed (the version counter relies on it). */
     fun putLong(key: String, value: Long)
 }
 
@@ -28,8 +30,15 @@ class PrefsKeyValueStore(private val prefs: SharedPreferences) : KeyValueStore {
     override fun getString(key: String): String? = try { prefs.getString(key, null) } catch (e: ClassCastException) { null }
     override fun getLong(key: String, default: Long): Long = try { prefs.getLong(key, default) } catch (e: ClassCastException) { default }
     override fun putString(key: String, value: String) { prefs.edit().putString(key, value).commit() }
-    override fun putLong(key: String, value: Long) { prefs.edit().putLong(key, value).commit() }
+    override fun putLong(key: String, value: Long) {
+        if (!prefs.edit().putLong(key, value).commit()) throw IOException("the preferences could not be written")
+    }
 }
+
+/** The face version counter could not be saved, so no number is handed out (it would be reused after a restart). */
+class VersionCounterException(cause: Throwable) : RuntimeException(
+    "Could not save the version counter; free some storage and try again.", cause,
+)
 
 data class SavedDesign(val name: String, val design: DesignSettings)
 
@@ -53,25 +62,53 @@ class Store(
 
     private var lastPhotoWritten: ByteArray? = null
 
+    /** True between [loadCurrentWithoutPhoto] and [finishPhotoLoad]: the photo file exists but is not in memory yet. */
+    private var photoPending = false
+
     // ---- current design -----------------------------------------------------------------------------------
 
-    @Synchronized
-    fun saveCurrent(d: DesignSettings) {
-        savePhoto(d.background.photoJpeg)
+    fun saveCurrent(d: DesignSettings) = synchronized(LOCK) {
+        // While the stored photo is still being read, a design without photo must not delete it.
+        if (!(photoPending && d.background.photoJpeg == null)) {
+            if (d.background.photoJpeg != null) photoPending = false
+            savePhoto(d.background.photoJpeg)
+        }
         kv.putString(KEY_CURRENT, DesignJson.toJson(withoutPhoto(d)))
     }
 
-    @Synchronized
+    /** The saved design with its photo (reads the photo file: do not call on the main thread). */
     fun loadCurrent(): DesignSettings {
-        val text = kv.getString(KEY_CURRENT) ?: return DesignSettings()
-        val d = try {
+        val d = loadCurrentWithoutPhoto()
+        val photo = readPhotoFile()
+        finishPhotoLoad(photo)
+        return if (photo != null) d.copy(background = d.background.copy(photoJpeg = photo)) else restorePhotoKind(d)
+    }
+
+    /**
+     * The saved design without reading the photo (fast, safe on the main thread). When a photo file exists the
+     * background keeps its PHOTO kind with no photo yet, and saves leave the file alone until [finishPhotoLoad].
+     * Pair it with [readPhotoFile] on a background thread.
+     */
+    fun loadCurrentWithoutPhoto(): DesignSettings = synchronized(LOCK) {
+        val text = kv.getString(KEY_CURRENT)
+        val d = if (text == null) DesignSettings() else try {
             DesignJson.fromJson(text)
         } catch (e: Exception) {
-            return DesignSettings()
+            DesignSettings()
         }
-        val photo = try { if (photoFile.isFile) photoFile.readBytes().takeIf { it.isNotEmpty() } else null } catch (e: Exception) { null }
-        lastPhotoWritten = photo
-        return restorePhotoKind(if (photo != null) d.copy(background = d.background.copy(photoJpeg = photo)) else d)
+        photoPending = photoFile.isFile && photoFile.length() > 0
+        if (photoPending) d else restorePhotoKind(d)
+    }
+
+    /** Reads the stored photo (up to 25 MB; background thread). Null when there is none or it cannot be read. */
+    fun readPhotoFile(): ByteArray? = synchronized(LOCK) {
+        try { if (photoFile.isFile) photoFile.readBytes().takeIf { it.isNotEmpty() } else null } catch (e: Exception) { null }
+    }
+
+    /** Ends the photo load: from now on a design without photo removes the stored photo again. */
+    fun finishPhotoLoad(photo: ByteArray?) = synchronized(LOCK) {
+        if (photoPending) lastPhotoWritten = photo // else the user chose a new photo meanwhile, which is already stored
+        photoPending = false
     }
 
     private fun savePhoto(bytes: ByteArray?) {
@@ -94,14 +131,14 @@ class Store(
     // ---- named designs ------------------------------------------------------------------------------------
 
     /** Saved designs in the order they were first saved. */
-    @Synchronized
-    fun savedDesigns(): List<SavedDesign> = readSaved().entries.mapNotNull { (name, text) ->
-        try { SavedDesign(name, restorePhotoKind(DesignJson.fromJson(text))) } catch (e: Exception) { null }
+    fun savedDesigns(): List<SavedDesign> = synchronized(LOCK) {
+        readSaved().entries.mapNotNull { (name, text) ->
+            try { SavedDesign(name, restorePhotoKind(DesignJson.fromJson(text))) } catch (e: Exception) { null }
+        }
     }
 
     /** Saves [d] under [name] (the photo is not saved). An existing design with that name is replaced. */
-    @Synchronized
-    fun saveNamed(name: String, d: DesignSettings) {
+    fun saveNamed(name: String, d: DesignSettings) = synchronized(LOCK) {
         val clean = name.trim()
         require(clean.isNotEmpty()) { "Give the design a name" }
         val all = LinkedHashMap(readSaved())
@@ -109,22 +146,19 @@ class Store(
         writeSaved(all)
     }
 
-    @Synchronized
-    fun deleteNamed(name: String) {
+    fun deleteNamed(name: String) = synchronized(LOCK) {
         val all = LinkedHashMap(readSaved())
         if (all.remove(name) != null) writeSaved(all)
     }
 
     /** Throws [IllegalArgumentException] when [old] does not exist, [new] is blank or already taken. */
-    @Synchronized
-    fun renameNamed(old: String, new: String) {
+    fun renameNamed(old: String, new: String) = synchronized(LOCK) {
         val clean = new.trim()
         require(clean.isNotEmpty()) { "Give the design a name" }
         val all = readSaved()
         require(old in all) { "No saved design called '$old'" }
-        if (clean == old) return
-        require(clean !in all) { "A design called '$clean' already exists" }
-        writeSaved(all.entries.associate { (k, v) -> (if (k == old) clean else k) to v })
+        require(clean == old || clean !in all) { "A design called '$clean' already exists" }
+        if (clean != old) writeSaved(all.entries.associate { (k, v) -> (if (k == old) clean else k) to v })
     }
 
     private fun readSaved(): Map<String, String> {
@@ -150,16 +184,27 @@ class Store(
      * The face version for the next build: strictly higher than every number handed out before, and never lower than
      * the minutes since 2026-01-01, so a reinstall (which wipes the counter) still beats every earlier push.
      * Stored before it is returned, so a build that fails never lets the number be used twice.
+     * @throws VersionCounterException when the number could not be stored durably (none is handed out then)
      */
-    @Synchronized
-    fun nextVersionCode(): Int {
+    fun nextVersionCode(): Int = synchronized(LOCK) {
         val stored = kv.getLong(KEY_VERSION, 0L)
         val minutes = (clock() - EPOCH_2026_MS) / 60_000L
         val next = maxOf(stored + 1, minutes).coerceIn(1L, Int.MAX_VALUE.toLong())
         check(next > stored) { "Face version counter is exhausted" }
-        kv.putLong(KEY_VERSION, next)
-        return next.toInt()
+        try {
+            kv.putLong(KEY_VERSION, next)
+        } catch (e: IOException) {
+            throw VersionCounterException(e)
+        }
+        next.toInt()
     }
+
+    // ---- signing key fingerprint -----------------------------------------------------------------------------
+
+    /** Fingerprint of the signing key behind the last face the watch accepted, or null when none was sent yet. */
+    fun lastSentKeyFingerprint(): String? = synchronized(LOCK) { kv.getString(KEY_SENT_FINGERPRINT) }
+
+    fun saveSentKeyFingerprint(fingerprint: String) = synchronized(LOCK) { kv.putString(KEY_SENT_FINGERPRINT, fingerprint) }
 
     private fun withoutPhoto(d: DesignSettings) = d.copy(background = d.background.copy(photoJpeg = null))
 
@@ -174,6 +219,9 @@ class Store(
         private const val KEY_CURRENT = "current_design"
         private const val KEY_SAVED = "saved_designs"
         private const val KEY_VERSION = "version_counter"
+        private const val KEY_SENT_FINGERPRINT = "sent_key_fingerprint"
+        /** One lock for every [Store] in the process (the debug receiver makes its own instance). */
+        private val LOCK = Any()
         private val EPOCH_2026_MS = Instant.parse("2026-01-01T00:00:00Z").toEpochMilli()
     }
 }
