@@ -12,3 +12,4 @@ dist/
 phone/build
 watch/build
 **/target/
+packjni/src/main/jniLibs/
