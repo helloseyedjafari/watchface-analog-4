@@ -13,10 +13,12 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -304,15 +306,199 @@ class ComplicationsTest {
         assertTrue(state.errors.isEmpty())
     }
 
-    @Test fun ringLayoutOverTheCapIsAllowedButShownAsAnError() {
+    @Test fun ringLayoutsOverTheCapAreDisabledAndExplained() {
         val state = EditorState(DesignSettings(slots = SlotGeometry.addUpTo(DesignSettings(), 5).design.slots))
         show(state) { RingTab(it) }
         rule.onNodeWithTag(Tags.CAP_INDICATOR).assertTextEquals("5 of 8")
-        click(Tags.field("ring_layout_QUARTERS"))
-        assertEquals(RingLayout.QUARTERS, state.design.ring.layout)
-        rule.onNodeWithTag(Tags.CAP_INDICATOR).assertTextEquals("9 of 8").assert(hasStateDescription("over limit"))
+        rule.onNodeWithTag(Tags.field("ring_layout_QUARTERS")).performScrollTo().assertIsNotEnabled().performClick()
+        assertEquals(RingLayout.NONE, state.design.ring.layout) // refused
+        rule.onNodeWithTag(Tags.field("ring_layout_THIRDS")).assertIsEnabled()
+        rule.onNodeWithTag(Tags.field("ring_layout_NONE")).assertIsEnabled()
+        rule.onNodeWithTag(Tags.field("ring_limit_hint")).assertTextEquals("Remove a slot to use quarter rings")
+        click(Tags.field("ring_layout_THIRDS")) // 5 + 3 = 8 is fine
+        assertEquals(RingLayout.THIRDS, state.design.ring.layout)
+        rule.onNodeWithTag(Tags.CAP_INDICATOR).assertTextEquals("8 of 8").assert(hasStateDescription("within the limit"))
+        assertTrue(state.errors.isEmpty())
+        // a smaller layout is still reachable from the full one, and removing a slot opens quarter rings
+        rule.runOnIdle { state.update { it.copy(slots = it.slots.drop(1)) } }
+        rule.onNodeWithTag(Tags.field("ring_layout_QUARTERS")).assertIsEnabled()
+        rule.onNodeWithTag(Tags.field("ring_limit_hint")).assertDoesNotExist()
+    }
+
+    @Test fun anImportedDesignOverTheCapStillShowsTheRedIndicatorAndTheError() {
+        val six = SlotGeometry.addUpTo(DesignSettings(), 6).design
+        val state = EditorState(six.copy(ring = RingDesign(layout = RingLayout.QUARTERS, colors = List(4) { "#FFFF0000" })))
+        show(state) { RingTab(it) }
+        rule.onNodeWithTag(Tags.CAP_INDICATOR).assertTextEquals("10 of 8").assert(hasStateDescription("over limit"))
         rule.onNodeWithTag(Tags.field("ring_cap_error")).assertTextContains("at most 8", substring = true)
-        assertTrue(state.errors.any { it.message.startsWith("at most 8") })
+        // the chosen layout stays selectable, a smaller one that fits is open, "None" is the way out
+        rule.onNodeWithTag(Tags.field("ring_layout_QUARTERS")).performScrollTo().assertIsEnabled()
+        rule.onNodeWithTag(Tags.field("ring_layout_HALVES")).assertIsEnabled()
+        rule.onNodeWithTag(Tags.field("ring_layout_THIRDS")).assertIsNotEnabled()
+        click(Tags.field("ring_layout_HALVES"))
+        rule.onNodeWithTag(Tags.CAP_INDICATOR).assertTextEquals("8 of 8")
+    }
+
+    // ---- ring errors without a field, and long lists ----
+
+    @Test fun aRingErrorWithLayoutNoneStillShowsItsFieldAndAResetButton() {
+        val state = EditorState(DesignSettings(ring = RingDesign(layout = RingLayout.NONE, trackColor = "nope")))
+        show(state) { RingTab(it) }
+        rule.onNodeWithTag(Tags.field("ring_error")).assertTextContains("ring.trackColor", substring = true)
+        rule.onNodeWithTag(Tags.field("ring_track")).performScrollTo().assertExists() // the hidden field is shown
+        rule.onNodeWithTag(Tags.error(Tags.field("ring_track"))).assertExists()
+        type(Tags.field("ring_track"), "#33FFFFFF ")
+        assertEquals("#33FFFFFF", state.design.ring.trackColor)
+        rule.onNodeWithTag(Tags.field("ring_error")).assertDoesNotExist()
+        rule.onNodeWithTag(Tags.field("ring_reset")).assertDoesNotExist()
+        assertTrue(state.errors.isEmpty())
+    }
+
+    @Test fun resetRingToDefaultFixesEveryRingValueAndKeepsTheLayout() {
+        val state = EditorState(DesignSettings(ring = RingDesign(
+            layout = RingLayout.HALVES, colors = emptyList(), trackColor = "x", thicknessPx = 0, gapDegrees = 99, startAngle = 5000,
+        )))
+        show(state) { RingTab(it) }
+        val lines = rule.onAllNodesWithTag(Tags.field("ring_error")).fetchSemanticsNodes().size
+        assertTrue("$lines ring error lines", lines >= 4)
+        click(Tags.field("ring_reset"))
+        assertTrue(state.errors.toString(), state.errors.isEmpty())
+        assertEquals(RingLayout.HALVES, state.design.ring.layout)
+        assertEquals(2, state.design.ring.colors.size)
+        rule.onNodeWithTag(Tags.field("ring_reset")).assertDoesNotExist()
+    }
+
+    @Test fun ringColourCountErrorsAreShown() {
+        val state = EditorState(DesignSettings(ring = RingDesign(layout = RingLayout.FULL, colors = emptyList())))
+        show(state) { RingTab(it) }
+        rule.onNodeWithTag(Tags.field("ring_error")).assertTextContains("needs at least one colour", substring = true)
+        click(Tags.field("ring_reset"))
+        assertEquals(1, state.design.ring.colors.size)
+        rule.runOnIdle { state.update { it.copy(ring = it.ring.copy(colors = List(9) { "#FFFF0000" })) } }
+        rule.onNodeWithTag(Tags.field("ring_error")).assertTextContains("at most 8 colours", substring = true)
+    }
+
+    @Test fun aRingWithTwentyThousandColoursShowsEightFieldsAndAResetButton() {
+        val state = EditorState(DesignSettings(ring = RingDesign(layout = RingLayout.HALVES, colors = List(20_000) { "#FF%06X".format(it) })))
+        show(state) { RingTab(it) }
+        rule.onNodeWithTag(Tags.field("ring_colour_7")).performScrollTo().assertExists()
+        rule.onNodeWithTag(Tags.field("ring_colour_8")).assertDoesNotExist()
+        rule.onNodeWithTag(Tags.field("ring_colours_more")).performScrollTo().assertTextContains("+19992 more", substring = true)
+        click(Tags.field("ring_reset_colours"))
+        assertEquals(2, state.design.ring.colors.size)
+        assertEquals("#FF000000", state.design.ring.colors[0])
+        assertEquals("#FF000001", state.design.ring.colors[1])
+        rule.onNodeWithTag(Tags.field("ring_colours_more")).assertDoesNotExist()
+        assertTrue(state.errors.toString(), state.errors.isEmpty())
+    }
+
+    @Test fun twentyThousandSlotsAreShownAsEightAndCanBeReset() {
+        val many = List(20_000) { SlotDesign(it, "s$it", 100, 100, 50, 50) }
+        val state = EditorState(DesignSettings(slots = many))
+        show(state)
+        rule.onNodeWithTag(Tags.field("select_slot_7")).performScrollTo().assertExists()
+        rule.onNodeWithTag(Tags.field("select_slot_8")).assertDoesNotExist()
+        rule.onNodeWithTag(Tags.slot(7)).assertExists()
+        rule.onNodeWithTag(Tags.slot(8)).assertDoesNotExist()
+        rule.onNodeWithTag(Tags.field("slots_more")).performScrollTo().assertTextContains("+19992 more", substring = true)
+        click(Tags.field("slots_reset"))
+        assertEquals(defaultSlots(), state.design.slots)
+        rule.onNodeWithTag(Tags.field("slots_more")).assertDoesNotExist()
+        rule.onNodeWithTag(Tags.field("slots_reset")).assertDoesNotExist()
+    }
+
+    @Test fun aSlotColourErrorNamesTheSlotByIdAndName() {
+        val state = EditorState(DesignSettings(slots = defaultSlots().map { if (it.id == 1) it.copy(textColor = "bad") else it }))
+        show(state)
+        rule.onNodeWithTag(Tags.field("slots_field_error")).performScrollTo().assertTextContains("slot 1 (right).textColor", substring = true)
+        click(Tags.field("select_slot_1"))
+        // the selected slot shows the error at its own field instead
+        rule.onNodeWithTag(Tags.field("slots_field_error")).assertDoesNotExist()
+        rule.onNodeWithTag(Tags.error(Tags.field("slot_text"))).performScrollTo().assertExists()
+    }
+
+    // ---- numerals ----
+
+    @Test fun aSlotOverANumeralGetsASoftNoteThatNeverBlocksSending() {
+        val over = SlotDesign(0, "over", 200, 15, 50, 40) // on the 12
+        val state = EditorState(DesignSettings(slots = listOf(over)))
+        show(state)
+        rule.onNodeWithTag(Tags.field("slot_numeral_note_0")).performScrollTo().assertTextContains("numeral 12", substring = true)
+        assertTrue(geometryErrors(state).isEmpty() || state.errors.none { it.message.contains("numeral") })
+        rule.runOnIdle { state.update { it.copy(numerals = com.seyedjafari.analogplus.facegen.design.NumeralMode.OFF) } }
+        rule.onNodeWithTag(Tags.field("slot_numeral_note_0")).assertDoesNotExist()
+        rule.runOnIdle { state.update { it.copy(numerals = com.seyedjafari.analogplus.facegen.design.NumeralMode.QUARTERS) } }
+        rule.onNodeWithTag(Tags.field("slot_numeral_note_0")).assertExists()
+    }
+
+    @Test fun anotherSlotAwayFromTheNumeralsGetsNoNote() {
+        val state = EditorState(DesignSettings(slots = listOf(SlotDesign(0, "mid", 150, 106, 150, 76))))
+        show(state)
+        rule.onNodeWithTag(Tags.field("slot_numeral_note_0")).assertDoesNotExist()
+    }
+
+    // ---- gestures on the canvas ----
+
+    @Test fun tappingASlotSelectsItAndLeavesEveryDefaultSlotWhereItWas() {
+        val state = EditorState()
+        show(state)
+        val canvas = rule.onNodeWithTag(Tags.SLOT_CANVAS).performScrollTo()
+        val k = canvas.fetchSemanticsNode().size.width / 450f
+        for (s in defaultSlots()) { // all four sit off the 5 unit grid in at least one coordinate
+            canvas.performTouchInput { click(Offset((s.x + s.w / 2f) * k, (s.y + s.h / 2f) * k)) }
+            rule.waitForIdle()
+            assertEquals(defaultSlots(), state.design.slots)
+            rule.onNodeWithTag(Tags.field("slot_name")).assertExists() // the slot is selected
+            assertEquals(s.name, fieldText(Tags.field("slot_name")))
+        }
+    }
+
+    @Test fun aSmallWobbleDuringATapMovesNothing() {
+        val state = EditorState()
+        show(state)
+        val canvas = rule.onNodeWithTag(Tags.SLOT_CANVAS).performScrollTo()
+        val k = canvas.fetchSemanticsNode().size.width / 450f
+        val right = defaultSlots()[1]
+        val at = Offset((right.x + right.w / 2f) * k, (right.y + right.h / 2f) * k)
+        canvas.performTouchInput {
+            down(at)
+            moveTo(at + Offset(2.4f, 2.4f))
+            moveTo(at + Offset(-1f, 3f))
+            up()
+        }
+        rule.waitForIdle()
+        assertEquals(defaultSlots(), state.design.slots)
+    }
+
+    @Test fun aRealDragStillMovesTheSlotAndSnapsToTheGrid() {
+        val state = EditorState(twoSlots)
+        show(state)
+        val canvas = rule.onNodeWithTag(Tags.SLOT_CANVAS).performScrollTo()
+        val k = canvas.fetchSemanticsNode().size.width / 450f
+        canvas.performTouchInput { swipe(Offset(230f * k, 130f * k), Offset(230f * k, 100f * k), 300) } // b, 30 units up
+        rule.waitForIdle()
+        val b = slot(state, 1)
+        assertTrue("moved up: $b", b.y in 65..75)
+        assertEquals(0, b.y % 5)
+        assertEquals(190, b.x)
+    }
+
+    @Test fun tappingEmptyCanvasDeselectsButScrollingFromThereDoesNot() {
+        val state = EditorState()
+        show(state)
+        click(Tags.field("select_slot_1"))
+        rule.onNodeWithTag(Tags.field("slot_name")).assertExists()
+        val canvas = rule.onNodeWithTag(Tags.SLOT_CANVAS).performScrollTo()
+        val k = canvas.fetchSemanticsNode().size.width / 450f
+        // (15,15) is empty canvas outside the dial: a vertical swipe starting there is a scroll, not a tap
+        canvas.performTouchInput { swipe(Offset(15f * k, 120f * k), Offset(15f * k, 60f * k), 300) }
+        rule.waitForIdle()
+        rule.onNodeWithTag(Tags.field("slot_name")).assertExists()
+        assertEquals(defaultSlots(), state.design.slots)
+        // a clean tap on empty canvas deselects
+        rule.onNodeWithTag(Tags.SLOT_CANVAS).performScrollTo().performTouchInput { click(Offset(15f * k, 15f * k)) }
+        rule.waitForIdle()
+        rule.onNodeWithTag(Tags.field("slot_name")).assertDoesNotExist()
     }
 
     @Test fun ringNumbersAreWrittenAsTypedAndOutOfRangeShowsTheError() {

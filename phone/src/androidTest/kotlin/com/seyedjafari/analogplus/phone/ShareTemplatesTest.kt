@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -69,14 +70,37 @@ class ShareTemplatesTest {
         assertEquals(DesignSettings(), state.design)
     }
 
-    @Test fun tappingATemplateReplacesTheWholeDesign() {
+    @Test fun tappingATemplateAsksBeforeReplacingTheWholeDesign() {
         val state = EditorState(DesignSettings(accent = "#FF00FF00", showTitles = false))
         val store = freshStore()
         rule.setContent { TemplatesTab(state, store) }
         val midnight = Templates.all.first { it.name == "Midnight" }
-        assertNotEquals(midnight, state.design)
+        val before = state.design
+        assertNotEquals(midnight, before)
         rule.onNodeWithTag(Tags.template("Midnight")).performClick()
         rule.waitForIdle()
+        rule.onNodeWithTag(Tags.field("replace_dialog")).assertIsDisplayed()
+        rule.onNodeWithText("Replace your current design?").assertIsDisplayed()
+        rule.onNodeWithText("\"Midnight\" will replace what you are editing.").assertIsDisplayed()
+        assertEquals(before, state.design) // nothing yet
+        rule.onNodeWithTag(Tags.field("replace_cancel")).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(Tags.field("replace_dialog")).assertDoesNotExist()
+        assertEquals(before, state.design)
+        rule.onNodeWithTag(Tags.template("Midnight")).performClick()
+        rule.onNodeWithTag(Tags.field("replace_confirm")).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(Tags.field("replace_dialog")).assertDoesNotExist()
+        assertEquals(midnight, state.design)
+    }
+
+    @Test fun choosingTheDesignThatIsAlreadyOpenAsksNothing() {
+        val midnight = Templates.all.first { it.name == "Midnight" }
+        val state = EditorState(midnight)
+        rule.setContent { TemplatesTab(state, freshStore()) }
+        rule.onNodeWithTag(Tags.template("Midnight")).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(Tags.field("replace_dialog")).assertDoesNotExist()
         assertEquals(midnight, state.design)
     }
 
@@ -88,9 +112,17 @@ class ShareTemplatesTest {
         rule.onNodeWithTag(Tags.SAVE_BUTTON).performClick()
         rule.onNodeWithTag(Tags.saved("Mine")).assertIsDisplayed()
         assertEquals("#FF123456", store.savedDesigns().single().design.accent)
+        // the design being edited is the one just saved: choosing it again is a no-op
+        rule.onNodeWithTag(Tags.saved("Mine")).performClick()
+        rule.onNodeWithTag(Tags.field("replace_dialog")).assertDoesNotExist()
 
         state.replace(DesignSettings())
-        rule.onNodeWithTag(Tags.saved("Mine")).performClick()
+        rule.onNodeWithTag(Tags.saved("Mine")).performClick() // the name asks like the Load button does
+        rule.onNodeWithTag(Tags.field("replace_dialog")).assertIsDisplayed()
+        rule.onNodeWithTag(Tags.field("replace_cancel")).performClick()
+        assertEquals(DesignSettings(), state.design)
+        rule.onNodeWithTag(Tags.field("saved_load_Mine")).performClick()
+        rule.onNodeWithTag(Tags.field("replace_confirm")).performClick()
         rule.waitForIdle()
         assertEquals("#FF123456", state.design.accent)
 
@@ -121,6 +153,7 @@ class ShareTemplatesTest {
         rule.onNodeWithTag(Tags.SEND_VALIDATION).assertIsDisplayed()
         rule.onNodeWithTag(Tags.tab("templates")).performScrollTo().performClick()
         rule.onNodeWithTag(Tags.template("Light")).performClick()
+        rule.onNodeWithTag(Tags.field("replace_confirm")).performClick()
         rule.waitForIdle()
         assertEquals(Templates.all.first { it.name == "Light" }, state.design)
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled()

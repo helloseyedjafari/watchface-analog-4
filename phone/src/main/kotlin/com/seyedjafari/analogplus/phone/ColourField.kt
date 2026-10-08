@@ -32,6 +32,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.parseArgb
 
@@ -40,12 +41,15 @@ val COLOUR_PRESETS: List<String> = listOf(
     "#FFFFFFFF", "#FF000000", "#FFE22B07", "#FF1E6BFF", "#FF2EC46A", "#FFFFB000", "#FFE0289B", "#FF8C8C8C",
 )
 
+private const val MAX_ERROR_CHARS = 200
+
 /** Test tag of a preset chip: `preset_<fieldTag>_<hex>`. */
 fun presetTag(fieldTag: String, hex: String) = "preset_${fieldTag}_$hex"
 
 /**
  * A hex text field "#AARRGGBB" with a colour swatch, an error line when [errorText] is not null and preset chips.
- * [onChange] receives the raw text on every keystroke (valid or not). The input field carries [fieldTag] as test tag,
+ * [onChange] receives the text on every keystroke (valid or not) without surrounding whitespace, so a pasted
+ * "#FF1E6BFF " is accepted. The input field carries [fieldTag] as test tag,
  * its error line `Tags.error(fieldTag)`.
  */
 @Composable
@@ -61,7 +65,7 @@ fun ColourField(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(
                 value = value,
-                onValueChange = onChange,
+                onValueChange = { onChange(normaliseColourInput(it)) },
                 label = { Text(label) },
                 singleLine = true,
                 isError = errorText != null,
@@ -77,7 +81,9 @@ fun ColourField(
         }
         if (errorText != null) {
             Text(
-                errorText,
+                errorText.shortForDisplay(MAX_ERROR_CHARS),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = if (fieldTag.isNotBlank()) Modifier.testTag(Tags.error(fieldTag)) else Modifier,

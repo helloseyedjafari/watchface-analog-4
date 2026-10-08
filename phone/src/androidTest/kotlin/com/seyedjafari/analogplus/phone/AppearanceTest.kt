@@ -197,6 +197,78 @@ class AppearanceTest {
         assertNull(state.design.secondHandColor)
     }
 
+    @Test fun aPastedColourWithSurroundingWhitespaceIsAccepted() {
+        val state = EditorState()
+        host(state) { ColoursTab(it) }
+        rule.onNodeWithTag(Tags.ACCENT_FIELD).performTextReplacement("$blue ")
+        assertEquals(blue, state.design.accent)
+        rule.onNodeWithTag(Tags.error(Tags.ACCENT_FIELD)).assertDoesNotExist()
+        rule.onNodeWithTag(Tags.ACCENT_FIELD).performTextReplacement(" \t$blue\n")
+        assertEquals(blue, state.design.accent)
+        assertTrue(state.errors.isEmpty())
+    }
+
+    @Test fun aHugeBadColourShowsAShortenedMessage() {
+        val state = EditorState(com.seyedjafari.analogplus.facegen.design.DesignSettings(accent = "z".repeat(3_000)))
+        host(state) { ColoursTab(it) }
+        val shown = rule.onNodeWithTag(Tags.error(Tags.ACCENT_FIELD)).fetchSemanticsNode()
+            .config[androidx.compose.ui.semantics.SemanticsProperties.Text].joinToString("") { it.text }
+        assertTrue(shown, shown.length < 100)
+        assertTrue(shown, shown.contains("is not a colour"))
+    }
+
+    /** A 1-bit grey PNG of [w] x [h] pixels written by hand: a few KB on disk, but 4 bytes per pixel once decoded. */
+    private fun hugePng(w: Int, h: Int): ByteArray {
+        fun chunk(out: ByteArrayOutputStream, type: String, data: ByteArray) {
+            val t = type.toByteArray(Charsets.US_ASCII)
+            val len = data.size
+            out.write(byteArrayOf((len ushr 24).toByte(), (len ushr 16).toByte(), (len ushr 8).toByte(), len.toByte()))
+            out.write(t); out.write(data)
+            val crc = java.util.zip.CRC32().apply { update(t); update(data) }.value.toInt()
+            out.write(byteArrayOf((crc ushr 24).toByte(), (crc ushr 16).toByte(), (crc ushr 8).toByte(), crc.toByte()))
+        }
+        fun int(v: Int) = byteArrayOf((v ushr 24).toByte(), (v ushr 16).toByte(), (v ushr 8).toByte(), v.toByte())
+        val out = ByteArrayOutputStream()
+        out.write(byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte(), 13, 10, 26, 10))
+        chunk(out, "IHDR", int(w) + int(h) + byteArrayOf(1, 0, 0, 0, 0))
+        val row = ByteArray(1 + (w + 7) / 8)
+        val deflater = java.util.zip.Deflater(9)
+        val idat = ByteArrayOutputStream()
+        java.util.zip.DeflaterOutputStream(idat, deflater).use { z -> repeat(h) { z.write(row) } }
+        chunk(out, "IDAT", idat.toByteArray())
+        chunk(out, "IEND", ByteArray(0))
+        return out.toByteArray()
+    }
+
+    @Test fun aHugeImageIsDecodedAsASmallThumbnailOrNotAtAll() {
+        val png = hugePng(65_535, 500)
+        assertTrue(png.size < 200_000)
+        val bmp = decodeThumbnail(png)
+        // never the 130 MB the full image would take: either a bitmap of about 1 MP at most, or null
+        if (bmp != null) {
+            assertTrue("${bmp.width} x ${bmp.height}", bmp.width.toLong() * bmp.height <= THUMB_MAX_PIXELS)
+            assertTrue(maxOf(bmp.width, bmp.height) <= THUMB_MAX_SIDE)
+        }
+        assertNull(decodeThumbnail(ByteArray(100) { 7 }))
+        assertNull(decodeThumbnail(ByteArray(0)))
+    }
+
+    @Test fun backgroundTabWithAHugeOrBrokenPhotoStillOpens() {
+        val state = EditorState()
+        host(state) { BackgroundTab(it) }
+        rule.onNodeWithTag(Tags.field("background_kind_PHOTO")).performClick()
+        state.update { it.copy(background = it.background.copy(photoJpeg = hugePng(65_535, 500))) }
+        rule.waitUntil(15_000) {
+            rule.onAllNodesWithTagCount(Tags.field("background_thumb")) + rule.onAllNodesWithTagCount(Tags.field("background_thumb_unavailable")) == 1
+        }
+        // bytes that are no image: the preview says so, the rest of the tab keeps working
+        state.update { it.copy(background = it.background.copy(photoJpeg = ByteArray(50) { 3 })) }
+        rule.waitUntil(15_000) { rule.onAllNodesWithTagCount(Tags.field("background_thumb_unavailable")) == 1 }
+        rule.onNodeWithTag(Tags.field("background_thumb_unavailable")).performScrollTo().assertTextEquals("Preview unavailable")
+        rule.onNodeWithTag(Tags.field("background_remove")).performScrollTo().performClick()
+        assertNull(state.design.background.photoJpeg)
+    }
+
     private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.onAllNodesWithTagCount(tag: String): Int =
         onAllNodesWithTag(tag).fetchSemanticsNodes().size
 }

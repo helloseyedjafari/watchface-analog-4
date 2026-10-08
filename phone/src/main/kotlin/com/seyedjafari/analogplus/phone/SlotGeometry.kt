@@ -3,9 +3,14 @@ package com.seyedjafari.analogplus.phone
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.RingLayout
 import com.seyedjafari.analogplus.facegen.design.SlotDesign
+import com.seyedjafari.analogplus.facegen.design.NumeralMode
+import com.seyedjafari.analogplus.facegen.xml.CoreSections
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /** Why an edit of the movable slots was refused. [message] is what the editor shows. */
 enum class SlotRefusal(val message: String) {
@@ -37,12 +42,47 @@ object SlotGeometry {
     const val GRID = 5
     const val MAX_SLOTS = 6
     const val MAX_COMPLICATIONS = 8
+
+    /** Slots (and ring colours) the editor draws and lists; an imported design may carry thousands. */
+    const val MAX_SHOWN = 8
     const val DEFAULT_W = 80
     const val DEFAULT_H = 60
     private const val SPOT_STEP = 10
 
     /** Sizes tried by [addSlot], biggest first, so a crowded dial still gets a (smaller) slot. */
     private val ADD_SIZES = listOf(DEFAULT_W to DEFAULT_H, 60 to 45, MIN_SIZE to MIN_SIZE)
+
+    /**
+     * Where the numeral tiles are: number (1..12) to the top-left corner of its [CoreSections.NUMERAL_BOX] square.
+     * The same arithmetic as `NumeralsSection` in facegen (centres on a ring of 185.6 units around (225,225), rounded
+     * to integers); `SlotGeometryTest` pins it to the XML that section writes.
+     */
+    fun numeralTiles(mode: NumeralMode): Map<Int, Pair<Int, Int>> {
+        val shown = when (mode) {
+            NumeralMode.ALL -> (1..12).toList()
+            NumeralMode.QUARTERS -> listOf(3, 6, 9, 12)
+            NumeralMode.OFF -> emptyList()
+        }
+        val half = CoreSections.NUMERAL_BOX / 2.0
+        return shown.associateWith { n ->
+            val a = n * 30 * PI / 180.0
+            val cx = CENTRE + sin(a) * NUMERAL_RING
+            val cy = CENTRE - cos(a) * NUMERAL_RING
+            (cx - half).roundToInt() to (cy - half).roundToInt()
+        }
+    }
+
+    private const val NUMERAL_RING = 185.6
+
+    /** The numerals (1..12, ascending) whose tile intersects slot [s]; empty when numerals are OFF. */
+    fun numeralsCovered(s: SlotDesign, mode: NumeralMode): List<Int> {
+        val box = CoreSections.NUMERAL_BOX
+        return numeralTiles(mode).filter { (_, tile) ->
+            val (tx, ty) = tile
+            s.x.toLong() < tx + box && tx.toLong() < s.x.toLong() + s.w &&
+                s.y.toLong() < ty + box && ty.toLong() < s.y.toLong() + s.h
+        }.keys.sorted()
+    }
 
     /** Rounds to the nearest multiple of [GRID]. */
     fun snap(v: Int): Int = Math.floorDiv(v + GRID / 2, GRID) * GRID
