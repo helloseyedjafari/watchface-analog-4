@@ -17,6 +17,7 @@ private class FakeBackend : PushBackend {
     val calls = mutableListOf<String>()
     var failWith: Exception? = null
     var failSetActive: Exception? = null
+    var failUpdateWith: Exception? = null
     var failIsActive: Exception? = null
     /** Time every call takes, and how many calls overlap (must stay at 1 behind the controller's lock). */
     var callDelayMs = 0L
@@ -33,7 +34,7 @@ private class FakeBackend : PushBackend {
         InstalledFace("slot0", PKG, version(apk)).also { face = it }
     }
     override suspend fun update(slotId: String, apk: File, token: String): InstalledFace = tracked {
-        calls += "update:$slotId"; failWith?.let { throw it }
+        calls += "update:$slotId"; failWith?.let { throw it }; failUpdateWith?.let { throw it }
         InstalledFace(slotId, PKG, version(apk)).also { face = it }
     }
     override suspend fun setActive(slotId: String) { calls += "setActive:$slotId"; failSetActive?.let { throw it } }
@@ -51,6 +52,24 @@ private class FakeStore : PushStore {
 }
 
 class PushControllerLogicTest {
+    @Test fun aFailedUpdateExplainsTheSigningKeyCase() = runTest {
+        val backend = FakeBackend().also { it.face = InstalledFace("slot0", FakeBackend.PKG, 1) }
+        backend.failUpdateWith = IllegalStateException("Unknown error")
+        val r = PushController(backend, FakeStore()).apply(apk(2), "t", 2)
+        assertFalse(r.ok)
+        assertTrue(r.error!!, r.error!!.contains("signing key") && r.error!!.contains("uninstall the Analog Plus app on the watch"))
+    }
+
+    @Test fun aFailedAddHasNoKeyHint() = runTest {
+        val backend = FakeBackend().also { it.failWith = null }
+        val bad = object : PushBackend by backend {
+            override suspend fun add(apk: File, token: String): InstalledFace = throw IllegalStateException("slot limit")
+        }
+        val r = PushController(bad, FakeStore()).apply(apk(1), "t", 1)
+        assertFalse(r.ok)
+        assertFalse(r.error!!.contains("signing key"))
+    }
+
     private val backend = FakeBackend()
     private val store = FakeStore()
     private val controller = PushController(backend, store)

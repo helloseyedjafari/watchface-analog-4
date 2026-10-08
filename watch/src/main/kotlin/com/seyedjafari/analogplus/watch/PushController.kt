@@ -58,7 +58,12 @@ class PushController internal constructor(
             when {
                 installed != null && versionCode <= installed.versionCode -> fail(versionCode, VERSION_NOT_HIGHER)
                 installed == null -> ok(backend.add(apk, token))
-                else -> ok(backend.update(installed.slotId, apk, token))
+                else -> try {
+                    ok(backend.update(installed.slotId, apk, token))
+                } catch (e: Exception) {
+                    rethrowCancellation(e)
+                    fail(versionCode, describe(e) + UPDATE_KEY_HINT)
+                }
             }
         }
     }
@@ -127,5 +132,13 @@ class PushController internal constructor(
         private val lock = Mutex()
 
         const val VERSION_NOT_HIGHER = "version not higher"
+
+        /**
+         * An update can fail because the phone now signs with another key (phone app reinstalled or its key reset): the
+         * library then reports a generic error. The phone cannot know, so the watch says what to try.
+         */
+        const val UPDATE_KEY_HINT = " If this phone was reinstalled or its signing key was reset, the watch only accepts updates " +
+            "signed with the original key: uninstall the Analog Plus app on the watch (this removes the face), install it " +
+            "again and send again."
     }
 }

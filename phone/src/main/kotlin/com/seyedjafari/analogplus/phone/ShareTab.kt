@@ -124,6 +124,8 @@ fun ShareTab(state: EditorState, keyStoreFactory: (Context) -> KeyStore = { KeyS
             modifier = Modifier.testTag(Tags.SHARE_LOAD_BUTTON),
         ) { Text("Load design") }
 
+        QrSection(state, Modifier.padding(top = 16.dp))
+
         SigningKeySection(keyStoreFactory, Modifier.padding(top = 16.dp))
     }
 }
@@ -156,8 +158,8 @@ private fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier: 
             text = {
                 Text(
                     "The watch only accepts updates signed with the key it first saw. After a reset the watch will refuse new " +
-                        "faces until the old Analog Plus face is removed from the watch (adb shell pm uninstall " +
-                        "com.seyedjafari.analogplus.watchfacepush.analog).",
+                        "faces until the old Analog Plus face is removed from the watch: uninstall the Analog Plus app on the " +
+                        "watch (this removes the face), then install it again.",
                 )
             },
             confirmButton = {
