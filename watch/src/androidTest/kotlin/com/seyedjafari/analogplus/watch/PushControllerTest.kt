@@ -12,7 +12,7 @@ import org.junit.Test
 
 /**
  * Runs on the Wear OS 6 watch emulator against the real Watch Face Push service.
- * Faces: v1 = bundled default (assets/default_watchface.apk, token in R.string.default_wf_token),
+ * Faces: v1 = androidTest/assets/face_v1.apk + face_v1.token,
  *        v2 = androidTest/assets/face_v2.apk + face_v2.token (see scripts/build_default_face.sh --help).
  * Gradle reinstalls the app per run, which resets the face slot and the one-shot activation on the emulator.
  */
@@ -36,9 +36,9 @@ class PushControllerTest {
         prefs.edit().clear().commit()
         system = CountingBackend(LibraryPushBackend(target))
         controller = PushController(system, PrefsPushStore(prefs))
-        v1 = copy(target.assets.open("default_watchface.apk"), "v1.apk")
+        v1 = copy(testAssets.open("face_v1.apk"), "v1.apk")
         v2 = copy(testAssets.open("face_v2.apk"), "v2.apk")
-        tokenV1 = target.getString(target.resources.getIdentifier("default_wf_token", "string", target.packageName))
+        tokenV1 = testAssets.open("face_v1.token").bufferedReader().readText().trim()
         tokenV2 = testAssets.open("face_v2.token").bufferedReader().readText().trim()
     }
 

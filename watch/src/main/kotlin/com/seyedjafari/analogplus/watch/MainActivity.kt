@@ -8,7 +8,6 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -46,7 +45,7 @@ class MainActivity : Activity() {
         requestMissing(PERM_PUSH, PERM_ACTIVE).also { if (!it) refresh() }
     }
 
-    override fun onResume() { super.onResume(); if (::statusView.isInitialized) refresh(installDefault = false) }
+    override fun onResume() { super.onResume(); if (::statusView.isInitialized) refresh() }
 
     override fun onDestroy() { scope.cancel(); super.onDestroy() }
 
@@ -76,15 +75,8 @@ class MainActivity : Activity() {
         }
     }
 
-    /** First launch: with no face installed, install the bundled default. */
-    private fun refresh(installDefault: Boolean = true) {
-        scope.launch {
-            if (installDefault && controller.status().installedVersion == null) {
-                val result = controller.apply(copyAsset("default_watchface.apk"), getString(R.string.default_wf_token), 1)
-                noteView.text = if (result.ok) "Default face installed." else result.error.orEmpty()
-            }
-            render()
-        }
+    private fun refresh() {
+        scope.launch { render() }
     }
 
     private suspend fun render() {
@@ -95,7 +87,7 @@ class MainActivity : Activity() {
             ActiveState.UNKNOWN -> "unknown"
         }
         statusView.text = buildString {
-            append(if (s.installedVersion == null) "Face: none" else "Face: version ${s.installedVersion}")
+            append(if (s.installedVersion == null) "Face: none yet.\nSend one from the phone app." else "Face: version ${s.installedVersion}")
             append("\nActive: ").append(active)
             s.lastError?.let { append("\nError: ").append(it) }
         }
@@ -103,11 +95,5 @@ class MainActivity : Activity() {
         if (s.active != ActiveState.ACTIVE && controller.activationDone && noteView.text.isNullOrEmpty()) {
             noteView.text = "Activation was already used. Pick Analog Plus in the watch face picker."
         }
-    }
-
-    private fun copyAsset(name: String): File {
-        val f = File(cacheDir, name)
-        assets.open(name).use { i -> f.outputStream().use { o -> i.copyTo(o) } }
-        return f
     }
 }
