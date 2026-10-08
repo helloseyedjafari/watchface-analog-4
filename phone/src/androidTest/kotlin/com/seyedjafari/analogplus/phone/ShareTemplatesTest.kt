@@ -180,7 +180,7 @@ class ShareTemplatesTest {
             rule.onNodeWithTag(Tags.RESET_KEY_CONFIRM).performClick()
             // the reset runs off the main thread
             rule.waitUntil(10_000) { rule.onAllNodesWithTag(Tags.RESET_KEY_NOTICE).fetchSemanticsNodes().isNotEmpty() }
-            rule.onNodeWithTag(Tags.RESET_KEY_NOTICE).assertIsDisplayed()
+            rule.onNodeWithTag(Tags.RESET_KEY_NOTICE).performScrollTo().assertIsDisplayed() // the QR section above pushes it down
             assertEquals(false, keys.hasKey())
             assertNotEquals(before, keys.pem())
         } finally {
