@@ -122,9 +122,8 @@ private fun SendPanel(state: EditorState, send: SendController) {
             Text(
                 sendStatusText(ui),
                 color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                // no line cap: the panel is height-capped and scrolls, and the advice at the end of a message must stay reachable
                 style = MaterialTheme.typography.bodyMedium,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.testTag(Tags.SEND_STATUS),
             )
             if (errors.isNotEmpty()) {

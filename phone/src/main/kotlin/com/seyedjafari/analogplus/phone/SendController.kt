@@ -125,8 +125,11 @@ class SendController(
 
     private fun refusalText(error: String?, keyChanged: Boolean): String {
         val raw = "The watch refused the face: ${error ?: "unknown reason"}"
-        // a lower version number is not a key problem; any other refusal under a changed key probably is
-        if (!keyChanged || error?.contains("version not higher", ignoreCase = true) == true) return raw
+        // Only a refusal of the UPDATE step can be a key problem: not "version not higher", and not failures that happen
+        // before any update (file not received, superseded, unreadable message). The watch names the update step in its
+        // error text ("UpdateWatchFace failed ...") and adds its own signing-key hint.
+        val fromUpdate = error != null && (error.contains("UpdateWatchFace", ignoreCase = true) || error.contains("signing key", ignoreCase = true))
+        if (!keyChanged || !fromUpdate) return raw
         return "$KEY_MISMATCH_TEXT\n\n(The watch said: ${error ?: "unknown reason"})"
     }
 

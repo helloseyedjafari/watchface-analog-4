@@ -82,7 +82,8 @@ class QrCodeTest {
     @Test fun dialogNameIsShortAndHasNoControlCharacters() {
         assertEquals("Neon", QrCode.dialogName("Ne\u0000on"))
         assertEquals("ab", QrCode.dialogName("a\nb"))
-        assertEquals(40, QrCode.dialogName("x".repeat(100)).length)
-        assertEquals("Unnamed", QrCode.dialogName("\u0007\n "))
+        assertEquals(41, QrCode.dialogName("x".repeat(100)).length) // 40 characters plus the ellipsis
+        assertEquals("(no name)", QrCode.dialogName("\u0007\n "))
+        assertEquals("Neon", QrCode.dialogName("Ne\u202Eon")) // direction overrides are removed too
     }
 }

@@ -98,8 +98,5 @@ object QrCode {
     }
 
     /** The design name as shown in the confirm dialog: control characters removed, at most 40 characters. */
-    fun dialogName(name: String): String {
-        val clean = name.filterNot { it.isISOControl() }.trim().take(40).trim()
-        return clean.ifEmpty { "Unnamed" }
-    }
+    fun dialogName(name: String): String = com.seyedjafari.analogplus.phone.dialogName(name)
 }

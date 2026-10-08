@@ -64,10 +64,20 @@ class SendControllerTest {
         assertEquals("the fingerprint of the last accepted face stays", "aaaaaaaaaaaaaaaa", h.store.lastSentKeyFingerprint())
     }
 
-    @Test fun differentKeyExplainsEvenAnUnknownWatchError() = runTest {
+    @Test fun differentKeyDoesNotBlameTheKeyForFailuresBeforeTheUpdateStep() = runTest {
         val h = Harness(this, testScheduler, tmp.root)
         h.refusal = null; sendOnce(h)
-        h.key = "bbbbbbbbbbbbbbbb"; h.refusal = "something nobody has seen"
+        h.key = "bbbbbbbbbbbbbbbb"
+        for (early in listOf("face file not received (expected 5 bytes)", "superseded by a newer apply request", "unreadable apply message: x")) {
+            h.refusal = early
+            assertEquals("The watch refused the face: $early", (sendOnce(h) as SendUi.Error).text)
+        }
+    }
+
+    @Test fun differentKeyAndTheWatchsOwnKeyHintAreExplained() = runTest {
+        val h = Harness(this, testScheduler, tmp.root)
+        h.refusal = null; sendOnce(h)
+        h.key = "bbbbbbbbbbbbbbbb"; h.refusal = "Unknown error. If this phone was reinstalled or its signing key was reset, ..."
         assertTrue((sendOnce(h) as SendUi.Error).text.startsWith(KEY_MISMATCH_TEXT))
     }
 
