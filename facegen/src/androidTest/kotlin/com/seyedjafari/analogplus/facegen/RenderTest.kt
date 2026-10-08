@@ -163,6 +163,28 @@ class RenderTest {
         assertTrue(Color.green(edge) > 200)
     }
 
+    @Test fun exifRotationIsApplied() {
+        // 600x300 photo, left half red and right half blue, tagged "rotate 90 clockwise": red ends up on top
+        val src = Bitmap.createBitmap(600, 300, Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(src)
+        val p = android.graphics.Paint()
+        p.color = Color.RED; c.drawRect(0f, 0f, 300f, 300f, p)
+        p.color = Color.BLUE; c.drawRect(300f, 0f, 600f, 300f, p)
+        val file = java.io.File.createTempFile("exif", ".jpg", ctx.cacheDir)
+        file.outputStream().use { src.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+        android.media.ExifInterface(file.path).apply {
+            setAttribute(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_ROTATE_90.toString())
+            saveAttributes()
+        }
+        val d = DesignSettings(background = BackgroundDesign(BackgroundKind.PHOTO, photoJpeg = file.readBytes()))
+        val b = ResourceRenderer.render(d, ctx).named("background.jpg")!!.bitmap()
+        val top = b.getPixel(225, 40)
+        val bottom = b.getPixel(225, 410)
+        assertTrue("top should be red", Color.red(top) > 200 && Color.blue(top) < 60)
+        assertTrue("bottom should be blue", Color.blue(bottom) > 200 && Color.red(bottom) < 60)
+        file.delete()
+    }
+
     @Test fun smallPhotoStillProducesA450Square() {
         val bos = ByteArrayOutputStream()
         Bitmap.createBitmap(100, 60, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.JPEG, 90, bos)

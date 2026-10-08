@@ -180,8 +180,9 @@ object ResourceRenderer {
             inSampleSize = M.sampleSize(bounds.outWidth, bounds.outHeight, side)
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
-        val src = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
             ?: throw IllegalArgumentException("photo could not be decoded")
+        val src = upright(decoded, bytes)
         val out = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
         val c = Canvas(out)
         c.drawColor(Color.BLACK)
@@ -190,6 +191,30 @@ object ResourceRenderer {
         val top = (src.height - s) / 2
         c.drawBitmap(src, Rect(left, top, left + s, top + s), Rect(0, 0, side, side), Paint(Paint.FILTER_BITMAP_FLAG))
         src.recycle()
+        return out
+    }
+
+    /** Applies the EXIF orientation of `bytes` so a portrait phone photo is not sideways. Recycles `bmp` if it returns a new bitmap. */
+    private fun upright(bmp: Bitmap, bytes: ByteArray): Bitmap {
+        val orientation = try {
+            android.media.ExifInterface(java.io.ByteArrayInputStream(bytes))
+                .getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
+        } catch (e: Exception) {
+            android.media.ExifInterface.ORIENTATION_NORMAL
+        }
+        val m = android.graphics.Matrix()
+        when (orientation) {
+            android.media.ExifInterface.ORIENTATION_ROTATE_90 -> m.postRotate(90f)
+            android.media.ExifInterface.ORIENTATION_ROTATE_180 -> m.postRotate(180f)
+            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> m.postRotate(270f)
+            android.media.ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> m.postScale(-1f, 1f)
+            android.media.ExifInterface.ORIENTATION_FLIP_VERTICAL -> m.postScale(1f, -1f)
+            android.media.ExifInterface.ORIENTATION_TRANSPOSE -> { m.postRotate(90f); m.postScale(-1f, 1f) }
+            android.media.ExifInterface.ORIENTATION_TRANSVERSE -> { m.postRotate(270f); m.postScale(-1f, 1f) }
+            else -> return bmp
+        }
+        val out = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
+        if (out !== bmp) bmp.recycle()
         return out
     }
 

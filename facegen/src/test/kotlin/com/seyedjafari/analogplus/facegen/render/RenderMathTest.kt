@@ -98,4 +98,10 @@ class RenderMathTest {
         assertEquals("6,543", M.sampleFor("bottom").first)
         assertEquals("12", M.sampleFor("custom").first)
     }
+
+    @Test fun extremeAspectRatioIsSampledDownToTheMemoryCap() {
+        val s = M.sampleSize(200_000, 500, 450)
+        assertTrue((200_000L / s) * (500L / s) <= M.MAX_DECODED_PIXELS)
+        assertEquals(1, M.sampleSize(450, 450, 450))
+    }
 }

@@ -128,11 +128,18 @@ internal object RenderMath {
     /** JPEG qualities to try, highest first. */
     fun jpegQualities(start: Int = 90, min: Int = 30, step: Int = 5): List<Int> = generateSequence(start) { it - step }.takeWhile { it >= min }.toList()
 
-    /** Largest power-of-two sample size that keeps the shorter side at least `side` pixels. */
+    /** Most pixels a photo may have after sampling (64 MB as ARGB_8888). A panorama must not exhaust memory. */
+    const val MAX_DECODED_PIXELS = 16_000_000L
+
+    /**
+     * Largest power-of-two sample size that keeps the shorter side at least `side` pixels, raised further when the
+     * decoded bitmap would still exceed [MAX_DECODED_PIXELS] (extreme aspect ratios).
+     */
     fun sampleSize(width: Int, height: Int, side: Int): Int {
         val shorter = minOf(width, height)
         var s = 1
         while (shorter / (s * 2) >= side) s *= 2
+        while ((width.toLong() / s) * (height.toLong() / s) > MAX_DECODED_PIXELS) s *= 2
         return s
     }
 }
