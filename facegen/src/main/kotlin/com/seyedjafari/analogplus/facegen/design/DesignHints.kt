@@ -42,7 +42,7 @@ object Ambient {
 
 /** Soft, non-blocking messages for the editor; empty when nothing needs saying. */
 fun designHints(d: DesignSettings): List<String> = buildList {
-    if (Ambient.handsDark(d)) add("Dark hands are hard to see in always-on mode (the background turns black).")
-    if (Ambient.numeralsDark(d)) add("Dark numerals are hard to see in always-on mode (the background turns black).")
-    if (Ambient.ticksDark(d)) add("Dark ticks are hard to see in always-on mode (the background turns black).")
+    if (Ambient.handsDark(d)) add("Dark hands turn light grey in always-on mode, because the background turns black.")
+    if (Ambient.numeralsDark(d)) add("Dark numerals turn light grey in always-on mode, because the background turns black.")
+    if (Ambient.ticksDark(d)) add("Dark ticks turn light grey in always-on mode, because the background turns black.")
 }
