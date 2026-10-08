@@ -10,14 +10,6 @@ object Templates {
         background = BackgroundDesign(BackgroundKind.GRADIENT, color = "#FF0B1230", color2 = "#FF000000"),
     )
 
-    private val light = DesignSettings(
-        name = "Light",
-        accent = "#FFD8330B", handColor = "#FF1A1A1A", inlayColor = "#FF6E6E6E",
-        tickColor = "#FF555555", numeralColor = "#FF111111",
-        background = BackgroundDesign(color = "#FFF4F1EA", color2 = "#FFF4F1EA"),
-        slots = defaultSlots().map { it.copy(textColor = "#FF111111", iconColor = "#FF333333") },
-    )
-
     private val neon = DesignSettings(
         name = "Neon",
         accent = "#FFFF2BD6", handColor = "#FF39FFE0", inlayColor = "#FF0A2A26",
@@ -36,5 +28,5 @@ object Templates {
         slots = defaultSlots().filter { it.id == 0 || it.id == 3 },
     )
 
-    val all: List<DesignSettings> = listOf(classic, midnight, light, neon, minimal)
+    val all: List<DesignSettings> = listOf(classic, midnight, neon, minimal)
 }

@@ -1,5 +1,6 @@
 package com.seyedjafari.analogplus.facegen.xml
 
+import com.seyedjafari.analogplus.facegen.design.Ambient
 import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.parseArgb
@@ -34,6 +35,10 @@ object CoreSections {
 
 internal const val AMBIENT_DIAL = """<Variant mode="AMBIENT" target="alpha" value="120"/>"""
 internal const val AMBIENT_HIDE = """<Variant mode="AMBIENT" target="alpha" value="0"/>"""
+internal const val AMBIENT_SHOW = """<Variant mode="AMBIENT" target="alpha" value="255"/>"""
+
+/** Attribute for the ambient-only twins of dark elements: invisible until the AMBIENT variant raises the alpha. */
+private const val AMBIENT_ONLY = """ alpha="0""""
 
 private const val CENTER = 225
 
@@ -90,34 +95,50 @@ object TicksSection : XmlSection {
 
     private fun angle(i: Int, perStep: Double) = i * perStep * PI / 180.0
 
-    override fun render(d: DesignSettings): String {
-        val parts = mutableListOf<String>()
-        if (d.showMinuteTicks) {
-            val inner = TICK_OUTER - d.minuteTickLength
-            val lines = (0 until 60).filter { it % 5 != 0 }.joinToString("\n") { i ->
-                val a = angle(i, 6.0)
-                val sx = sin(a); val sy = -cos(a)
-                """      <Line startX="${fmt(CENTER + sx * inner)}" startY="${fmt(CENTER + sy * inner)}" endX="${fmt(CENTER + sx * TICK_OUTER)}" endY="${fmt(CENTER + sy * TICK_OUTER)}">
-        <Stroke color="${d.tickColor}" thickness="${d.minuteTickWidth}"/>
+    private fun minuteTicks(d: DesignSettings, name: String, color: String, variants: String, attrs: String): String {
+        val inner = TICK_OUTER - d.minuteTickLength
+        val lines = (0 until 60).filter { it % 5 != 0 }.joinToString("\n") { i ->
+            val a = angle(i, 6.0)
+            val sx = sin(a); val sy = -cos(a)
+            """      <Line startX="${fmt(CENTER + sx * inner)}" startY="${fmt(CENTER + sy * inner)}" endX="${fmt(CENTER + sx * TICK_OUTER)}" endY="${fmt(CENTER + sy * TICK_OUTER)}">
+        <Stroke color="$color" thickness="${d.minuteTickWidth}"/>
       </Line>"""
-            }
-            parts += """    <PartDraw name="minute_ticks" x="0" y="0" width="450" height="450">
-      $AMBIENT_DIAL
+        }
+        return """    <PartDraw name="$name" x="0" y="0" width="450" height="450"$attrs>
+      $variants
 $lines
     </PartDraw>"""
-        }
-        if (d.fiveMinuteDots) {
-            val dots = (0 until 12).joinToString("\n") { i ->
-                val a = angle(i, 30.0)
-                val cx = CENTER + sin(a) * DOT_RING; val cy = CENTER - cos(a) * DOT_RING
-                """      <Ellipse x="${fmt(cx - DOT_RADIUS)}" y="${fmt(cy - DOT_RADIUS)}" width="${fmt(2 * DOT_RADIUS)}" height="${fmt(2 * DOT_RADIUS)}">
-        <Fill color="${d.tickColor}"/>
+    }
+
+    private fun hourDots(name: String, color: String, variants: String, attrs: String): String {
+        val dots = (0 until 12).joinToString("\n") { i ->
+            val a = angle(i, 30.0)
+            val cx = CENTER + sin(a) * DOT_RING; val cy = CENTER - cos(a) * DOT_RING
+            """      <Ellipse x="${fmt(cx - DOT_RADIUS)}" y="${fmt(cy - DOT_RADIUS)}" width="${fmt(2 * DOT_RADIUS)}" height="${fmt(2 * DOT_RADIUS)}">
+        <Fill color="$color"/>
       </Ellipse>"""
-            }
-            parts += """    <PartDraw name="hour_dots" x="0" y="0" width="450" height="450">
-      $AMBIENT_DIAL
+        }
+        return """    <PartDraw name="$name" x="0" y="0" width="450" height="450"$attrs>
+      $variants
 $dots
     </PartDraw>"""
+    }
+
+    /**
+     * Dark ticks (see [Ambient.isDark]) are hidden in ambient and replaced by an ambient-only twin in the light colour;
+     * any other colour is just dimmed in ambient, as before.
+     */
+    override fun render(d: DesignSettings): String {
+        val dark = Ambient.ticksDark(d)
+        val parts = mutableListOf<String>()
+        val own = if (dark) AMBIENT_HIDE else AMBIENT_DIAL
+        if (d.showMinuteTicks) {
+            parts += minuteTicks(d, "minute_ticks", d.tickColor, own, "")
+            if (dark) parts += minuteTicks(d, "minute_ticks_ambient", Ambient.LIGHT, AMBIENT_DIAL, AMBIENT_ONLY)
+        }
+        if (d.fiveMinuteDots) {
+            parts += hourDots("hour_dots", d.tickColor, own, "")
+            if (dark) parts += hourDots("hour_dots_ambient", Ambient.LIGHT, AMBIENT_DIAL, AMBIENT_ONLY)
         }
         return parts.joinToString("\n")
     }
@@ -139,35 +160,58 @@ object NumeralsSection : XmlSection {
             NumeralMode.OFF -> emptyList()
         }
         val half = CoreSections.NUMERAL_BOX / 2.0
-        return shown.joinToString("\n") { n ->
+        val dark = Ambient.numeralsDark(d)
+        fun numeral(n: Int, name: String, color: String, variants: String, attrs: String): String {
             val a = n * 30 * PI / 180.0
             val cx = CENTER + sin(a) * RING; val cy = CENTER - cos(a) * RING
             val angle = tilt.getValue(n)
             val rot = if (angle == 0) "" else """ angle="$angle""""
-            """    <PartImage name="numeral_$n" x="${(cx - half).roundToInt()}" y="${(cy - half).roundToInt()}" width="${CoreSections.NUMERAL_BOX}" height="${CoreSections.NUMERAL_BOX}"$rot pivotX="0.5" pivotY="0.5" tintColor="${d.numeralColor}">
-      $AMBIENT_DIAL
+            return """    <PartImage name="$name" x="${(cx - half).roundToInt()}" y="${(cy - half).roundToInt()}" width="${CoreSections.NUMERAL_BOX}" height="${CoreSections.NUMERAL_BOX}"$rot pivotX="0.5" pivotY="0.5" tintColor="$color"$attrs>
+      $variants
       <Image resource="${CoreSections.NUMERAL_RESOURCE_PREFIX}$n"/>
     </PartImage>"""
+        }
+        return shown.joinToString("\n") { n ->
+            if (!dark) numeral(n, "numeral_$n", d.numeralColor, AMBIENT_DIAL, "")
+            else numeral(n, "numeral_$n", d.numeralColor, AMBIENT_HIDE, "") + "\n" +
+                numeral(n, "numeral_${n}_ambient", Ambient.LIGHT, AMBIENT_DIAL, AMBIENT_ONLY)
         }
     }
 }
 
-/** Hour, minute and (unless hidden) second hand; the rendered PNGs `hour`, `minute`, `second` carry the colours. */
+/**
+ * Hour, minute and (unless hidden) second hand; the rendered PNGs `hour`, `minute`, `second` carry the colours.
+ * With dark hands (see [Ambient.handsDark]) the hour and minute hand are hidden in ambient and a second
+ * AnalogClock draws the light `hour_ambient` / `minute_ambient` images, visible in ambient only.
+ */
 object HandsSection : XmlSection {
     override fun render(d: DesignSettings): String {
+        val dark = Ambient.handsDark(d)
         val second = when (d.secondHand) {
             SecondHandStyle.HIDDEN -> ""
             SecondHandStyle.SWEEP -> secondHand("""
         <Sweep frequency="15"/>""")
             SecondHandStyle.TICK -> secondHand("")
         }
-        return """    <AnalogClock x="0" y="0" width="450" height="450">
+        val hide = if (dark) "\n        $AMBIENT_HIDE" else ""
+        val main = """    <AnalogClock x="0" y="0" width="450" height="450">
       <HourHand resource="hour" x="216" y="108" width="18" height="127"
-          pivotX="0.5" pivotY="0.9213">
+          pivotX="0.5" pivotY="0.9213">$hide
       </HourHand>
       <MinuteHand resource="minute" x="216" y="40" width="18" height="194"
-          pivotX="0.5" pivotY="0.9536">
+          pivotX="0.5" pivotY="0.9536">$hide
       </MinuteHand>$second
+    </AnalogClock>"""
+        if (!dark) return main
+        return main + "\n" + """    <AnalogClock x="0" y="0" width="450" height="450">
+      <HourHand resource="hour_ambient" x="216" y="108" width="18" height="127"
+          pivotX="0.5" pivotY="0.9213"$AMBIENT_ONLY>
+        $AMBIENT_SHOW
+      </HourHand>
+      <MinuteHand resource="minute_ambient" x="216" y="40" width="18" height="194"
+          pivotX="0.5" pivotY="0.9536"$AMBIENT_ONLY>
+        $AMBIENT_SHOW
+      </MinuteHand>
     </AnalogClock>"""
     }
 

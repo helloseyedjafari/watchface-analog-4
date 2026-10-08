@@ -9,6 +9,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.Typeface
+import com.seyedjafari.analogplus.facegen.design.Ambient
 import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.SecondHandStyle
@@ -20,7 +21,8 @@ import com.seyedjafari.analogplus.facegen.render.RenderMath as M
 
 /**
  * Renders the drawable resources of a face. Resource names carry their extension:
- * `hour.png`, `minute.png`, `second.png` (not for HIDDEN), `num_<n>.png` (only the numerals the mode uses),
+ * `hour.png`, `minute.png`, `hour_ambient.png` + `minute_ambient.png` (only for dark hands, see [Ambient.handsDark]),
+ * `second.png` (not for HIDDEN), `num_<n>.png` (only the numerals the mode uses),
  * `background.jpg` (PHOTO only) and `preview.png`; all have type "drawable".
  *
  * Hands: `hour.png`/`minute.png` are (17+2) x (length+10) ref px at 4 px per ref px, pivot `length` ref px below
@@ -40,6 +42,12 @@ object ResourceRenderer {
         val out = ArrayList<FaceResource>()
         out += png("hour", hand(M.HOUR_LEN, argb(d.handColor), argb(d.inlayColor)))
         out += png("minute", hand(M.MINUTE_LEN, argb(d.handColor), argb(d.inlayColor)))
+        if (Ambient.handsDark(d)) {
+            // Ambient-only twins of the hands (the dial is black in ambient, dark hands would vanish).
+            val light = argb(Ambient.HAND_LIGHT); val inlay = argb(Ambient.INLAY_LIGHT)
+            out += png("hour_ambient", hand(M.HOUR_LEN, light, inlay))
+            out += png("minute_ambient", hand(M.MINUTE_LEN, light, inlay))
+        }
         if (d.secondHand != SecondHandStyle.HIDDEN) {
             out += png("second", secondHand(argb(d.secondHandColor ?: d.accent)))
         }
