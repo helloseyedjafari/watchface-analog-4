@@ -22,6 +22,14 @@ class ProtocolTest {
         assertNull(back.error)
     }
 
+    @Test fun filePathCarriesTheVersion() {
+        assertEquals("/analogplus/face/403972", Protocol.filePath(403972))
+        assertEquals(403972, Protocol.versionOfFilePath(Protocol.filePath(403972)))
+        assertNull(Protocol.versionOfFilePath("/analogplus/face"))
+        assertNull(Protocol.versionOfFilePath("/analogplus/face/abc"))
+        assertNull(Protocol.versionOfFilePath("/other/1"))
+    }
+
     @Test fun pathsAreStable() {
         assertEquals("/analogplus/face", Protocol.FILE_PATH)
         assertEquals("/analogplus/apply", Protocol.APPLY)

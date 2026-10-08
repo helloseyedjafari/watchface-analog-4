@@ -1,11 +1,19 @@
 package com.seyedjafari.analogplus.protocol
 
 object Protocol {
+    /** Prefix of the channel path; the face of one send travels on `FILE_PATH/<versionCode>`. */
     const val FILE_PATH = "/analogplus/face"
     const val APPLY = "/analogplus/apply"
     const val RESULT = "/analogplus/result"
     /** Capability the watch app declares (watch/src/main/res/values/wear.xml); the phone looks the watch up by it. */
     const val WATCH_CAPABILITY = "analogplus_face_receiver"
+
+    /** The channel path of one send. The version in the path lets the watch pair each file with its APPLY message. */
+    fun filePath(versionCode: Int): String = "$FILE_PATH/$versionCode"
+
+    /** The version a [filePath] carries, or null for any other path. */
+    fun versionOfFilePath(path: String): Int? =
+        if (path.startsWith("$FILE_PATH/")) path.removePrefix("$FILE_PATH/").toIntOrNull() else null
 }
 
 data class ApplyMessage(val versionCode: Int, val token: String, val apkSize: Long) {

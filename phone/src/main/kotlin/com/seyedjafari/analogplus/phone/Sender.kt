@@ -116,7 +116,7 @@ class DataLayerSender(
             }
             send(SendState.SendingFile(null))
             try {
-                withTimeout(fileTimeoutMs) { transport.sendFile(nodeId, Protocol.FILE_PATH, bundle.apk) }
+                withTimeout(fileTimeoutMs) { transport.sendFile(nodeId, Protocol.filePath(bundle.versionCode), bundle.apk) }
             } catch (e: TimeoutCancellationException) {
                 send(SendState.Failed(
                     "The face file did not reach the watch within ${fileTimeoutMs / 1000} seconds. Check that the watch " +

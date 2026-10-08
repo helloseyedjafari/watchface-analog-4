@@ -18,7 +18,7 @@ internal object ApplyFlow {
             inbox.prune() // the message names no transfer, so only leftovers can be cleaned
             return ResultMessage(false, 0, "unreadable apply message: ${e.message}")
         }
-        return when (val claim = inbox.claim(msg.apkSize, timeoutMs, pollMs)) {
+        return when (val claim = inbox.claim(msg.versionCode, msg.apkSize, timeoutMs, pollMs)) {
             is Claim.Got -> try {
                 controller.apply(claim.file, msg.token, msg.versionCode)
             } finally {

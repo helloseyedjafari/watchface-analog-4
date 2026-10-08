@@ -86,7 +86,7 @@ class SenderTest {
         assertEquals(SendState.Done(ResultMessage(true, 7, null)), states[3])
         // listener first, then file, then apply
         assertEquals(
-            listOf("listen", "file node-1 ${Protocol.FILE_PATH} 1234", "file-handed-over", "message node-1 ${Protocol.APPLY}"),
+            listOf("listen", "file node-1 ${Protocol.filePath(7)} 1234", "file-handed-over", "message node-1 ${Protocol.APPLY}"),
             t.log,
         )
         assertTrue("listener removed", t.removed)

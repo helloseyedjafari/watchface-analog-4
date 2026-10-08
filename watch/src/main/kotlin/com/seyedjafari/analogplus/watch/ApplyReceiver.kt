@@ -14,15 +14,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
 /**
- * Receives a face from the phone: the APK arrives on a channel at [Protocol.FILE_PATH], the token and version in an
+ * Receives a face from the phone: the APK arrives on a channel at [Protocol.filePath] (the version is in the path), the token and version in an
  * [Protocol.APPLY] message. The message may overtake the file, so the work waits for the file ([ApplyFlow]). Callbacks
  * of a listener service share one thread, so they only start work and return; the work runs on [scope].
  */
 class ApplyReceiver : WearableListenerService() {
 
     override fun onChannelOpened(channel: ChannelClient.Channel) {
-        if (channel.path != Protocol.FILE_PATH) return
-        val file = ApkInbox.of(applicationContext).newFile()
+        val version = Protocol.versionOfFilePath(channel.path) ?: return
+        val file = ApkInbox.of(applicationContext).newFile(version)
         Wearable.getChannelClient(this).receiveFile(channel, Uri.fromFile(file), false)
     }
 

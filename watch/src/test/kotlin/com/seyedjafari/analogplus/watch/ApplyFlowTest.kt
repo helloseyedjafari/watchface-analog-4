@@ -49,14 +49,14 @@ class ApplyFlowTest {
     private fun inbox() = ApkInbox(File(tmp.root, "incoming"))
 
     /** A received transfer whose content is the decimal version, padded so every transfer has the same size. */
-    private fun ApkInbox.receive(version: Int): File = newFile().also { it.writeText("%010d".format(version)) }
+    private fun ApkInbox.receive(version: Int): File = newFile(version).also { it.writeText("%010d".format(version)) }
     private fun message(version: Int) = ApplyMessage(version, "tok", 10).toJson()
 
     @Test fun claimWaitsForAFileThatIsStillBeingWritten() = runTest {
         val inbox = inbox()
-        val f = inbox.newFile()
+        val f = inbox.newFile(5)
         var result: Claim? = null
-        val waiter = launch { result = inbox.claim(10, timeoutMs = 5_000, pollMs = 100) }
+        val waiter = launch { result = inbox.claim(5, 10, timeoutMs = 5_000, pollMs = 100) }
         delay(300); f.writeBytes(ByteArray(4))
         delay(300); assertNull(result)
         f.writeBytes(ByteArray(10))
@@ -65,13 +65,19 @@ class ApplyFlowTest {
     }
 
     @Test fun claimTimesOutWhenTheFileNeverArrives() = runTest {
-        assertEquals(Claim.TimedOut, inbox().claim(10, timeoutMs = 1_000, pollMs = 100))
+        assertEquals(Claim.TimedOut, inbox().claim(5, 10, timeoutMs = 1_000, pollMs = 100))
     }
 
     @Test fun claimRejectsAWrongSize() = runTest {
         val inbox = inbox()
-        inbox.newFile().writeBytes(ByteArray(3))
-        assertEquals(Claim.TimedOut, inbox.claim(10, timeoutMs = 500, pollMs = 100))
+        inbox.newFile(5).writeBytes(ByteArray(3))
+        assertEquals(Claim.TimedOut, inbox.claim(5, 10, timeoutMs = 500, pollMs = 100))
+    }
+
+    @Test fun claimNeverTakesAFileOfAnotherVersionEvenWithTheSameSize() = runTest {
+        val inbox = inbox()
+        inbox.receive(6) // complete file of v6, same size as v7's would be
+        assertEquals(Claim.TimedOut, inbox.claim(7, 10, timeoutMs = 500, pollMs = 100))
     }
 
     @Test fun runAppliesTheFileAndDeletesIt() = runTest {
@@ -107,7 +113,7 @@ class ApplyFlowTest {
     @Test fun pruneNeverDeletesAClaimedFile() = runTest {
         val inbox = inbox()
         val f = inbox.receive(1)
-        val claim = inbox.claim(10, timeoutMs = 1_000, pollMs = 100) as Claim.Got
+        val claim = inbox.claim(1, 10, timeoutMs = 1_000, pollMs = 100) as Claim.Got
         f.setLastModified(0)
         inbox.prune()
         assertTrue(f.exists())
@@ -166,8 +172,8 @@ class ApplyFlowTest {
     @Test fun aNewestIncompleteFileIsNotSkippedForAnOlderCompleteOne() = runTest {
         val inbox = inbox()
         inbox.receive(6) // complete leftover of an earlier transfer
-        val f7 = inbox.newFile() // v7 channel just opened, still empty
-        val claim = async { inbox.claim(10, timeoutMs = 5_000, pollMs = 100) }
+        val f7 = inbox.newFile(7) // v7 channel just opened, still empty
+        val claim = async { inbox.claim(7, 10, timeoutMs = 5_000, pollMs = 100) }
         delay(1_000)
         f7.writeText("%010d".format(7))
         assertEquals(f7, (claim.await() as Claim.Got).file)

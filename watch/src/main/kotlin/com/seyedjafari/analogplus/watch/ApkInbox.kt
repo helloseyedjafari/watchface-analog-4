@@ -15,11 +15,12 @@ internal sealed interface Claim {
 
 /**
  * Process-wide store for received face files. Every channel transfer gets its own file, so one transfer can never
- * delete or overwrite another. An APPLY message [claim]s the newest unclaimed file whose size equals `apkSize`; a
+ * delete or overwrite another. The channel path carries the face's version, so an APPLY message [claim]s only the newest
+ * unclaimed file of ITS version whose size equals `apkSize` (two sends of equal size can never be mixed up); a
  * claimed file is only ever deleted by its owner via [release]. Unclaimed files older than [STALE_MS] (leftovers of
  * a killed process or a failed transfer) are removed by [prune].
  *
- * File names sort by creation order (`<millis>-<seq>.apk`), which is the order the phone sent them in.
+ * File names sort by creation order (`<millis>-<seq>-v<version>.apk`), which is the order the phone sent them in.
  */
 internal class ApkInbox(private val dir: File, private val now: () -> Long = System::currentTimeMillis) {
     private val lock = Any()
@@ -28,10 +29,10 @@ internal class ApkInbox(private val dir: File, private val now: () -> Long = Sys
     private var sequence = 0L
 
     /** A new empty file for one incoming transfer. Also prunes old leftovers. */
-    fun newFile(): File = synchronized(lock) {
+    fun newFile(version: Int): File = synchronized(lock) {
         dir.mkdirs()
         prune()
-        val file = File(dir, "%013d-%06d.apk".format(now(), ++sequence))
+        val file = File(dir, "%013d-%06d-v%d.apk".format(now(), ++sequence, version))
         file.createNewFile()
         file
     }
@@ -51,11 +52,11 @@ internal class ApkInbox(private val dir: File, private val now: () -> Long = Sys
     }
 
     /**
-     * Waits until the newest unclaimed file has exactly [expectedSize] bytes on two polls in a row and claims it.
+     * Waits until the newest unclaimed file of [version] has exactly [expectedSize] bytes on two polls in a row and claims it.
      * The channel file and the APPLY message are separate deliveries, so the message can arrive first. Only the most
      * recent caller keeps waiting: starting a new [claim] supersedes earlier waiters.
      */
-    suspend fun claim(expectedSize: Long, timeoutMs: Long = 60_000, pollMs: Long = 250): Claim {
+    suspend fun claim(version: Int, expectedSize: Long, timeoutMs: Long = 60_000, pollMs: Long = 250): Claim {
         val mine = synchronized(lock) { ++generation }
         var stable = 0
         var candidate: String? = null
@@ -63,7 +64,7 @@ internal class ApkInbox(private val dir: File, private val now: () -> Long = Sys
         while (true) {
             val outcome: Claim? = synchronized(lock) {
                 if (generation != mine) return@synchronized Claim.Superseded
-                val newest = idleFiles().firstOrNull()
+                val newest = idleFiles().firstOrNull { it.name.endsWith("-v$version.apk") }
                 if (newest != null && expectedSize > 0 && newest.length() == expectedSize) {
                     stable = if (newest.name == candidate) stable + 1 else 1
                     candidate = newest.name
