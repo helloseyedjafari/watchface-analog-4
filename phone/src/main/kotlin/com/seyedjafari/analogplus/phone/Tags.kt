@@ -25,6 +25,9 @@ object Tags {
     const val SAVE_NAME_FIELD = "save_name_field"
     const val SAVE_BUTTON = "save_button"
     const val SAVE_ERROR = "save_error"
+    const val RESET_KEY_BUTTON = "reset_key_button"
+    const val RESET_KEY_CONFIRM = "reset_key_confirm"
+    const val RESET_KEY_NOTICE = "reset_key_notice"
     fun saved(name: String) = "saved_$name"
     fun savedDelete(name: String) = "saved_delete_$name"
 }

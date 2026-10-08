@@ -164,7 +164,7 @@ private fun DrawScope.drawDial(
         val sign = if (d.ring.clockwise) 1f else -1f
         val cap = if (d.ring.caps == RingCaps.ROUND) StrokeCap.Round else StrokeCap.Butt
         for (i in 0 until n) {
-            val start = -90f + d.ring.startAngle.coerceIn(-360, 360) + sign * i * (span + gap)
+            val start = -90f + d.ring.startAngle.coerceIn(-360, 360) + sign * (gap / 2f + i * (span + gap))
             val sweep = sign * span
             val topLeft = Offset(inset, inset)
             val arcSize = Size(size.width - thickness, size.height - thickness)

@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import com.seyedjafari.analogplus.facegen.KeyStore
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -99,5 +102,52 @@ fun ShareTab(state: EditorState) {
             },
             modifier = Modifier.testTag(Tags.SHARE_LOAD_BUTTON),
         ) { Text("Load design") }
+
+        SigningKeySection(Modifier.padding(top = 16.dp))
+    }
+}
+
+/**
+ * Recovery for a lost or damaged signing key. A new key cannot update a face the watch already holds, and the app never
+ * removes a face (that would burn the one-time activation), so this only helps after the old face was removed by hand.
+ */
+@Composable
+private fun SigningKeySection(modifier: Modifier = Modifier) {
+    val context = LocalContext.current.applicationContext
+    var confirming by remember { mutableStateOf(false) }
+    var done by remember { mutableStateOf<String?>(null) }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Signing key", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Every face is signed with a key stored in this app. If the app complains that the key is damaged, or the watch " +
+                "rejects updates after a reinstall, you can make a new key here.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedButton(onClick = { confirming = true }, modifier = Modifier.testTag(Tags.RESET_KEY_BUTTON)) { Text("Reset signing key") }
+        done?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag(Tags.RESET_KEY_NOTICE)) }
+    }
+    if (confirming) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            title = { Text("Reset the signing key?") },
+            text = {
+                Text(
+                    "The watch only accepts updates signed with the key it first saw. After a reset the watch will refuse new " +
+                        "faces until the old Analog Plus face is removed from the watch (adb shell pm uninstall " +
+                        "com.seyedjafari.analogplus.watchfacepush.analog).",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        KeyStore(context).resetKey()
+                        confirming = false
+                        done = "Signing key reset. A new key is made on the next send."
+                    },
+                    modifier = Modifier.testTag(Tags.RESET_KEY_CONFIRM),
+                ) { Text("Reset") }
+            },
+            dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } },
+        )
     }
 }

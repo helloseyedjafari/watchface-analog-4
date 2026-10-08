@@ -45,7 +45,7 @@ object RingSections {
         val span = (360.0 - count * r.gapDegrees) / count
         val geomSpan = min(span, MAX_SPAN)
         val sign = if (r.clockwise) 1.0 else -1.0
-        val start = norm(r.startAngle + sign * i * (span + r.gapDegrees))
+        val start = norm(r.startAngle + sign * (r.gapDegrees / 2.0 + i * (span + r.gapDegrees)))
         val end = norm(start + sign * geomSpan)
         val direction = if (r.clockwise) "CLOCKWISE" else "COUNTER_CLOCKWISE"
         val colour = r.colors[i % r.colors.size]

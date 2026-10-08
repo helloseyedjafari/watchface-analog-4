@@ -95,8 +95,8 @@ internal object RenderMath {
     }
 
     /**
-     * Segment i spans (360 - N*gap)/N degrees starting at startAngle + i*(span + gap), as in the ring XML
-     * (RingSections). Counter-clockwise mirrors it: start = startAngle - i*(span + gap), sweep negative.
+     * Segment i spans (360 - N*gap)/N degrees starting at startAngle + gap/2 + i*(span + gap) (the gap is centred on startAngle), as in the ring XML
+     * (RingSections). Counter-clockwise mirrors it: start = startAngle - gap/2 - i*(span + gap), sweep negative.
      * Starts are normalised to 0..360 like the XML.
      */
     fun ringSegments(layout: RingLayout, gapDegrees: Int, startAngle: Int, clockwise: Boolean = true): List<Seg> {
@@ -105,7 +105,7 @@ internal object RenderMath {
         val span = max(0.0, (360.0 - n * gapDegrees) / n)
         val sign = if (clockwise) 1.0 else -1.0
         return (0 until n).map {
-            val start = (((startAngle + sign * it * (span + gapDegrees)) % 360) + 360) % 360
+            val start = (((startAngle + sign * (gapDegrees / 2.0 + it * (span + gapDegrees))) % 360) + 360) % 360
             Seg(start.toFloat(), (sign * span).toFloat())
         }
     }

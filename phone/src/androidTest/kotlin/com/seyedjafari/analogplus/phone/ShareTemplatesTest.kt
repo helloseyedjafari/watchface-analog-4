@@ -1,5 +1,6 @@
 package com.seyedjafari.analogplus.phone
 
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -124,5 +125,25 @@ class ShareTemplatesTest {
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled()
         rule.onNodeWithTag(Tags.tab("share")).performScrollTo().performClick()
         rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).assertIsDisplayed()
+    }
+
+    @Test fun resetSigningKeyAsksFirstAndThenRemovesTheKey() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val keys = com.seyedjafari.analogplus.facegen.KeyStore(ctx)
+        val before = keys.pem()
+        val state = EditorState(DesignSettings())
+        rule.setContent {
+            androidx.compose.foundation.layout.Column(
+                androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+            ) { ShareTab(state) }
+        }
+        rule.onNodeWithTag(Tags.RESET_KEY_BUTTON).performScrollTo().performClick()
+        // nothing happens until the dialog is confirmed
+        assertEquals(before, keys.pem())
+        rule.onNodeWithTag(Tags.RESET_KEY_CONFIRM).performClick()
+        rule.onNodeWithTag(Tags.RESET_KEY_NOTICE).assertIsDisplayed()
+        assertEquals(false, keys.hasKey())
+        assertNotEquals(before, keys.pem())
+        keys.resetKey()
     }
 }

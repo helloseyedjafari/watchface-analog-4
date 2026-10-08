@@ -201,8 +201,8 @@ class SlotRingXmlTest {
 
     @Test fun thirdsSplitIntoEqualSegmentsWithGaps() {
         val arcs = ringSlots(ring(RingLayout.THIRDS)).map { it.children("BoundingArc").single() }
-        assertEquals(listOf("0", "120", "240"), arcs.map { it.getAttribute("startAngle") })
-        assertEquals(listOf("114", "234", "354"), arcs.map { it.getAttribute("endAngle") })
+        assertEquals(listOf("3", "123", "243"), arcs.map { it.getAttribute("startAngle") }) // gap of 6 centred on 0
+        assertEquals(listOf("117", "237", "357"), arcs.map { it.getAttribute("endAngle") })
         arcs.forEach {
             assertEquals("225", it.getAttribute("centerX")); assertEquals("225", it.getAttribute("centerY"))
             assertEquals("450", it.getAttribute("width")); assertEquals("450", it.getAttribute("height"))
@@ -226,24 +226,24 @@ class SlotRingXmlTest {
     @Test fun startAngleIsNormalisedIntoZeroTo360() {
         fun start(a: Int) = ringSlots(ring(RingLayout.HALVES) { it.copy(startAngle = a) })
             .map { it.children("BoundingArc").single().getAttribute("startAngle") }
-        assertEquals(listOf("270", "90"), start(-90))
-        assertEquals(listOf("0", "180"), start(360))
-        assertEquals(listOf("0", "180"), start(-360))
-        assertEquals(listOf("90", "270"), start(90))
+        assertEquals(listOf("273", "93"), start(-90))
+        assertEquals(listOf("3", "183"), start(360))
+        assertEquals(listOf("3", "183"), start(-360))
+        assertEquals(listOf("93", "273"), start(90))
     }
 
     @Test fun negativeStartAngleWrapsAround() {
         val a = ringSlots(ring(RingLayout.FULL) { it.copy(startAngle = -90, gapDegrees = 10) }).single()
             .children("BoundingArc").single()
-        assertEquals("270", a.getAttribute("startAngle"))
-        assertEquals("260", a.getAttribute("endAngle")) // 270 + 350 = 620 -> 260
+        assertEquals("275", a.getAttribute("startAngle")) // -90 + half the gap
+        assertEquals("265", a.getAttribute("endAngle")) // 275 + 350 = 625 -> 265
     }
 
     @Test fun counterClockwiseMirrorsTheDirection() {
         val arcs = ringSlots(ring(RingLayout.THIRDS) { it.copy(clockwise = false) }).map { it.children("BoundingArc").single() }
         assertTrue(arcs.all { it.getAttribute("direction") == "COUNTER_CLOCKWISE" })
-        assertEquals(listOf("0", "240", "120"), arcs.map { it.getAttribute("startAngle") })
-        assertEquals(listOf("246", "126", "6"), arcs.map { it.getAttribute("endAngle") })
+        assertEquals(listOf("357", "237", "117"), arcs.map { it.getAttribute("startAngle") })
+        assertEquals(listOf("243", "123", "3"), arcs.map { it.getAttribute("endAngle") })
     }
 
     @Test fun capsFollowTheDesign() {
@@ -305,12 +305,12 @@ class SlotRingXmlTest {
     }
 
     @Test fun textSitsAtTheArcMidpoint() {
-        // one half starting at 0: segment 0 spans 0..174, midpoint 87 degrees, radius 225 - 14 - 26 = 185
+        // one half with the gap centred on 0: segment 0 spans 3..177, midpoint 90 degrees, radius 225 - 14 - 26 = 185
         val s = ringSlots(ring(RingLayout.HALVES)).first()
         val t = s.descendants("PartText").single()
         val cx = t.getAttribute("x").toDouble() + t.getAttribute("width").toDouble() / 2
         val cy = t.getAttribute("y").toDouble() + t.getAttribute("height").toDouble() / 2
-        val a = Math.toRadians(87.0)
+        val a = Math.toRadians(90.0)
         assertEquals(225 + 185 * Math.sin(a), cx, 1.0)
         assertEquals(225 - 185 * Math.cos(a), cy, 1.0)
     }
@@ -319,7 +319,7 @@ class SlotRingXmlTest {
         val s = ringSlots(ring(RingLayout.HALVES) { it.copy(clockwise = false) }).first()
         val t = s.descendants("PartText").single()
         val cx = t.getAttribute("x").toDouble() + t.getAttribute("width").toDouble() / 2
-        val a = Math.toRadians(-87.0)
+        val a = Math.toRadians(-90.0)
         assertEquals(225 + 185 * Math.sin(a), cx, 1.0)
     }
 

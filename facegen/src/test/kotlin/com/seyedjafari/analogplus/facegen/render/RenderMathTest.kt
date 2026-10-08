@@ -15,7 +15,7 @@ class RenderMathTest {
             val span = (360f - n * 6) / n
             segs.forEachIndexed { i, s ->
                 assertEquals(span, s.sweep, 1e-4f)
-                assertEquals(10 + i * (span + 6), s.start, 1e-3f)
+                assertEquals(10 + 3 + i * (span + 6), s.start, 1e-3f) // gap centred on the start angle
             }
         }
     }
@@ -23,7 +23,7 @@ class RenderMathTest {
     @Test fun counterClockwiseMirrorsAroundTheStartAngle() {
         val segs = M.ringSegments(RingLayout.THIRDS, 6, 0, clockwise = false)
         val span = (360f - 18) / 3
-        assertEquals(listOf(0f, 360f - (span + 6), 360f - 2 * (span + 6)), segs.map { it.start })
+        assertEquals(listOf(357f, 357f - (span + 6), 357f - 2 * (span + 6)), segs.map { it.start })
         assertTrue(segs.all { it.sweep == -span })
     }
 

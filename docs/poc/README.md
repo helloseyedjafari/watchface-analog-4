@@ -54,7 +54,8 @@ on the phone. Ring segments start empty: pick a provider for each in the same ed
   backup. **If you uninstall the phone app (or clear its data) the key is lost, a new key is generated, and the watch
   rejects every update because it is signed with a different key. Recovery means removing the installed face package
   from the watch by hand (not tried in the POC; `adb shell pm uninstall com.seyedjafari.analogplus.watchfacepush.analog`
-  on the watch is the first thing to try; there is no button for it).**
+  on the watch is the first thing to try; the app never removes a face itself). The Share tab has "Reset signing key"
+  for a damaged key; it only helps after the old face is gone from the watch.**
   Do not uninstall the phone app during the test.
 - Photo backgrounds are resized and compressed to fit Bluetooth (350 KB cap); the build fails with a message if it
   cannot. Share links do not carry the photo.
