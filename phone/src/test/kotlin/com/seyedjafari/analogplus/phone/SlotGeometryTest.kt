@@ -6,6 +6,7 @@ import com.seyedjafari.analogplus.facegen.design.RingLayout
 import com.seyedjafari.analogplus.facegen.design.SlotDesign
 import com.seyedjafari.analogplus.facegen.design.defaultSlots
 import com.seyedjafari.analogplus.facegen.design.validate
+import com.seyedjafari.analogplus.facegen.design.NumeralMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -305,5 +306,48 @@ class SlotGeometryTest {
 
     @Test fun defaultSlotsAreValidForTheGeometry() {
         for (s in defaultSlots()) assertNull(s.name, SlotGeometry.check(classic, s))
+    }
+
+    // ---- numerals ----
+
+    @Test fun numeralTilesMatchTheXmlTheFaceWrites() {
+        val xml = com.seyedjafari.analogplus.facegen.xml.NumeralsSection.render(DesignSettings())
+        val written = Regex("""name="numeral_(\d+)" x="(-?\d+)" y="(-?\d+)" width="(\d+)" height="(\d+)"""").findAll(xml)
+            .associate { it.groupValues[1].toInt() to (it.groupValues[2].toInt() to it.groupValues[3].toInt()) }
+        assertEquals(12, written.size)
+        assertEquals(written, SlotGeometry.numeralTiles(NumeralMode.ALL))
+        assertTrue(Regex("""width="48" height="48"""").containsMatchIn(xml))
+        assertEquals(com.seyedjafari.analogplus.facegen.xml.CoreSections.NUMERAL_BOX, 48)
+        for (mode in listOf(NumeralMode.QUARTERS, NumeralMode.OFF)) {
+            val q = com.seyedjafari.analogplus.facegen.xml.NumeralsSection.render(DesignSettings(numerals = mode))
+            assertEquals(Regex("""name="numeral_(\d+)"""").findAll(q).map { it.groupValues[1].toInt() }.toSet(), SlotGeometry.numeralTiles(mode).keys)
+        }
+    }
+
+    @Test fun theDefaultSlotsOnlyGrazeTheCornerOfTheFourAndTheEightTiles() {
+        // the 48 unit tile is bigger than the glyph, so the stock face reports two harmless overlaps (right/4, left/8)
+        val covered = defaultSlots().associate { it.name to SlotGeometry.numeralsCovered(it, NumeralMode.ALL) }
+        assertEquals(mapOf("top" to emptyList<Int>(), "right" to listOf(4), "left" to listOf(8), "bottom" to emptyList<Int>()), covered)
+        for (s in defaultSlots()) assertEquals(s.name, emptyList<Int>(), SlotGeometry.numeralsCovered(s, NumeralMode.OFF))
+    }
+
+    @Test fun aSlotOverANumeralTileIsReportedAndOffMeansNone() {
+        val s = SlotDesign(0, "t", 200, 15, 50, 40) // over the 12 (tile 201..249 x 15..63)
+        assertEquals(listOf(12), SlotGeometry.numeralsCovered(s, NumeralMode.ALL))
+        assertEquals(listOf(12), SlotGeometry.numeralsCovered(s, NumeralMode.QUARTERS))
+        assertEquals(emptyList<Int>(), SlotGeometry.numeralsCovered(s, NumeralMode.OFF))
+        val one = SlotDesign(1, "o", 300, 50, 40, 40) // over the 1 (tile 294..342 x 40..88), a numeral that quarters do not show
+        assertEquals(listOf(1), SlotGeometry.numeralsCovered(one, NumeralMode.ALL))
+        assertEquals(emptyList<Int>(), SlotGeometry.numeralsCovered(one, NumeralMode.QUARTERS))
+        // touching a tile is not overlapping
+        val (tx, ty) = SlotGeometry.numeralTiles(NumeralMode.ALL).getValue(12)
+        assertEquals(emptyList<Int>(), SlotGeometry.numeralsCovered(SlotDesign(0, "e", tx + 48, ty, 40, 40), NumeralMode.QUARTERS))
+        assertEquals(listOf(12), SlotGeometry.numeralsCovered(SlotDesign(0, "e", tx + 47, ty, 40, 40), NumeralMode.QUARTERS))
+    }
+
+    @Test fun slotsOverTheLimitAreOnlyShownUpToTheCap() {
+        assertEquals(8, SlotGeometry.MAX_SHOWN)
+        val many = DesignSettings(slots = List(5_000) { SlotDesign(it, "s$it", 100, 100, 50, 50) })
+        assertEquals(7, slotAt(many, 110f, 110f)?.id) // the topmost of the first eight
     }
 }

@@ -12,6 +12,8 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.height
 import androidx.compose.ui.test.swipe
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -126,13 +128,67 @@ class EditorTest {
         rule.onNodeWithTag(Tags.CAP_INDICATOR).assertTextContains("5 of 8", substring = true)
     }
 
-    @Test fun applyingATemplateReplacesTheDesignAndShowsInThePreview() {
+    @Test fun applyingATemplateAsksFirstThenReplacesTheDesignAndTheStateOfThePreview() {
+        val neon = Templates.all.first { it.name == "Neon" }
         val state = EditorState(DesignSettings())
         show(state)
+        val before = previewCentreOffset(state)
+        assertNotEquals(parseArgb(neon.accent), before)
         openTab("templates")
         click(Tags.template("Neon"))
         rule.waitForIdle()
-        assertEquals(Templates.all.first { it.name == "Neon" }, state.design)
+        // nothing changes until the dialog is confirmed
+        rule.onNodeWithTag(Tags.field("replace_dialog")).assertExists()
+        assertEquals(DesignSettings(), state.design)
+        rule.onNodeWithTag(Tags.field("replace_cancel")).performClick()
+        rule.waitForIdle()
+        assertEquals(DesignSettings(), state.design)
+        assertEquals(before, previewCentreOffset(state))
+        click(Tags.template("Neon"))
+        rule.onNodeWithTag(Tags.field("replace_confirm")).performClick()
+        rule.waitForIdle()
+        assertEquals(neon, state.design)
+        // the preview follows: the cap now carries Neon's accent
+        rule.waitUntil(10_000) { val b = state.lastPreview; b != null && b.getPixel(b.width / 2 + b.width * 7 / 450, b.height / 2) == parseArgb(neon.accent) }
+        assertNotEquals(before, previewCentreOffset(state))
+        assertEquals(parseArgb(neon.accent), previewCentreOffset(state))
+    }
+
+    @Test fun aHugeBadAccentNeverLocksTheEditor() {
+        val state = EditorState(DesignSettings(accent = "x".repeat(2_000)))
+        show(state)
+        rule.onNodeWithTag(Tags.SEND_VALIDATION).assertIsDisplayed()
+        rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsDisplayed().assertIsNotEnabled()
+        rule.onNodeWithTag(Tags.ACCENT_FIELD).assertIsDisplayed() // the Colours tab keeps its room
+        rule.onNodeWithTag(Tags.tab("colours")).assertIsDisplayed()
+        // and the user can fix it
+        rule.onNodeWithTag(Tags.ACCENT_FIELD).performTextReplacement("#FFE22B07")
+        rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled()
+    }
+
+    @Test fun aHugeBadAccentWithLittleRoomLeftStillShowsTheTabAndSend() {
+        // roughly a phone with the keyboard open: 440 dp for the whole editor
+        val state = EditorState(DesignSettings(accent = "x".repeat(2_000), slots = DesignSettings().slots.map { it.copy(name = "n".repeat(900)) }))
+        val dir = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
+        val store = Store(FakeKv(), File(dir, "editor-test-${System.nanoTime()}.jpg"))
+        val send = SendController(FaceBuilder { _, _ -> error("not called") }, FaceSender { emptyFlow() }, store, CoroutineScope(Dispatchers.Default))
+        rule.setContent { androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.height(440.dp)) { EditorScreen(state, store, send) } }
+        rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsDisplayed()
+        rule.onNodeWithTag(Tags.SEND_VALIDATION).assertIsDisplayed()
+        rule.onNodeWithTag(Tags.ACCENT_FIELD).assertIsDisplayed()
+    }
+
+    @Test fun aTwentyThousandColourRingDoesNotHangTheEditor() {
+        val state = EditorState(DesignSettings(ring = com.seyedjafari.analogplus.facegen.design.RingDesign(
+            RingLayout.QUARTERS, colors = List(20_000) { "#FF%06X".format(it) },
+        )))
+        show(state)
+        openTab("rings")
+        rule.onNodeWithTag(Tags.field("ring_colours_more")).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsDisplayed().assertIsNotEnabled()
+        click(Tags.field("ring_reset_colours"))
+        assertEquals(4, state.design.ring.colors.size)
+        rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled()
     }
 
     @Test fun pastingAShareLinkLoadsThatDesign() {

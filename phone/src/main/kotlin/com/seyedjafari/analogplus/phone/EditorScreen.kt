@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -30,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.FacePackager
 
@@ -88,27 +90,44 @@ fun EditorScreen(
     }
 }
 
+/** The send panel never takes more than this, so the tab content above it always keeps room (see [SendPanel]). */
+internal val SEND_PANEL_MAX_HEIGHT = 170.dp
+
+/**
+ * Status and "Fix first" lines (each limited to a few lines, and scrolling inside the panel if they still do not fit)
+ * above the Send button. The panel is measured before the tab area, so its height is capped: whatever the messages
+ * say, the tabs and the button stay usable.
+ */
 @Composable
 private fun SendPanel(state: EditorState, send: SendController) {
     val ui by send.state.collectAsState()
+    val design = state.design
     val errors = state.errors
     val busy = ui.isBusy
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        val isError = ui is SendUi.Error
-        Text(
-            sendStatusText(ui),
-            color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.testTag(Tags.SEND_STATUS),
-        )
-        if (errors.isNotEmpty()) {
-            val first = errors.first()
+    Column(
+        Modifier.fillMaxWidth().heightIn(max = SEND_PANEL_MAX_HEIGHT).padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            val isError = ui is SendUi.Error
             Text(
-                "Fix first: ${first.field}: ${first.message}" + if (errors.size > 1) " (and ${errors.size - 1} more)" else "",
-                color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.testTag(Tags.SEND_VALIDATION),
+                sendStatusText(ui),
+                color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag(Tags.SEND_STATUS),
             )
+            if (errors.isNotEmpty()) {
+                Text(
+                    design.fixFirstText(errors),
+                    color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag(Tags.SEND_VALIDATION),
+                )
+            }
         }
         Button(
             onClick = { send.send(state.design) },

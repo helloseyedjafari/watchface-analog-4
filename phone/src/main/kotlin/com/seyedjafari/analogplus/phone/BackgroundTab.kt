@@ -30,6 +30,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** The thumbnail of the chosen photo: still being decoded, ready, or not decodable. */
+private sealed interface Thumb {
+    data object Loading : Thumb
+    class Ready(val bitmap: android.graphics.Bitmap) : Thumb
+    data object Unavailable : Thumb
+}
+
 /** Solid colour, gradient or photo background. The photo bytes are stored as picked (the renderer shrinks them). */
 @Composable
 fun BackgroundTab(state: EditorState) {
@@ -100,12 +107,17 @@ fun BackgroundTab(state: EditorState) {
             }
             val bytes = bg.photoJpeg
             if (bytes != null) {
-                val thumb by produceState<android.graphics.Bitmap?>(null, bytes) {
-                    value = withContext(Dispatchers.Default) { decodeThumbnail(bytes) }
+                val thumb by produceState<Thumb>(Thumb.Loading, bytes) {
+                    value = withContext(Dispatchers.Default) {
+                        decodeThumbnail(bytes)?.let { Thumb.Ready(it) } ?: Thumb.Unavailable
+                    }
                 }
-                thumb?.let {
-                    Image(it.asImageBitmap(), contentDescription = "Chosen photo", contentScale = ContentScale.Crop,
+                when (val t = thumb) {
+                    Thumb.Loading -> {}
+                    is Thumb.Ready -> Image(t.bitmap.asImageBitmap(), contentDescription = "Chosen photo", contentScale = ContentScale.Crop,
                         modifier = Modifier.size(120.dp).testTag(Tags.field("background_thumb")))
+                    Thumb.Unavailable -> Text("Preview unavailable", style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag(Tags.field("background_thumb_unavailable")))
                 }
             }
         }

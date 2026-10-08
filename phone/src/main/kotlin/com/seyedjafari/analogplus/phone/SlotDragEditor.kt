@@ -3,7 +3,9 @@ package com.seyedjafari.analogplus.phone
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +29,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -51,16 +54,18 @@ import kotlin.math.roundToInt
 /** "#AARRGGBB" as a Compose colour, or null when the text is not a valid colour (a half-typed value). */
 internal fun argbOrNull(text: String?): Color? = text?.let { parseArgb(it) }?.let { Color(it) }
 
-/** The topmost slot under ([px],[py]) in the 450 unit space, or null. */
+/** The topmost of the shown slots (the first [SlotGeometry.MAX_SHOWN]) under ([px],[py]) in the 450 unit space, or null. */
 internal fun slotAt(d: DesignSettings, px: Float, py: Float): SlotDesign? =
-    d.slots.lastOrNull { px >= it.x && px < it.x + it.w && py >= it.y && py < it.y + it.h }
+    d.slots.take(SlotGeometry.MAX_SHOWN).lastOrNull { px >= it.x && px < it.x.toLong() + it.w && py >= it.y && py < it.y.toLong() + it.h }
 
 private val FLASH_MILLIS = 500L
 private val REFUSED_RED = Color(0xFFFF3B30)
 
 /**
  * The watch face in the 450 unit space as a square canvas: dial, hands' centre, ring band and the movable slots.
- * Drag a slot to move it (snapped to 5 units, see [SlotGeometry.bestEffortMove]); a drag that cannot be followed makes
+ * Drag a slot to move it (snapped to 5 units, see [SlotGeometry.bestEffortMove]) once the finger has moved past the
+ * touch slop, so a tap or a wobble changes nothing; a gesture that starts on empty canvas is left to the surrounding
+ * scroll view and only a clean tap there deselects. A drag that cannot be followed makes
  * the slot flash red and reports the reason through [onRefusal] (null again on the next accepted drag step).
  * Every slot also has a semantics node tagged [Tags.slot] whose description is `slot <id> at <x>,<y>`.
  */
@@ -99,16 +104,21 @@ fun SlotDragEditor(
                     val scale = sizePx / SlotGeometry.CANVAS
                     if (scale <= 0f) return@awaitEachGesture
                     val hit = slotAt(state.design, down.position.x / scale, down.position.y / scale)
-                    currentSelect(hit?.id)
-                    if (hit == null) return@awaitEachGesture // not ours: let a surrounding scroll view have it
+                    if (hit == null) {
+                        // Empty canvas: never consume, so a surrounding scroll view can take the gesture. Only a clean
+                        // tap (released without the scroll view or anyone else having taken the pointer) deselects.
+                        if (waitForUpOrCancellation() != null) currentSelect(null)
+                        return@awaitEachGesture
+                    }
+                    currentSelect(hit.id)
                     val id = hit.id
                     val startX = hit.x
                     val startY = hit.y
-                    drag(down.id) { change ->
+                    fun follow(change: PointerInputChange) {
                         val dx = ((change.position.x - down.position.x) / scale).roundToInt()
                         val dy = ((change.position.y - down.position.y) / scale).roundToInt()
-                        val tx = if (dx == 0 && dy == 0) startX else SlotGeometry.snap(startX + dx)
-                        val ty = if (dx == 0 && dy == 0) startY else SlotGeometry.snap(startY + dy)
+                        val tx = SlotGeometry.snap(startX + dx)
+                        val ty = SlotGeometry.snap(startY + dy)
                         state.update { SlotGeometry.bestEffortMove(it, id, tx, ty) }
                         if (SlotGeometry.reached(state.design, id, tx, ty)) {
                             currentRefusal(null)
@@ -119,6 +129,10 @@ fun SlotDragEditor(
                         }
                         change.consume()
                     }
+                    // a tap (or a wobble below the touch slop) moves nothing and snaps nothing
+                    val moved = awaitTouchSlopOrCancellation(down.id) { change, _ -> change.consume() } ?: return@awaitEachGesture
+                    follow(moved)
+                    drag(down.id) { follow(it) }
                 }
             },
     ) {
@@ -127,7 +141,7 @@ fun SlotDragEditor(
         }
         // one semantics-only node per slot so tests (and screen readers) can find each slot and its position
         val scale = sizePx / SlotGeometry.CANVAS
-        state.design.slots.forEach { s ->
+        state.design.slots.take(SlotGeometry.MAX_SHOWN).forEach { s ->
             Box(
                 Modifier
                     .offset { IntOffset((s.x * scale).roundToInt(), (s.y * scale).roundToInt()) }
@@ -183,7 +197,7 @@ private fun DrawScope.drawDial(
         style = Stroke(1.5f))
     drawCircle(Color.White, radius = p(4), center = centre)
 
-    for (s in d.slots) {
+    for (s in d.slots.take(SlotGeometry.MAX_SHOWN)) {
         val topLeft = Offset(p(s.x), p(s.y))
         val box = Size(p(s.w).coerceAtLeast(0f), p(s.h).coerceAtLeast(0f))
         val bg = argbOrNull(s.backgroundColor)
@@ -201,7 +215,7 @@ private fun DrawScope.drawDial(
         if (bg != null) fill(bg)
         outline(Color.White.copy(alpha = 0.45f), 1.5f)
         val label = measurer.measure(
-            s.name.ifBlank { "?" },
+            s.name.ifBlank { "?" }.take(40),
             TextStyle(color = argbOrNull(s.textColor) ?: Color.White, fontSize = (box.height / 4f).coerceIn(10f, 60f).toSp()),
             maxLines = 1,
             constraints = Constraints(maxWidth = box.width.roundToInt().coerceAtLeast(0)),

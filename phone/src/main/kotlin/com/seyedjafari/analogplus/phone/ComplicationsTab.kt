@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.SlotDesign
 import com.seyedjafari.analogplus.facegen.design.SlotShape
@@ -34,6 +35,7 @@ import com.seyedjafari.analogplus.facegen.design.defaultSlots
 
 private const val NEW_SLOT_BACKGROUND = "#FF1E1E1E"
 private const val OVER_LIMIT = "over limit"
+private const val MAX_ERROR_LINES = 4
 
 /** "N of 8": movable slots plus ring segments. Turns red (and its state description reads "over limit") above 8. */
 @Composable
@@ -60,7 +62,7 @@ fun ComplicationsTab(state: EditorState) {
     var selectedId by rememberSaveable { mutableStateOf<Int?>(null) }
     var message by remember { mutableStateOf<SlotRefusal?>(null) }
     val design = state.design
-    val selected = design.slots.firstOrNull { it.id == selectedId }
+    val selected = design.slots.take(SlotGeometry.MAX_SHOWN).firstOrNull { it.id == selectedId }
 
     fun apply(r: SlotResult) {
         if (r.refusal == null) state.replace(r.design)
@@ -82,9 +84,30 @@ fun ComplicationsTab(state: EditorState) {
         message?.let {
             Text(it.message, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(Tags.field("slot_message")))
         }
-        state.errorsFor("slots").forEach {
-            Text(it.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.testTag(Tags.field("slots_error")))
+        state.errorsFor("slots").take(MAX_ERROR_LINES).forEach {
+            Text(design.describe(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag(Tags.field("slots_error")))
+        }
+        // colour errors of slots that are not selected have no field on screen: name the slot so its chip can be tapped
+        val selectedIndex = design.slots.indexOfFirst { it.id == selected?.id }
+        state.errors.filter { it.field.startsWith("slots[") && (selectedIndex < 0 || !it.field.startsWith("slots[$selectedIndex]")) }
+            .take(MAX_ERROR_LINES).forEach {
+            Text("${design.describeField(it.field)}: ${design.describe(it)}", color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag(Tags.field("slots_field_error")))
+        }
+        // soft notes, never blocking: a slot over a numeral tile
+        design.slots.take(SlotGeometry.MAX_SHOWN).forEach { s ->
+            val covered = SlotGeometry.numeralsCovered(s, design.numerals)
+            if (covered.isNotEmpty()) {
+                Text(
+                    "Slot ${s.id} (${s.name.shortForDisplay(16)}) overlaps the " +
+                        (if (covered.size == 1) "numeral ${covered[0]}" else "numerals ${covered.joinToString(", ")}") +
+                        ". That is allowed, but the numbers may be hard to read.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag(Tags.field("slot_numeral_note_${s.id}")),
+                )
+            }
         }
 
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -115,14 +138,30 @@ fun ComplicationsTab(state: EditorState) {
         }
 
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            design.slots.forEach { s ->
+            design.slots.take(SlotGeometry.MAX_SHOWN).forEach { s ->
                 FilterChip(
                     selected = s.id == selected?.id,
                     onClick = { selectedId = s.id },
-                    label = { Text("${s.id}: ${s.name}") },
+                    label = { Text("${s.id}: ${s.name.shortForDisplay(16)}") },
                     modifier = Modifier.testTag(Tags.field("select_slot_${s.id}")),
                 )
             }
+        }
+
+        if (design.slots.size > SlotGeometry.MAX_SHOWN) {
+            Text(
+                "+${design.slots.size - SlotGeometry.MAX_SHOWN} more (fix by resetting slots)",
+                color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag(Tags.field("slots_more")),
+            )
+            Button(
+                onClick = {
+                    state.update { it.copy(slots = defaultSlots()) }
+                    selectedId = null
+                    message = null
+                },
+                modifier = Modifier.testTag(Tags.field("slots_reset")),
+            ) { Text("Reset slots to default") }
         }
 
         if (selected == null) {
@@ -139,7 +178,7 @@ private fun SelectedSlotControls(state: EditorState, s: SlotDesign, onResult: (S
     fun edit(f: (SlotDesign) -> SlotDesign) {
         state.update { d -> d.copy(slots = d.slots.map { if (it.id == s.id) f(it) else it }) }
     }
-    fun errorOf(field: String) = state.errorsFor("slots[$index].$field").firstOrNull()?.message
+    fun errorOf(field: String) = state.firstError("slots[$index].$field")
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
