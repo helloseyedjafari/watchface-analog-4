@@ -11,6 +11,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.seyedjafari.analogplus.facegen.design.DesignJson
@@ -24,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.emptyFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -107,8 +110,16 @@ class EditorTest {
         show(state)
         openTab("complications")
         for (id in listOf(1, 2, 3)) {
-            click(Tags.field("select_slot_$id"))
-            click(Tags.field("slot_remove"))
+            // the chip row scrolls sideways, so scroll the page up with a swipe that starts on the button above it
+            rule.onNodeWithTag(Tags.field("slot_add")).performScrollTo().performTouchInput {
+                swipe(center, androidx.compose.ui.geometry.Offset(centerX, centerY - 600f))
+            }
+            rule.waitForIdle()
+            rule.onNodeWithTag(Tags.field("select_slot_$id")).performClick()
+            rule.waitForIdle()
+            rule.onNodeWithTag(Tags.field("slot_remove")).performScrollTo().assertIsEnabled().performClick()
+            rule.waitForIdle()
+            assertTrue("slot $id still there: ${state.design.slots.map { it.id }}", state.design.slots.none { it.id == id })
         }
         rule.waitForIdle()
         assertEquals(1, state.design.slots.size)
