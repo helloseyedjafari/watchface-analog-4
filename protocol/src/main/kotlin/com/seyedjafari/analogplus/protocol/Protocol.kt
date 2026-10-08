@@ -4,6 +4,8 @@ object Protocol {
     const val FILE_PATH = "/analogplus/face"
     const val APPLY = "/analogplus/apply"
     const val RESULT = "/analogplus/result"
+    /** Capability the watch app declares (watch/src/main/res/values/wear.xml); the phone looks the watch up by it. */
+    const val WATCH_CAPABILITY = "analogplus_face_receiver"
 }
 
 data class ApplyMessage(val versionCode: Int, val token: String, val apkSize: Long) {

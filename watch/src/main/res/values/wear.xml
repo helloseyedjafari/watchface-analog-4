@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Must match Protocol.WATCH_CAPABILITY; the phone finds the watch app through it. -->
+    <string-array name="android_wear_capabilities">
+        <item>analogplus_face_receiver</item>
+    </string-array>
+</resources>

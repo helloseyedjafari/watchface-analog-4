@@ -9,7 +9,9 @@ import com.seyedjafari.analogplus.protocol.ResultMessage
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import com.google.android.gms.wearable.ChannelClient
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flow
@@ -38,17 +40,27 @@ class SenderTest {
 
     // ---- DataLayerSender with a fake transport ------------------------------------------------------------
 
-    private class FakeTransport(var nodes: List<String> = listOf("node-1")) : WatchTransport {
+    private class FakeTransport(
+        var withApp: List<WatchNode> = listOf(WatchNode("node-1", true)),
+        var connected: List<String> = withApp.map { it.id },
+    ) : WatchTransport {
         val log = mutableListOf<String>()
+        /** Models the real channel: the send task is done at once, the output side closes only after this delay. */
+        var outputClosesAfterMs = 0L
+        var fileTarget: String? = null
         var listener: ((String, String, ByteArray) -> Unit)? = null
         var removed = false
         var failFile: Exception? = null
         var onApply: (FakeTransport, ApplyMessage) -> Unit = { _, _ -> }
 
-        override suspend fun connectedNodeIds() = nodes
+        override suspend fun nodesWithApp() = withApp
+        override suspend fun connectedNodeIds() = connected
         override suspend fun sendFile(nodeId: String, path: String, file: File) {
             log += "file $nodeId $path ${file.length()}"
+            fileTarget = nodeId
             failFile?.let { throw it }
+            if (outputClosesAfterMs > 0) delay(outputClosesAfterMs)
+            log += "file-handed-over"
         }
         override suspend fun sendMessage(nodeId: String, path: String, data: ByteArray) {
             log += "message $nodeId $path"
@@ -73,7 +85,10 @@ class SenderTest {
         assertEquals(SendState.Applying, states[2])
         assertEquals(SendState.Done(ResultMessage(true, 7, null)), states[3])
         // listener first, then file, then apply
-        assertEquals(listOf("listen", "file node-1 ${Protocol.FILE_PATH} 1234", "message node-1 ${Protocol.APPLY}"), t.log)
+        assertEquals(
+            listOf("listen", "file node-1 ${Protocol.FILE_PATH} 1234", "file-handed-over", "message node-1 ${Protocol.APPLY}"),
+            t.log,
+        )
         assertTrue("listener removed", t.removed)
     }
 
@@ -86,7 +101,7 @@ class SenderTest {
     }
 
     @Test fun noNodeFailsWithTheBluetoothHint() = runTest {
-        val states = DataLayerSender(FakeTransport(nodes = emptyList())).send(bundle()).toList()
+        val states = DataLayerSender(FakeTransport(withApp = emptyList(), connected = emptyList())).send(bundle()).toList()
         assertEquals(SendState.Connecting, states[0])
         val failed = states.last() as SendState.Failed
         assertTrue(failed.text.startsWith("No watch found. Open Bluetooth"))
@@ -98,6 +113,144 @@ class SenderTest {
         val failed = states.last() as SendState.Failed
         assertTrue(failed.text, failed.text.startsWith("The watch did not answer within 60 seconds"))
         assertTrue(t.removed)
+    }
+
+    @Test fun defaultAnswerTimeoutOutlastsTheWatchsOwnFileWait() = runTest {
+        val t = FakeTransport()
+        val states = DataLayerSender(t).send(bundle()).toList()
+        assertTrue((states.last() as SendState.Failed).text.startsWith("The watch did not answer within 150 seconds"))
+        assertTrue(ANSWER_TIMEOUT_MS > 60_000)
+    }
+
+    @Test fun senderWaitsUntilTheFileIsFullyHandedOverBeforeApplying() = runTest {
+        val t = FakeTransport().apply { outputClosesAfterMs = 5_000 }
+        t.onApply = { tr, msg -> tr.reply("node-1", msg.versionCode) }
+        val states = mutableListOf<SendState>()
+        val job = launch { DataLayerSender(t).send(bundle()).collect { states += it } }
+        runCurrent()
+        advanceTimeBy(4_999)
+        assertTrue("still sending", states.last() is SendState.SendingFile)
+        assertFalse("no APPLY before the output closed", t.log.any { it.startsWith("message") })
+        advanceTimeBy(2)
+        runCurrent()
+        assertTrue(t.log.contains("message node-1 ${Protocol.APPLY}"))
+        job.join()
+        assertTrue(states.last() is SendState.Done)
+    }
+
+    @Test fun fileThatNeverFinishesFailsAfterTheFileTimeoutWithReadableText() = runTest {
+        val t = FakeTransport().apply { outputClosesAfterMs = 1_000_000 }
+        val states = DataLayerSender(t, fileTimeoutMs = 120_000).send(bundle()).toList()
+        val failed = states.last() as SendState.Failed
+        assertTrue(failed.text, failed.text.startsWith("The face file did not reach the watch within 120 seconds"))
+        assertFalse(t.log.any { it.startsWith("message") })
+        assertTrue(t.removed)
+    }
+
+    // ---- watch selection ----------------------------------------------------------------------------------
+
+    @Test fun nearbyWatchWithTheAppIsPreferred() = runTest {
+        val t = FakeTransport(withApp = listOf(WatchNode("cloud", false), WatchNode("near", true), WatchNode("near2", true)))
+        t.onApply = { tr, msg -> tr.reply("near", msg.versionCode) }
+        val last = DataLayerSender(t).send(bundle()).toList().last()
+        assertTrue(last.toString(), last is SendState.Done)
+        assertEquals("near", t.fileTarget)
+    }
+
+    @Test fun firstWatchWithTheAppIsUsedWhenNoneIsNearby() = runTest {
+        val t = FakeTransport(withApp = listOf(WatchNode("a", false), WatchNode("b", false)))
+        t.onApply = { tr, msg -> tr.reply("a", msg.versionCode) }
+        DataLayerSender(t).send(bundle()).toList()
+        assertEquals("a", t.fileTarget)
+    }
+
+    @Test fun connectedWatchWithoutTheAppFailsAtOnce() = runTest {
+        val t = FakeTransport(withApp = emptyList(), connected = listOf("watch-without-app"))
+        val states = DataLayerSender(t).send(bundle()).toList()
+        assertEquals(SendState.Failed(NOT_INSTALLED_TEXT), states.last())
+        assertEquals(
+            "The Analog Plus app is not installed on your watch yet. Install it on the watch, then try again.",
+            NOT_INSTALLED_TEXT,
+        )
+        assertTrue("never opened a channel", t.log.isEmpty())
+    }
+
+    // ---- which answers count ------------------------------------------------------------------------------
+
+    @Test fun staleOkAnswerWithVersionZeroIsIgnored() = runTest {
+        val t = FakeTransport()
+        t.onApply = { tr, _ -> tr.reply("node-1", 0, ok = true) }
+        val states = DataLayerSender(t, answerTimeoutMs = 5_000).send(bundle()).toList()
+        assertTrue(states.last() is SendState.Failed)
+    }
+
+    @Test fun unreadableApplyReplyWithVersionZeroIsShownAsTheWatchsError() = runTest {
+        val t = FakeTransport()
+        t.onApply = { tr, _ -> tr.reply("node-1", 0, ok = false, error = "unreadable apply message") }
+        val done = DataLayerSender(t).send(bundle()).toList().last() as SendState.Done
+        assertFalse(done.result.ok)
+        assertEquals("unreadable apply message", done.result.error)
+    }
+
+    @Test fun isAnswerToRule() {
+        assertTrue(isAnswerTo(7, ResultMessage(true, 7, null)))
+        assertTrue(isAnswerTo(7, ResultMessage(false, 7, "x")))
+        assertTrue(isAnswerTo(7, ResultMessage(false, 0, "x")))
+        assertFalse(isAnswerTo(7, ResultMessage(true, 0, null)))
+        assertFalse(isAnswerTo(7, ResultMessage(true, 6, null)))
+        assertFalse(isAnswerTo(7, ResultMessage(false, 6, "x")))
+    }
+
+    // ---- the channel hand-over (ChannelClient semantics) --------------------------------------------------
+
+    private class FakePort(val sendTaskDone: Boolean = true) : ChannelFilePort {
+        val log = mutableListOf<String>()
+        override suspend fun registerCallback(watcher: ChannelTransferWatcher) { log += "register" }
+        override suspend fun startSend() { log += "send" }
+        override suspend fun unregisterCallback() { log += "unregister" }
+        override suspend fun close() { log += "close" }
+    }
+
+    @Test fun handOverWaitsForOutputClosedEvenThoughTheSendTaskIsAlreadyDone() = runTest {
+        val port = FakePort()
+        val watcher = ChannelTransferWatcher()
+        val job = launch { handOverFile(port, watcher) }
+        runCurrent()
+        assertEquals("callback registered before send; channel still open", listOf("register", "send"), port.log)
+        assertTrue(job.isActive)
+        watcher.onOutputClosed(ChannelClient.ChannelCallback.CLOSE_REASON_NORMAL)
+        job.join()
+        assertEquals(listOf("register", "send", "unregister", "close"), port.log)
+    }
+
+    @Test fun channelClosingBeforeTheOutputClosedIsAReadableError() = runTest {
+        val port = FakePort()
+        val watcher = ChannelTransferWatcher()
+        val job = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            val e = runCatching { handOverFile(port, watcher) }.exceptionOrNull()
+            assertTrue(e.toString(), e is java.io.IOException)
+            assertTrue(e!!.message, e.message!!.contains("closed before the face file was fully sent"))
+            assertTrue(e.message, e.message!!.contains("watch disconnected"))
+        }
+        runCurrent()
+        watcher.onChannelClosed(ChannelClient.ChannelCallback.CLOSE_REASON_DISCONNECTED)
+        job.join()
+        assertEquals(listOf("register", "send", "unregister", "close"), port.log)
+    }
+
+    @Test fun outputClosedWithAnAbnormalReasonIsAnError() = runTest {
+        val watcher = ChannelTransferWatcher()
+        watcher.onOutputClosed(ChannelClient.ChannelCallback.CLOSE_REASON_REMOTE_CLOSE)
+        val e = runCatching { watcher.done.await() }.exceptionOrNull()
+        assertTrue(e.toString(), e is java.io.IOException && e.message!!.contains("closed by the watch"))
+    }
+
+    @Test fun handOverCancelledWhileWaitingStillUnregistersAndCloses() = runTest {
+        val port = FakePort()
+        val job = launch { handOverFile(port, ChannelTransferWatcher()) }
+        runCurrent()
+        job.cancelAndJoin()
+        assertEquals(listOf("register", "send", "unregister", "close"), port.log)
     }
 
     @Test fun answersFromOtherNodesPathsAndVersionsAreIgnored() = runTest {
