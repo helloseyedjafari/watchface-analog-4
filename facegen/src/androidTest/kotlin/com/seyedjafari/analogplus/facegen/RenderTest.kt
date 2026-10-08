@@ -245,7 +245,7 @@ class RenderTest {
             ResourceRenderer.encodeJpegUnderCap(bmp, capBytes = 1024)
             fail("expected IllegalStateException")
         } catch (e: IllegalStateException) {
-            assertEquals("background too large", e.message)
+            assertEquals(BACKGROUND_TOO_LARGE_MESSAGE, e.message) // FacePackager maps exactly this message to the photo advice
         }
     }
 
@@ -404,6 +404,47 @@ class RenderTest {
         assertTrue(Color.red(bgPixel(0)) > 245)
         val dimmed = Color.red(bgPixel(50))
         assertTrue("dimmed $dimmed", dimmed in 115..140)
+    }
+
+    private fun solidJpeg(color: Int): ByteArray {
+        val bos = ByteArrayOutputStream()
+        Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).also { it.eraseColor(color) }.compress(Bitmap.CompressFormat.JPEG, 95, bos)
+        return bos.toByteArray()
+    }
+
+    private fun photoDesign(bytes: ByteArray) = DesignSettings(
+        numerals = NumeralMode.OFF, slots = emptyList(),
+        background = BackgroundDesign(BackgroundKind.PHOTO, photoJpeg = bytes, dimPercent = 0),
+    )
+
+    /** A pixel below the centre, clear of the hands and ticks: the photo shows through there. */
+    private fun photoPixel(d: DesignSettings): Int = PreviewRenderer.render(d, ctx, 64).getPixel(32, 40)
+
+    @Test fun previewShowsTheCurrentPhotoWhenPhotosAlternate() {
+        val red = photoDesign(solidJpeg(Color.RED)); val blue = photoDesign(solidJpeg(Color.BLUE))
+        repeat(20) {
+            assertTrue(Color.red(photoPixel(red)) > 200 && Color.blue(photoPixel(red)) < 60)
+            assertTrue(Color.blue(photoPixel(blue)) > 200 && Color.red(photoPixel(blue)) < 60)
+        }
+    }
+
+    @Test fun concurrentPreviewsOfDifferentPhotosNeverShowEachOthersPhoto() {
+        val red = photoDesign(solidJpeg(Color.RED)); val blue = photoDesign(solidJpeg(Color.BLUE))
+        val wrong = java.util.concurrent.atomic.AtomicInteger()
+        val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+        fun worker(d: DesignSettings, isRed: Boolean) = Thread {
+            try {
+                repeat(1500) {
+                    val px = photoPixel(d)
+                    val ok = if (isRed) Color.red(px) > 200 && Color.blue(px) < 60 else Color.blue(px) > 200 && Color.red(px) < 60
+                    if (!ok) wrong.incrementAndGet()
+                }
+            } catch (t: Throwable) { failure.set(t) }
+        }
+        val threads = listOf(worker(red, true), worker(blue, false), worker(red, true), worker(blue, false))
+        threads.forEach { it.start() }; threads.forEach { it.join() }
+        failure.get()?.let { throw it }
+        assertEquals("previews that showed the other photo", 0, wrong.get())
     }
 
     @Test fun previewIsFast() {

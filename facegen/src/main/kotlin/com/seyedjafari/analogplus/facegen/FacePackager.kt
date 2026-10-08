@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.google.android.wearable.watchface.validator.client.DwfValidatorFactory
+import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.validate
 import com.seyedjafari.analogplus.facegen.render.ResourceRenderer
@@ -20,6 +21,23 @@ data class FaceBundle(val apk: File, val token: String, val versionCode: Int, va
 
 /** Thrown when a face cannot be built or the validator rejects it; [failures] are readable texts, one per problem. */
 class FaceBuildException(val failures: List<String>) : RuntimeException(failures.joinToString("; "))
+
+/** The message [ResourceRenderer] puts on the IllegalStateException for a photo that cannot fit its size cap. */
+internal const val BACKGROUND_TOO_LARGE_MESSAGE = "background too large"
+
+internal const val PHOTO_TOO_LARGE_TEXT =
+    "The background photo is too large to fit in the face even at the lowest quality; use a smaller or simpler photo or a solid background."
+
+/**
+ * Maps an IllegalStateException from rendering: only the photo-too-large failure of a photo background gets the photo
+ * advice, anything else is reported with its real text.
+ */
+internal fun renderFailure(d: DesignSettings, e: IllegalStateException): FaceBuildException =
+    if (d.background.kind == BackgroundKind.PHOTO && e.message == BACKGROUND_TOO_LARGE_MESSAGE) {
+        FaceBuildException(listOf(PHOTO_TOO_LARGE_TEXT))
+    } else {
+        FaceBuildException(listOf("Rendering the face failed: ${e.message ?: e::class.java.simpleName}"))
+    }
 
 /**
  * Turns a [DesignSettings] into a signed, validated face APK: validate, render, pack with the persisted key, check the
@@ -47,8 +65,7 @@ class FacePackager(context: Context, private val keyStore: KeyStore = KeyStore(c
         val images = try {
             ResourceRenderer.render(d, appContext)
         } catch (e: IllegalStateException) {
-            // the photo does not fit its own cap even at the lowest JPEG quality
-            throw FaceBuildException(listOf("The background photo is too large to fit in the face even at the lowest quality; use a smaller or simpler photo or a solid background."))
+            throw renderFailure(d, e)
         }
         val pem = keyStore.pem()
         var bytes = pack(d, versionCode, images, pem)

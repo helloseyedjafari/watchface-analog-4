@@ -65,21 +65,22 @@ object PreviewRenderer {
 
     // ---- background ---------------------------------------------------------------------------------------
 
-    @Volatile private var photoKey: ByteArray? = null
-    @Volatile private var photoBitmap: Bitmap? = null
+    /** Key and decoded bitmap published together, so a reader never pairs one photo's key with another's bitmap. */
+    private class PhotoEntry(val key: ByteArray, val bitmap: Bitmap?)
+
+    @Volatile private var photoCache: PhotoEntry? = null
 
     /** The editor redraws the preview often; keep the last decoded photo (matched by array identity). */
     private fun photo(bytes: ByteArray): Bitmap? {
-        if (photoKey === bytes) photoBitmap?.let { return it }
+        photoCache?.let { if (it.key === bytes && it.bitmap != null) return it.bitmap }
         return synchronized(this) {
-            if (photoKey === bytes && photoBitmap != null) return photoBitmap
+            photoCache?.let { if (it.key === bytes && it.bitmap != null) return it.bitmap }
             val decoded = try {
                 ResourceRenderer.decodeSquare(bytes, M.SPACE)
             } catch (e: Exception) {
                 null
             }
-            photoKey = bytes
-            photoBitmap = decoded
+            photoCache = PhotoEntry(bytes, decoded)
             decoded
         }
     }
