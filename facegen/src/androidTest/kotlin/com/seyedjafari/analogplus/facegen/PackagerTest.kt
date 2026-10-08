@@ -12,6 +12,9 @@ import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.RingDesign
 import com.seyedjafari.analogplus.facegen.design.RingLayout
+import com.seyedjafari.analogplus.facegen.design.SlotDesign
+import com.seyedjafari.analogplus.facegen.design.SlotShape
+import com.seyedjafari.analogplus.facegen.design.validate
 import com.seyedjafari.analogplus.facegen.design.Templates
 import com.seyedjafari.analogplus.facegen.xml.FaceXml
 import org.junit.After
@@ -214,6 +217,31 @@ class PackagerTest {
             Log.i(tag, "template ${d.name}: apk ${bundle.apk.length()} bytes in ${SystemClock.elapsedRealtime() - t} ms")
             assertTrue(bundle.token.isNotBlank())
             assertAllChecksPass(bundle.apk, "template ${d.name}")
+        }
+    }
+
+    @Test fun sixSlotsOfTheSizesThePhoneOffersBuildAndValidate() {
+        val placed = listOf(
+            SlotDesign(0, "s0", 95, 140, 80, 60), SlotDesign(1, "s1", 195, 100, 60, 45, shape = SlotShape.OVAL, backgroundColor = "#FF112233"),
+            SlotDesign(2, "s2", 300, 150, 40, 40, shape = SlotShape.ROUND_BOX, backgroundColor = "#FF112233"),
+            SlotDesign(3, "right", 150, 300, 151, 77), SlotDesign(4, "s4", 95, 235, 80, 60, backgroundColor = "#FF445566"),
+            SlotDesign(5, "s5", 300, 235, 61, 45),
+        )
+        val d = DesignSettings(slots = placed)
+        assertTrue(d.validate().toString(), d.validate().isEmpty())
+        val bundle = packager().build(d, 1) // the packager itself throws FaceBuildException on any validator failure
+        assertAllChecksPass(bundle.apk, "six odd slots")
+        // the reviewer's cases: 150x60 (fractional y), 151x76 (fractional x), 150x77 (fractional y)
+        for ((i, wh) in listOf(150 to 60, 151 to 76, 150 to 77).withIndex()) {
+            val one = DesignSettings(slots = listOf(SlotDesign(0, "top", 150, 106, wh.first, wh.second)))
+            assertAllChecksPass(packager().build(one, 2 + i).apk, "${wh.first}x${wh.second}")
+        }
+    }
+
+    @Test fun ringTextAndDefaultProvidersBuildAndValidate() {
+        for (layout in listOf(RingLayout.FULL, RingLayout.HALVES, RingLayout.QUARTERS)) {
+            val d = DesignSettings(slots = emptyList(), ring = RingDesign(layout = layout))
+            assertAllChecksPass(packager().build(d, 10).apk, "ring $layout")
         }
     }
 

@@ -21,9 +21,8 @@ object RingSections {
     private const val MAX_SPAN = 359.9 // a full 360 would make start == end, which a renderer may read as an empty arc
     private const val MIN_FRACTION = "0.0001" // never an exactly empty sweep (end == start), for the same reason
     private const val HUGE = "1000000000"
-    private const val TEXT_BOX_W = 60.0
-    private const val TEXT_BOX_H = 24.0
-    private const val TEXT_INSET = 26.0 // from the inner edge of the ring to the centre of the text
+    private const val TEXT_BOX_W = 56
+    private const val MIN_TEXT_SIZE = 8
 
     private fun segments(l: RingLayout): Int = when (l) {
         RingLayout.NONE -> 0
@@ -72,24 +71,34 @@ object RingSections {
             "clamp([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN], $MIN_FRACTION, $HUGE)"
         val goal = "[COMPLICATION.GOAL_PROGRESS_VALUE] / clamp([COMPLICATION.GOAL_PROGRESS_TARGET_VALUE], $MIN_FRACTION, $HUGE)"
 
-        // text sits just inside the ring at the angle of the segment's middle
+        // WFF crops everything outside the bounding area, so the text lives in the arc band itself: a box as tall as the
+        // band, centred on the band's middle radius at the angle of the segment's middle
         val mid = Math.toRadians(norm(start + sign * geomSpan / 2))
-        val rad = CENTRE - t - TEXT_INSET
-        val tx = CENTRE + rad * sin(mid) - TEXT_BOX_W / 2
-        val ty = CENTRE - rad * cos(mid) - TEXT_BOX_H / 2
-        val textPart = """        <PartText x="${Math.round(tx)}" y="${Math.round(ty)}" width="${TEXT_BOX_W.toInt()}" height="${TEXT_BOX_H.toInt()}">
+        val rad = CENTRE - t / 2.0
+        val boxH = t
+        val tx = Math.round(CENTRE + rad * sin(mid) - TEXT_BOX_W / 2.0)
+        val ty = Math.round(CENTRE - rad * cos(mid) - boxH / 2.0)
+        val fontSize = maxOf(MIN_TEXT_SIZE, min(d.complicationTitleSize, t - 2))
+        val textPart = """        <PartText x="$tx" y="$ty" width="$TEXT_BOX_W" height="$boxH">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
-            <Font family="SYNC_TO_DEVICE" size="${d.complicationTitleSize}" weight="NORMAL" color="$colour">
+            <Font family="SYNC_TO_DEVICE" size="$fontSize" weight="NORMAL" color="$colour">
               <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template>
             </Font>
           </Text>
         </PartText>"""
 
+        // owner's defaults: the first segment shows the watch battery, the second the step count, the rest start empty
+        val policy = when (i) {
+            0 -> """<DefaultProviderPolicy defaultSystemProvider="WATCH_BATTERY" defaultSystemProviderType="RANGED_VALUE"/>"""
+            1 -> """<DefaultProviderPolicy defaultSystemProvider="STEP_COUNT" defaultSystemProviderType="GOAL_PROGRESS"/>"""
+            else -> """<DefaultProviderPolicy defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>"""
+        }
+
         return """    <ComplicationSlot slotId="${100 + i}" name="ring$i" isCustomizable="TRUE"
         supportedTypes="RANGED_VALUE GOAL_PROGRESS SHORT_TEXT EMPTY"
         x="0" y="0" width="$CANVAS" height="$CANVAS">
       <Variant mode="AMBIENT" target="alpha" value="$AMBIENT_ALPHA"/>
-      <DefaultProviderPolicy defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>
+      $policy
       <BoundingArc centerX="225" centerY="225" width="$CANVAS" height="$CANVAS" thickness="$t" isRoundEdge="$roundEdge" startAngle="${n(start)}" endAngle="${n(end)}" direction="$direction"/>
       <Complication type="RANGED_VALUE">
 ${draw(track, arc(n(start), colour, sweep(ranged)))}

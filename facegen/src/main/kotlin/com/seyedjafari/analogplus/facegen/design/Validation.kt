@@ -15,6 +15,7 @@ internal const val SAFE_RADIUS = 190
 internal const val HAND_CENTRE_HALF = 18 // 36-unit square around the centre
 internal const val MAX_SLOT_ID = 5
 internal const val MAX_RING_COLOURS = 8
+internal const val MAX_SLOT_NAME = 32
 
 private fun RingLayout.segments(): Int = when (this) {
     RingLayout.NONE -> 0
@@ -68,6 +69,10 @@ fun DesignSettings.validate(): List<DesignError> {
         colour("slots[$i].textColor", s.textColor)
         colour("slots[$i].iconColor", s.iconColor)
         if (s.name.isBlank()) err("slots", "slot at index $i needs a name")
+        else if (s.name.length > MAX_SLOT_NAME) err("slots", "slot at index $i has a name longer than $MAX_SLOT_NAME characters")
+        else if (s.name.any { it.code < 0x20 || it.code in 0x7F..0x9F }) {
+            err("slots", "slot at index $i has a name with a control character (line break, tab or similar); use plain text")
+        }
         if (s.id !in 0..MAX_SLOT_ID) err("slots", "slot '${s.name}' has id ${s.id}, ids must be 0..$MAX_SLOT_ID")
         if (s.w <= 0 || s.h <= 0) err("slots", "slot '${s.name}' needs a positive width and height")
         // all four corners of a rectangle inside the circle means the rectangle is inside the circle

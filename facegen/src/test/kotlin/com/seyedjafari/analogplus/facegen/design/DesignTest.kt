@@ -85,6 +85,22 @@ class DesignTest {
         }
         assertTrue(DesignSettings(slots = listOf(a.copy(id = 5))).validate().isEmpty())
     }
+    @Test fun slotNameWithControlCharactersIsRejectedWithAClearMessage() {
+        for (bad in listOf("a\u0001b", "tab\there", "line\nbreak", "del\u007f", "c1\u0085x", "\u009f")) {
+            val errs = DesignSettings(slots = listOf(SlotDesign(0, bad, 150, 106, 150, 76))).validate()
+            val e = errs.singleOrNull { it.field == "slots" }
+            assertTrue("'$bad' must be rejected: $errs", e != null && "control character" in e.message)
+        }
+        assertTrue(DesignSettings(slots = listOf(SlotDesign(0, "Prayer \u00e9\u00fc \u2764", 150, 106, 150, 76))).validate().isEmpty())
+    }
+
+    @Test fun slotNameLongerThan32CharactersIsRejected() {
+        fun errs(n: String) = DesignSettings(slots = listOf(SlotDesign(0, n, 150, 106, 150, 76))).validate()
+        assertTrue(errs("x".repeat(32)).isEmpty())
+        val e = errs("x".repeat(33)).single { it.field == "slots" }
+        assertTrue(e.message, "32" in e.message)
+    }
+
     @Test fun slotNameMustNotBeBlank() {
         val s = SlotDesign(0, "  ", 100, 100, 30, 30)
         assertTrue(DesignSettings(slots = listOf(s)).validate().any { it.field == "slots" })
