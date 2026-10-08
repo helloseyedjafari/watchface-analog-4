@@ -13,7 +13,7 @@ object Protocol {
 
     /** The version a [filePath] carries, or null for any other path. */
     fun versionOfFilePath(path: String): Int? =
-        if (path.startsWith("$FILE_PATH/")) path.removePrefix("$FILE_PATH/").toIntOrNull() else null
+        if (path.startsWith("$FILE_PATH/")) path.removePrefix("$FILE_PATH/").let { v -> v.toIntOrNull()?.takeIf { it > 0 && it.toString() == v } } else null
 }
 
 data class ApplyMessage(val versionCode: Int, val token: String, val apkSize: Long) {

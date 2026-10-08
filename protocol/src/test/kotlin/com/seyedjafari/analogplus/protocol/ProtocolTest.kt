@@ -28,6 +28,7 @@ class ProtocolTest {
         assertNull(Protocol.versionOfFilePath("/analogplus/face"))
         assertNull(Protocol.versionOfFilePath("/analogplus/face/abc"))
         assertNull(Protocol.versionOfFilePath("/other/1"))
+        for (odd in listOf("007", "+5", "-5", "0", "٥", "５")) assertNull(odd, Protocol.versionOfFilePath("/analogplus/face/$odd"))
     }
 
     @Test fun pathsAreStable() {

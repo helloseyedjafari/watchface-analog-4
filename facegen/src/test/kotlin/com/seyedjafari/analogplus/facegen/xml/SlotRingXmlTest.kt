@@ -403,7 +403,7 @@ class SlotRingXmlTest {
     @Test fun ringTextBoxCentreLiesInsideTheBoundingBandAndIsNoTallerThanIt() {
         // WFF crops everything outside the bounding area, so the text must live in the arc band itself
         for (layout in listOf(RingLayout.FULL, RingLayout.HALVES, RingLayout.THIRDS, RingLayout.QUARTERS)) {
-            for (thickness in listOf(6, 10, 14, 20, 33, 40)) {
+            for (thickness in listOf(10, 14, 20, 33, 40)) {
                 for (clockwise in listOf(true, false)) {
                     val d = ring(layout) { it.copy(thicknessPx = thickness, clockwise = clockwise, startAngle = 37) }
                     for (slot in ringSlots(d)) {
@@ -436,7 +436,7 @@ class SlotRingXmlTest {
         val d = DesignSettings(slots = emptyList(), complicationTitleSize = 20, ring = RingDesign(RingLayout.HALVES, thicknessPx = 14))
         val size = ringSlots(d).first().descendants("Font").single().getAttribute("size").toInt()
         assertEquals(12, size) // min(title size, thickness - 2)
-        val thin = d.copy(ring = RingDesign(RingLayout.HALVES, thicknessPx = 6))
+        val thin = d.copy(ring = RingDesign(RingLayout.HALVES, thicknessPx = 10))
         assertEquals(8, ringSlots(thin).first().descendants("Font").single().getAttribute("size").toInt()) // never below 8
     }
 
@@ -498,5 +498,26 @@ class SlotRingXmlTest {
         assertTrue(RingSections.all.isNotEmpty())
         assertEquals("", SlotSections.all.joinToString("") { it.render(DesignSettings(slots = emptyList())) }.trim())
         assertEquals("", RingSections.all.joinToString("") { it.render(DesignSettings()) }.trim())
+    }
+
+    @Test fun ringTextLiesAlongTheBandAndReadsUpright() {
+        // clockwise HALVES, gap 6, start 0: segment 0 spans 3..177 (middle 90: right side, text turned 90 degrees),
+        // segment 1 spans 183..357 (middle 270: left side, turned -90, not upside down)
+        val rs = ringSlots(ring(RingLayout.HALVES))
+        val a = rs.map { it.descendants("PartText").single().getAttribute("angle").toDouble() }
+        assertEquals(90.0, a[0], 0.01); assertEquals(-90.0, a[1], 0.01)
+        // top and bottom: horizontal, bottom flipped so it is not upside down
+        val q = ringSlots(ring(RingLayout.QUARTERS) { it.copy(startAngle = 45) }).map { it.descendants("PartText").single().getAttribute("angle").toDouble() }
+        assertEquals(listOf(90.0, 0.0, -90.0, 0.0), q.map { Math.round(it).toDouble() }) // segment middles 90, 180, 270, 360
+        for (angle in q + a) assertTrue(angle > -91 && angle < 91) // never upside down
+    }
+
+    @Test fun aBandThinnerThanTenUnitsShowsNoText() {
+        for (t in 4..9) {
+            val rs = ringSlots(ring(RingLayout.HALVES) { it.copy(thicknessPx = t) })
+            assertTrue("t=$t", rs.all { it.descendants("PartText").isEmpty() })
+            assertTrue("track still drawn", rs.all { it.children("Complication").first { c -> c.getAttribute("type") == "SHORT_TEXT" }.descendants("Arc").size == 1 })
+        }
+        assertEquals(2, ringSlots(ring(RingLayout.HALVES) { it.copy(thicknessPx = 10) }).count { it.descendants("PartText").size == 1 })
     }
 }

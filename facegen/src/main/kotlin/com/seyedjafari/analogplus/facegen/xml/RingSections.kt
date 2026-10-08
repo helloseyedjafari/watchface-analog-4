@@ -21,6 +21,7 @@ object RingSections {
     private const val MAX_SPAN = 359.9 // a full 360 would make start == end, which a renderer may read as an empty arc
     private const val MIN_FRACTION = "0.0001" // never an exactly empty sweep (end == start), for the same reason
     private const val HUGE = "1000000000"
+    private const val MIN_TEXT_BAND = 10
     private const val TEXT_BOX_W = 56
     private const val MIN_TEXT_SIZE = 8
 
@@ -79,7 +80,12 @@ object RingSections {
         val tx = Math.round(CENTRE + rad * sin(mid) - TEXT_BOX_W / 2.0)
         val ty = Math.round(CENTRE - rad * cos(mid) - boxH / 2.0)
         val fontSize = maxOf(MIN_TEXT_SIZE, min(d.complicationTitleSize, t - 2))
-        val textPart = """        <PartText x="$tx" y="$ty" width="$TEXT_BOX_W" height="$boxH">
+        // the box is turned to lie along the band (a horizontal box would stick out of a 14 unit band everywhere but at
+        // 12 and 6 o'clock); in the lower half it is turned the other way so the text still reads left to right
+        val midDeg = norm(start + sign * geomSpan / 2)
+        val textAngle = if (midDeg > 90 && midDeg < 270) midDeg - 180 else if (midDeg >= 270) midDeg - 360 else midDeg
+        // a band thinner than a readable line of text shows the track only
+        val textPart = if (t < MIN_TEXT_BAND) "" else """        <PartText x="$tx" y="$ty" width="$TEXT_BOX_W" height="$boxH" pivotX="0.5" pivotY="0.5" angle="${n(textAngle)}">
           <Text align="CENTER" ellipsis="TRUE" isAutoSize="TRUE">
             <Font family="SYNC_TO_DEVICE" size="$fontSize" weight="NORMAL" color="$colour">
               <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template>
