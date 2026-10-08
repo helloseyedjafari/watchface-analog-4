@@ -16,7 +16,7 @@ Android NDK 28.2.13676358 must be installed (`sdkmanager "ndk;28.2.13676358"`). 
 ## How the build works
 
 - `packjni/build.gradle.kts` registers `cargoNdkBuild` (an `Exec` task) and makes `preBuild` depend on it, so every Gradle build of any module that uses `packjni` has the `.so` files.
-- It runs `cargo ndk --platform 28 -t arm64-v8a -t armeabi-v7a -t x86_64 -o src/main/jniLibs build --release` in `packjni/`. Output goes to `packjni/src/main/jniLibs/<abi>/libpackjni.so` (git-ignored, about 2.2 MB arm64, 1.4 MB armv7, 2.5 MB x86_64).
+- It runs `cargo ndk --platform 28 -t arm64-v8a -t armeabi-v7a -t x86_64 -o src/main/jniLibs build --release --locked` in `packjni/`. Output goes to `packjni/src/main/jniLibs/<abi>/libpackjni.so` (git-ignored, about 2.2 MB arm64, 1.4 MB armv7, 2.5 MB x86_64).
 - Inputs are `Cargo.toml`, `Cargo.lock`, `src/**/*.rs` and the ABI list; the task is `UP-TO-DATE` when none changed, so Rust is not rebuilt. First build downloads and compiles the crates (about 1 minute for three ABIs); later Rust edits take about 20 s.
 - Fewer ABIs while iterating: `./gradlew ... -PpackjniAbis=arm64-v8a,x86_64`. The task first deletes every ABI directory in `src/main/jniLibs` that is not in the list (cargo-ndk never does), so old libraries cannot be packaged next to new ones.
 - `cargo` runs with `--locked`: the committed `Cargo.lock` is used as is and the build fails rather than rewriting it. After changing `Cargo.toml`, run `cargo update -p <crate>` or `cargo generate-lockfile` in `packjni/` and commit the lock file.

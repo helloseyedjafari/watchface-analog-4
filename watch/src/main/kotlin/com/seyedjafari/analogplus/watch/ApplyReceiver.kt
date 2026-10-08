@@ -22,7 +22,13 @@ class ApplyReceiver : WearableListenerService() {
 
     override fun onChannelOpened(channel: ChannelClient.Channel) {
         val version = Protocol.versionOfFilePath(channel.path) ?: return
-        val file = ApkInbox.of(applicationContext).newFile(version)
+        // this callback must never throw (storage full, cache cleared at that moment): an uncaught exception would kill the process
+        val file = try {
+            ApkInbox.of(applicationContext).newFile(version)
+        } catch (e: Exception) {
+            Log.w(TAG, "could not prepare a file for the incoming face", e)
+            return
+        }
         Wearable.getChannelClient(this).receiveFile(channel, Uri.fromFile(file), false)
     }
 

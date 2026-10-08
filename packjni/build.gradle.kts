@@ -41,7 +41,10 @@ val cargoNdkBuild = tasks.register<Exec>("cargoNdkBuild") {
         // cargo-ndk never deletes other ABIs, so a reduced -PpackjniAbis would leave old ABI directories behind
         // and package them out of sync with the Rust sources. Keep exactly the requested ones.
         val jniLibs = crate.dir("src/main/jniLibs").asFile
-        jniLibs.listFiles { f -> f.isDirectory && f.name !in packjniAbis }?.forEach { it.deleteRecursively() }
+        jniLibs.listFiles { f -> f.isDirectory && f.name !in packjniAbis }?.forEach {
+            // a symlinked folder is unlinked, never followed (deleteRecursively would delete what it points to)
+            if (java.nio.file.Files.isSymbolicLink(it.toPath())) java.nio.file.Files.delete(it.toPath()) else it.deleteRecursively()
+        }
         val cargoOk = listOf("$home/.cargo/bin/cargo").any { File(it).canExecute() } ||
             System.getenv("PATH").split(File.pathSeparator).any { File(it, "cargo").canExecute() }
         if (!cargoOk) throw GradleException("cargo not found. Install Rust (https://rustup.rs) and cargo-ndk; see docs/poc/pack-native.md")

@@ -61,7 +61,7 @@ class MainActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         val activate = activateAfterPermission
         activateAfterPermission = false
-        if (activate && deniedPermissions(permissions, grantResults).isNotEmpty()) {
+        if (activate && missingPermissions { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }.isNotEmpty()) {
             noteView.text = PERMISSION_DENIED_NOTE // no activation attempt, so the one-shot is not touched
             refresh()
         } else if (activate) activateNow() else refresh()

@@ -10,7 +10,8 @@
 PHONE_LOCK="${ANALOGPLUS_PHONE_LOCK:-${TMPDIR:-/tmp}/analogplus-phone-emulator.lock}"
 PHONE_LOCK_HELD=no
 
-_lock_started() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//; s/ *$//'; }
+# fixed locale and timezone: the start time is compared across shells that may run with different TZ/LANG
+_lock_started() { LC_ALL=C TZ=UTC ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//; s/ *$//'; }
 
 # True when the lock directory exists and its owner is gone (or never finished writing `owner`, for over a minute).
 _lock_is_stale() {
@@ -32,14 +33,20 @@ _lock_holder_text() {
 }
 
 phone_lock_acquire() {
-  local waited=0 stale
+  local waited=0
   until mkdir "$PHONE_LOCK" 2>/dev/null; do
     if _lock_is_stale; then
-      # Take the dead lock out of the way atomically; only one waiter wins the rename.
-      stale="$PHONE_LOCK.stale.$$"
-      if mv "$PHONE_LOCK" "$stale" 2>/dev/null; then
-        echo "phone emulator lock: removed the stale lock of $(sed -n 1p "$stale/owner" 2>/dev/null || echo '?') (process gone)" >&2
-        rm -rf "$stale"
+      # One waiter at a time takes a dead lock over (the guard), and re-checks under the guard: a second waiter that
+      # judged the same dead lock stale must not remove the LIVE lock the first one has created in the meantime.
+      if [ -n "$(find "$PHONE_LOCK.guard" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rmdir "$PHONE_LOCK.guard" 2>/dev/null || true; fi
+      if mkdir "$PHONE_LOCK.guard" 2>/dev/null; then
+        if _lock_is_stale; then
+          echo "phone emulator lock: removed the stale lock of $(sed -n 1p "$PHONE_LOCK/owner" 2>/dev/null || echo '?') (process gone)" >&2
+          rm -rf "$PHONE_LOCK"
+        fi
+        rmdir "$PHONE_LOCK.guard" 2>/dev/null || true
+      else
+        sleep 1   # somebody else is taking it over; never spin
       fi
       continue
     fi

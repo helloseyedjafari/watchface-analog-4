@@ -9,6 +9,11 @@ internal const val PERMISSION_DENIED_NOTE =
     "Permission needed to activate the face. You can also pick Analog Plus in the watch face picker: " +
         "long-press the watch face, swipe to Analog Plus."
 
-/** The permissions the user did not grant. A missing result (the request was interrupted) counts as denied. */
-internal fun deniedPermissions(permissions: Array<out String>, grantResults: IntArray): List<String> =
-    permissions.filterIndexed { i, _ -> grantResults.getOrNull(i) != PackageManager.PERMISSION_GRANTED }
+/**
+ * The permissions that are still not granted. Asks the system instead of reading the request's result arrays: when
+ * Android interrupts a request it delivers EMPTY arrays, which would otherwise look like "nothing denied".
+ */
+internal fun missingPermissions(isGranted: (String) -> Boolean): List<String> =
+    listOf(PERM_PUSH, PERM_ACTIVE).filterNot(isGranted)
+
+internal fun isGranted(result: Int) = result == PackageManager.PERMISSION_GRANTED

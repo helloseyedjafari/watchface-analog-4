@@ -20,7 +20,9 @@ adb -s <watch-serial> install -r watch/build/outputs/apk/debug/watch-debug.apk
 - The watch drops off wireless debugging often. If `adb` says offline, reconnect and run the command again.
 - Phone: Android 9 or newer. Watch: Wear OS 6 (API 36), because Watch Face Push does not exist before that.
 - The permission to push watch faces (`PUSH_WATCH_FACES`) is granted when the watch app is installed. The watch app asks
-  once, on first start, for the second one: set the pushed face as active. Allow it.
+  for the second one (set the pushed face as active) every time it starts while that permission is missing, and again when
+  you press **Activate face**. Allow it. If you deny it, the app explains how to pick Analog Plus in the watch face picker
+  instead (long-press the face).
   (If it does not ask, `adb -s <watch-serial> shell pm grant com.seyedjafari.analogplus com.google.wear.permission.SET_PUSHED_WATCH_FACE_AS_ACTIVE`.)
 - Phone and watch must be paired through the Galaxy Wearable / Wear OS app. The phone sends the face over the Wear Data Layer.
 
@@ -31,7 +33,12 @@ adb -s <watch-serial> install -r watch/build/outputs/apk/debug/watch-debug.apk
 as you type. Complications: choose 4 or 6 slots, tap a slot to edit it, drag it to move it (slots cannot overlap each
 other or the hand centre). At most 8 complication slots in total; each ring segment counts as one. Rings: pick a layout
 (full, halves, thirds, quarters). Templates: start from a built-in design or save your own. Share: copy a link
-(`analogplus://design?d=...`) or load one from a link.
+(`analogplus://design?d=...`), load one from a link, or show the design as a QR code and scan someone else's. Loading a
+link, a QR code, a template or a saved design always asks before it replaces the design you are editing. Templates:
+Classic, Midnight, Neon, Minimal.
+
+**Always-on mode.** The background is hidden (black) and the dial is dimmed. Dark hands, ticks and numerals switch to
+light grey there, and the editor shows a hint when that happens; dark slot text stays dim.
 
 **Send.** Press **Send to watch**. The phone builds and signs the face, takes the next version number and sends it.
 
@@ -39,8 +46,9 @@ other or the hand centre). At most 8 complication slots in total; each ring segm
 Activation works once per install of the watch app. After that the face is only updated in place.
 
 **Complications.** Pushed faces carry their default providers (battery on the right, steps at the bottom, Samsung weather
-on top when present). To change a provider, long-press the face and tap *Customize* on the watch, or use Galaxy Wearable
-on the phone. Ring segments start empty: pick a provider for each in the same editor.
+on top when present, the next prayer time from the prayer times app on the left). To change a provider, long-press the
+face and tap *Customize* on the watch, or use Galaxy Wearable on the phone. Ring segments: the first shows the watch
+battery, the second the step count as text, the others start empty; pick providers for each in the same editor.
 
 ## Known limits
 
@@ -52,7 +60,7 @@ on the phone. Ring segments start empty: pick a provider for each in the same ed
   higher ("version not higher").
 - **No bundled default face.** The watch is empty until the phone has pushed once.
 - **Signing key.** It is generated on the first send and lives in the phone app's private storage. It is excluded from
-  backup. **If you uninstall the phone app (or clear its data) the key is lost, a new key is generated, and the watch
+  backup and from phone-to-phone transfer. **If you uninstall the phone app (or clear its data, or move to a new phone) the key is lost, a new key is generated, and the watch
   rejects every update because it is signed with a different key. Recovery means getting the old face off the watch (not tried on a real
   watch in the POC): first uninstall the Analog Plus watch app, which removes the face it pushed and resets the one-shot
   activation, then install the watch app again and press **Activate face** after the next send. Only if the face is still
@@ -62,7 +70,9 @@ on the phone. Ring segments start empty: pick a provider for each in the same ed
   is gone from the watch.**
   Do not uninstall the phone app during the test.
 - Photo backgrounds are resized and compressed to fit Bluetooth (350 KB cap); the build fails with a message if it
-  cannot. Share links do not carry the photo.
+  cannot. Share links and QR codes do not carry the photo.
+- **QR scanning** uses Google's code scanner (Play services): it needs Play services, and the first scan downloads the
+  scanner module. Showing a QR code works without it; a design that is too big for a QR code says so and uses the link.
 - The ring and slot complication data cannot be shown on an emulator without providers; the e2e run only checks that the
   layout is drawn.
 

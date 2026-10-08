@@ -45,7 +45,6 @@ info() { printf '   %s\n' "$*"; }
 die()  { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 cleanup() {
   local s pid
-  phone_lock_release
   # undo "dumpsys battery unplug" (matters for a watch emulator that was already running and stays up)
   if [ "$BATTERY_SET" = yes ]; then "$ADB" -s "$WATCH" shell dumpsys battery reset >/dev/null 2>&1 || true; fi
   if [ "$KEEP" = no ]; then
@@ -56,6 +55,8 @@ cleanup() {
       if kill -0 "$pid" 2>/dev/null; then pkill -P "$pid" 2>/dev/null || true; kill "$pid" 2>/dev/null || true; fi
     done
   fi
+  # only now: somebody who takes the lock must not have the emulator killed under them
+  phone_lock_release
   rm -rf "$WORK"
 }
 trap cleanup EXIT
