@@ -3,9 +3,54 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val NDK_VERSION = "28.2.13676358"
+// ABIs of the native library; override with -PpackjniAbis=arm64-v8a,x86_64 for a quicker build.
+val packjniAbis = (findProperty("packjniAbis") as String? ?: "arm64-v8a,armeabi-v7a,x86_64").split(",").map { it.trim() }
+
+val cargoNdkBuild = tasks.register<Exec>("cargoNdkBuild") {
+    group = "build"
+    description = "Builds packjni (Rust, google/pack) for Android with cargo-ndk into src/main/jniLibs"
+    val crate = layout.projectDirectory
+    // Up to date unless the Rust sources, manifest/lock, or the ABI list changed.
+    inputs.files(crate.file("Cargo.toml"), crate.file("Cargo.lock"))
+    inputs.files(fileTree(crate.dir("src")) { include("**/*.rs") }).withPropertyName("rustSources")
+    inputs.property("abis", packjniAbis)
+    inputs.property("ndkVersion", NDK_VERSION)
+    outputs.dir(crate.dir("src/main/jniLibs"))
+    workingDir = crate.asFile
+
+    val home = System.getProperty("user.home")
+    val sdk = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+        ?: rootProject.file("local.properties").takeIf { it.exists() }
+            ?.readLines()?.firstOrNull { it.startsWith("sdk.dir=") }?.removePrefix("sdk.dir=")
+        ?: "$home/Library/Android/sdk"
+    val ndkHome = System.getenv("ANDROID_NDK_HOME") ?: "$sdk/ndk/$NDK_VERSION"
+    environment("ANDROID_NDK_HOME", ndkHome)
+    environment("PATH", "$home/.cargo/bin:" + System.getenv("PATH"))
+
+    val cargo = File("$home/.cargo/bin/cargo").takeIf { it.canExecute() }?.path ?: "cargo"
+    val cmd = mutableListOf(cargo, "ndk", "--platform", "28")
+    packjniAbis.forEach { cmd += listOf("-t", it) }
+    cmd += listOf("-o", "src/main/jniLibs", "build", "--release")
+    commandLine(cmd)
+
+    doFirst {
+        val cargoOk = listOf("$home/.cargo/bin/cargo").any { File(it).canExecute() } ||
+            System.getenv("PATH").split(File.pathSeparator).any { File(it, "cargo").canExecute() }
+        if (!cargoOk) throw GradleException("cargo not found. Install Rust (https://rustup.rs) and cargo-ndk; see docs/poc/pack-native.md")
+        if (!File("$home/.cargo/bin/cargo-ndk").canExecute() &&
+            System.getenv("PATH").split(File.pathSeparator).none { File(it, "cargo-ndk").canExecute() }
+        ) throw GradleException("cargo-ndk not found. Run: cargo install cargo-ndk (see docs/poc/pack-native.md)")
+        if (!File(ndkHome).isDirectory) throw GradleException("Android NDK not found at $ndkHome. Install NDK $NDK_VERSION or set ANDROID_NDK_HOME (see docs/poc/pack-native.md)")
+    }
+}
+
+tasks.named("preBuild") { dependsOn(cargoNdkBuild) }
+
 android {
     namespace = "com.seyedjafari.analogplus.packjni"
     compileSdk = 36
+    ndkVersion = NDK_VERSION
 
     defaultConfig {
         minSdk = 28
