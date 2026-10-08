@@ -35,8 +35,8 @@ val SendUi.isBusy: Boolean get() = this is SendUi.Building || this is SendUi.Sen
 /** Shown when the watch refuses a face and this phone signs with another key than for the face the watch holds. */
 const val KEY_MISMATCH_TEXT =
     "This phone is signing with a different key than the face on your watch. The watch only accepts updates from the " +
-        "original key. Remove the old Analog Plus app from the watch (uninstall it and install it again; this removes " +
-        "the pushed face), then send again."
+        "original key. Remove the old Analog Plus face from the watch (uninstalling the watch app does not remove it; " +
+        "with adb: pm uninstall com.seyedjafari.analogplus.watchfacepush.analog on the watch), then send again."
 
 /**
  * Runs "Send to watch": validate, then (off the main thread) take a fresh version number, build, and hand the face to

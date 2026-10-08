@@ -58,4 +58,11 @@ class DesignHintsTest {
     }
 
     @Test fun badColourIsNotDark() = assertFalse(Ambient.isDark("red"))
+
+    @Test fun ringTextOnALightBackgroundGetsAHint() {
+        val light = BackgroundDesign(color = "#FFF4F1EA")
+        assertTrue(designHints(DesignSettings(background = light, ring = RingDesign(RingLayout.HALVES))).any { it.contains("Ring text") })
+        assertEquals(emptyList<String>(), designHints(DesignSettings(background = light))) // no ring, no ring text
+        assertEquals(emptyList<String>(), designHints(DesignSettings(ring = RingDesign(RingLayout.HALVES)))) // black background
+    }
 }

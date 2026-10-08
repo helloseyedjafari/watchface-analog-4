@@ -23,8 +23,19 @@ _lock_is_stale() {
   fi
   kill -0 "$pid" 2>/dev/null || return 0
   started="$(sed -n 2p "$PHONE_LOCK/owner" 2>/dev/null || true)"
-  now="$(_lock_started "$pid")"
-  [ -n "$started" ] && [ "$now" != "$started" ]   # same PID, different process: reused
+  [ -n "$started" ] || return 1
+  # the same PID with a different start time is a different process (PID reused). Locks written by an older version of
+  # this script used the caller's locale and timezone, so accept either form of the start time.
+  [ "$(_lock_started "$pid")" = "$started" ] && return 1
+  [ "$(ps -o lstart= -p "$pid" 2>/dev/null | sed 's/^ *//; s/ *$//')" = "$started" ] && return 1
+  return 0
+}
+
+# A takeover guard is dead when the waiter that made it is gone (never judged by age: an age check is itself a race).
+_guard_is_stale() {
+  local gpid; gpid="$(cat "$PHONE_LOCK.guard/pid" 2>/dev/null || true)"
+  if [ -z "$gpid" ]; then [ -n "$(find "$PHONE_LOCK.guard" -maxdepth 0 -mmin +1 2>/dev/null)" ]; return; fi
+  ! kill -0 "$gpid" 2>/dev/null
 }
 
 _lock_holder_text() {
@@ -38,16 +49,21 @@ phone_lock_acquire() {
     if _lock_is_stale; then
       # One waiter at a time takes a dead lock over (the guard), and re-checks under the guard: a second waiter that
       # judged the same dead lock stale must not remove the LIVE lock the first one has created in the meantime.
-      if [ -n "$(find "$PHONE_LOCK.guard" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rmdir "$PHONE_LOCK.guard" 2>/dev/null || true; fi
+      if [ -d "$PHONE_LOCK.guard" ] && _guard_is_stale; then rm -rf "$PHONE_LOCK.guard" 2>/dev/null || true; fi
       if mkdir "$PHONE_LOCK.guard" 2>/dev/null; then
+        printf '%s\n' "$$" >"$PHONE_LOCK.guard/pid"
         if _lock_is_stale; then
-          echo "phone emulator lock: removed the stale lock of $(sed -n 1p "$PHONE_LOCK/owner" 2>/dev/null || echo '?') (process gone)" >&2
-          rm -rf "$PHONE_LOCK"
+          local dead; dead="$(sed -n 1p "$PHONE_LOCK/owner" 2>/dev/null || echo '?')"
+          rm -rf "$PHONE_LOCK" 2>/dev/null || true
+          if [ -e "$PHONE_LOCK" ]; then
+            echo "phone emulator lock: the stale lock of $dead cannot be removed (permissions?); remove $PHONE_LOCK by hand" >&2
+          else
+            echo "phone emulator lock: removed the stale lock of $dead (process gone)" >&2
+          fi
         fi
-        rmdir "$PHONE_LOCK.guard" 2>/dev/null || true
-      else
-        sleep 1   # somebody else is taking it over; never spin
+        rm -rf "$PHONE_LOCK.guard" 2>/dev/null || true
       fi
+      sleep 1   # never spin: whoever else is taking over, or a lock that cannot be removed, costs one second per round
       continue
     fi
     if [ $((waited % 60)) -eq 0 ]; then

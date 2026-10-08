@@ -21,8 +21,8 @@ adb -s <watch-serial> install -r watch/build/outputs/apk/debug/watch-debug.apk
 - Phone: Android 9 or newer. Watch: Wear OS 6 (API 36), because Watch Face Push does not exist before that.
 - The permission to push watch faces (`PUSH_WATCH_FACES`) is granted when the watch app is installed. The watch app asks
   for the second one (set the pushed face as active) every time it starts while that permission is missing, and again when
-  you press **Activate face**. Allow it. If you deny it, the app explains how to pick Analog Plus in the watch face picker
-  instead (long-press the face).
+  you press **Activate face**. Allow it. If you deny it when you press **Activate face**, the app explains how to pick
+  Analog Plus in the watch face picker instead (long-press the face).
   (If it does not ask, `adb -s <watch-serial> shell pm grant com.seyedjafari.analogplus com.google.wear.permission.SET_PUSHED_WATCH_FACE_AS_ACTIVE`.)
 - Phone and watch must be paired through the Galaxy Wearable / Wear OS app. The phone sends the face over the Wear Data Layer.
 
@@ -33,8 +33,9 @@ adb -s <watch-serial> install -r watch/build/outputs/apk/debug/watch-debug.apk
 as you type. Complications: choose 4 or 6 slots, tap a slot to edit it, drag it to move it (slots cannot overlap each
 other or the hand centre). At most 8 complication slots in total; each ring segment counts as one. Rings: pick a layout
 (full, halves, thirds, quarters). Templates: start from a built-in design or save your own. Share: copy a link
-(`analogplus://design?d=...`), load one from a link, or show the design as a QR code and scan someone else's. Loading a
-link, a QR code, a template or a saved design always asks before it replaces the design you are editing. Templates:
+(`analogplus://design?d=...`), load one from a link, or show the design as a QR code and scan someone else's. A tapped
+link, a scanned QR code, a template or a saved design asks before it replaces the design you are editing; a link pasted
+into the Share tab and loaded with **Load design** replaces it at once. Templates:
 Classic, Midnight, Neon, Minimal.
 
 **Always-on mode.** The background is hidden (black) and the dial is dimmed. Dark hands, ticks and numerals switch to
@@ -61,11 +62,11 @@ battery, the second the step count as text, the others start empty; pick provide
 - **No bundled default face.** The watch is empty until the phone has pushed once.
 - **Signing key.** It is generated on the first send and lives in the phone app's private storage. It is excluded from
   backup and from phone-to-phone transfer. **If you uninstall the phone app (or clear its data, or move to a new phone) the key is lost, a new key is generated, and the watch
-  rejects every update because it is signed with a different key. Recovery means getting the old face off the watch (not tried on a real
-  watch in the POC): first uninstall the Analog Plus watch app, which removes the face it pushed and resets the one-shot
-  activation, then install the watch app again and press **Activate face** after the next send. Only if the face is still
-  there, try `adb -s <watch-serial> shell pm uninstall com.seyedjafari.analogplus.watchfacepush.analog` (that leaves the
-  watch app's "activated" flag set, so activation stays used and the face must be picked in the face picker). The app
+  rejects every update because it is signed with a different key. Recovery means getting the old face off the watch.
+  **Uninstalling the Analog Plus watch app does NOT remove the pushed face** (checked on the Wear OS 6 emulator: the
+  face package stays). Remove it with
+  `adb -s <watch-serial> shell pm uninstall com.seyedjafari.analogplus.watchfacepush.analog`; then send again and, if the
+  watch app's one-shot activation is used up, pick Analog Plus in the face picker. (Not tried on a real watch.) The app
   never removes a face itself. The Share tab has "Reset signing key" for a damaged key; it only helps after the old face
   is gone from the watch.**
   Do not uninstall the phone app during the test.

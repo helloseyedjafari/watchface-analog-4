@@ -137,6 +137,7 @@ phone_lock_acquire
 info "holding the phone emulator lock ($PHONE_LOCK)"
 install_checked "$PHONE" "$PHONE_APK" phone
 adbw uninstall "$APP" >/dev/null 2>&1 || true        # fresh install: the one-shot activation is available again
+adbw shell pm uninstall "$FACE_PKG" >/dev/null 2>&1 || true   # the pushed face stays when its app is uninstalled; start from no face (a leftover one is signed with an older phone key)
 install_checked "$WATCH" "$WATCH_APK" watch
 # PUSH_WATCH_FACES is granted at install time (pm grant refuses it); SET_PUSHED_WATCH_FACE_AS_ACTIVE is a runtime permission.
 adbw shell pm grant "$APP" com.google.wear.permission.SET_PUSHED_WATCH_FACE_AS_ACTIVE
@@ -233,7 +234,9 @@ PY
 run_design 1 default      "#E22B07" yes
 run_design 2 blue-moveTop "#1E6BFF" no "--es accent '#FF1E6BFF' --ez moveTop true"
 run_design 3 quarterRings "#22C55E" no "--es accent '#FF22C55E' --ez quarterRings true"
-phone_lock_release   # the phone emulator is not used again
+# The phone emulator is not used again. If this script started it, keep the lock until cleanup has stopped it, so nobody
+# who takes the lock in between has the emulator killed under them.
+case " ${STARTED[*]:-} " in *" $PHONE "*) ;; *) phone_lock_release ;; esac
 
 # ---------------------------------------------------------------- 4b. exactly one face installed
 step "4. installed faces"
@@ -256,8 +259,10 @@ if [ "$WITH_TESTS" = yes ]; then
     :facegen:connectedDebugAndroidTest :packjni:connectedDebugAndroidTest :phone:connectedDebugAndroidTest
   step "5. device tests, watch on $WATCH"
   # The e2e leaves the watch app, its face and its one-shot activation installed; the watch tests need a clean slate
-  # (gradle removes the app after its own run, so only this first run needs the uninstall). The face goes with the app.
+  # (gradle removes the app after its own run, so only this first run needs the uninstall). The pushed face is a separate
+  # package that stays when the app is uninstalled, so it is removed explicitly.
   adbw uninstall "$APP" >/dev/null 2>&1 || true
+  adbw shell pm uninstall "$FACE_PKG" >/dev/null 2>&1 || true
   ANDROID_SERIAL="$WATCH" "$ROOT/gradlew" -p "$ROOT" :watch:connectedDebugAndroidTest
   step "ALL TESTS PASSED"
 fi

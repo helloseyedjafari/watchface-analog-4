@@ -138,7 +138,7 @@ class PushController internal constructor(
          * library then reports a generic error. The phone cannot know, so the watch says what to try.
          */
         const val UPDATE_KEY_HINT = " If this phone was reinstalled or its signing key was reset, the watch only accepts updates " +
-            "signed with the original key: uninstall the Analog Plus app on the watch (this removes the face), install it " +
-            "again and send again."
+            "signed with the original key: remove the old Analog Plus face from the watch (uninstalling the watch app does not " +
+            "remove it; with adb: pm uninstall com.seyedjafari.analogplus.watchfacepush.analog) and send again."
     }
 }

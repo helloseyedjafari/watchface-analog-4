@@ -57,7 +57,7 @@ class PushControllerLogicTest {
         backend.failUpdateWith = IllegalStateException("Unknown error")
         val r = PushController(backend, FakeStore()).apply(apk(2), "t", 2)
         assertFalse(r.ok)
-        assertTrue(r.error!!, r.error!!.contains("signing key") && r.error!!.contains("uninstall the Analog Plus app on the watch"))
+        assertTrue(r.error!!, r.error!!.contains("signing key") && r.error!!.contains("pm uninstall com.seyedjafari.analogplus.watchfacepush.analog"))
     }
 
     @Test fun aFailedAddHasNoKeyHint() = runTest {

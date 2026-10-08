@@ -1,4 +1,6 @@
 import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.Path
 
 plugins {
     id("com.android.library")
@@ -44,8 +46,12 @@ val cargoNdkBuild = tasks.register<Exec>("cargoNdkBuild") {
         // and package them out of sync with the Rust sources. Keep exactly the requested ones.
         val jniLibs = crate.dir("src/main/jniLibs").asFile
         jniLibs.listFiles { f -> f.isDirectory && f.name !in packjniAbis }?.forEach {
-            // a symlinked folder is unlinked, never followed (deleteRecursively would delete what it points to)
-            if (Files.isSymbolicLink(it.toPath())) Files.delete(it.toPath()) else it.deleteRecursively()
+            // links are unlinked, never followed (File.deleteRecursively follows nested symlinks to what they point to)
+            fun deleteTree(p: Path) {
+                if (Files.isDirectory(p, LinkOption.NOFOLLOW_LINKS)) Files.list(p).use { s -> s.toList().forEach { c -> deleteTree(c) } }
+                Files.delete(p)
+            }
+            deleteTree(it.toPath())
         }
         val cargoOk = listOf("$home/.cargo/bin/cargo").any { File(it).canExecute() } ||
             System.getenv("PATH").split(File.pathSeparator).any { File(it, "cargo").canExecute() }

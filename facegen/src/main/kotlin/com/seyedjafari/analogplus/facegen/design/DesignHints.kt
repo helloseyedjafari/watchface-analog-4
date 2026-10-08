@@ -45,4 +45,7 @@ fun designHints(d: DesignSettings): List<String> = buildList {
     if (Ambient.handsDark(d)) add("Dark hands turn light grey in always-on mode, because the background turns black.")
     if (Ambient.numeralsDark(d)) add("Dark numerals turn light grey in always-on mode, because the background turns black.")
     if (Ambient.ticksDark(d)) add("Dark ticks turn light grey in always-on mode, because the background turns black.")
+    if (d.ring.layout != RingLayout.NONE && d.background.kind != BackgroundKind.PHOTO && Ambient.luma(d.background.color) > 0.6) {
+        add("Ring text is white and may be hard to read on a light background.")
+    }
 }

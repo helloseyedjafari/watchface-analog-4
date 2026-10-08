@@ -102,7 +102,7 @@ fun EditorScreen(
 internal val SEND_PANEL_MAX_HEIGHT = 170.dp
 
 /**
- * Status and "Fix first" lines (each limited to a few lines, and scrolling inside the panel if they still do not fit)
+ * Status and "Fix first" lines (the status text is complete and scrolls inside the panel; "Fix first" is limited to two lines)
  * above the Send button. The panel is measured before the tab area, so its height is capped: whatever the messages
  * say, the tabs and the button stay usable.
  */

@@ -158,8 +158,8 @@ private fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier: 
             text = {
                 Text(
                     "The watch only accepts updates signed with the key it first saw. After a reset the watch will refuse new " +
-                        "faces until the old Analog Plus face is removed from the watch: uninstall the Analog Plus app on the " +
-                        "watch (this removes the face), then install it again.",
+                        "faces until the old Analog Plus face is removed from the watch (uninstalling the watch app does not remove " +
+                        "it; with adb: pm uninstall com.seyedjafari.analogplus.watchfacepush.analog).",
                 )
             },
             confirmButton = {

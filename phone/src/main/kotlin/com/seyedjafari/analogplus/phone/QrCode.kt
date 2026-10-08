@@ -97,6 +97,6 @@ object QrCode {
         return if (problem != null) ScanOutcome.Rejected(problem) else ScanOutcome.Design(parsed.design)
     }
 
-    /** The design name as shown in the confirm dialog: control characters removed, at most 40 characters. */
+    /** The design name as shown in the confirm dialog (same cleaning as for a tapped link: see [dialogName]). */
     fun dialogName(name: String): String = com.seyedjafari.analogplus.phone.dialogName(name)
 }
