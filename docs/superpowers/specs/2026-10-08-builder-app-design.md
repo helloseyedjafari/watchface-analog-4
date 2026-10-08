@@ -128,6 +128,20 @@ A layout is a set of slots; the generator emits one `ComplicationSlot` per slot 
 - Slot identifiers are stable across rebuilds so the system can keep the user's provider choices.
   Whether choices survive a rebuild with a changed layout is unproven (spike).
 
+## Additions after the market research (2026-10-08)
+
+Source: `reports/Customizable Wear OS watch face market.md`. Competitors lead with catalogues, and several
+offer analog/digital switching, multiple clocks and animated backgrounds.
+
+| Idea | Scope | Notes |
+|---|---|---|
+| Analog or digital main clock, extra small clocks (other time zones) | v1 | More layout generation; the format supports digital clocks and time zones |
+| Built-in templates and our own faces | v1 | A design is only data; solves the empty-app problem |
+| Share a design as a link or QR code, import and apply | v1 | No backend; the phone regenerates the face from the settings file |
+| Animated backgrounds | After a spike | Format support unverified; frames enlarge the APK that travels over Bluetooth; battery cost; ambient stays static |
+| In-app community gallery (share, like, apply) | Later, only if people share | Needs accounts, moderation and reporting (Play user-content rules); cold-start problem; Facer's catalogue is the incumbent |
+| Web builder linked to the phone | Later | Same settings format; needs account sync |
+
 ## Compatibility
 
 - **Works on:** Wear OS 6 watches. Verified: the owner's Galaxy Watch and Google's Wear OS 6
@@ -205,7 +219,7 @@ The Play policies for apps that install watch faces must be read before the firs
 - Which fixed options, if any, the face declares for the system editor.
 - Key backup and recovery after a phone reinstall.
 - Whether to ship saved designs sync across phones (not in scope now).
-- Monetisation (free first is the working assumption).
+- Monetisation: **paid upfront, £4.99** (owner decision 2026-10-08). Check Play merchant-account and tax setup, and how a paid phone app distributes its Wear OS app, before the store track.
 - Whether the default face is bundled as a prebuilt APK or generated on first run from the same
   generator (the spec prefers bundling, so the face works if generation ever fails).
 
