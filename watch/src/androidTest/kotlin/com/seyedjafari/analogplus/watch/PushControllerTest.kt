@@ -14,7 +14,10 @@ import org.junit.Test
  * Runs on the Wear OS 6 watch emulator against the real Watch Face Push service.
  * Faces: v1 = androidTest/assets/face_v1.apk + face_v1.token,
  *        v2 = androidTest/assets/face_v2.apk + face_v2.token (see scripts/build_default_face.sh --help).
- * Gradle reinstalls the app per run, which resets the face slot and the one-shot activation on the emulator.
+ * Needs a clean watch emulator: Gradle installs over the existing app and uninstalls it only after the run, so a face
+ * or an activation left by an earlier run (for example scripts/poc_e2e.sh, which leaves a phone-signed face of version 3
+ * or higher) makes these tests fail ("version not higher", activation already used). Run
+ * `adb -s emulator-5560 uninstall com.seyedjafari.analogplus` before the first run (see docs/poc/README.md).
  */
 class PushControllerTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()

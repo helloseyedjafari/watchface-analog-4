@@ -19,7 +19,8 @@ adb -s <watch-serial> install -r watch/build/outputs/apk/debug/watch-debug.apk
 
 - The watch drops off wireless debugging often. If `adb` says offline, reconnect and run the command again.
 - Phone: Android 9 or newer. Watch: Wear OS 6 (API 36), because Watch Face Push does not exist before that.
-- The watch app asks for two permissions on first start: push watch faces and set the pushed face as active. Allow both.
+- The permission to push watch faces (`PUSH_WATCH_FACES`) is granted when the watch app is installed. The watch app asks
+  once, on first start, for the second one: set the pushed face as active. Allow it.
   (If it does not ask, `adb -s <watch-serial> shell pm grant com.seyedjafari.analogplus com.google.wear.permission.SET_PUSHED_WATCH_FACE_AS_ACTIVE`.)
 - Phone and watch must be paired through the Galaxy Wearable / Wear OS app. The phone sends the face over the Wear Data Layer.
 
@@ -52,10 +53,13 @@ on the phone. Ring segments start empty: pick a provider for each in the same ed
 - **No bundled default face.** The watch is empty until the phone has pushed once.
 - **Signing key.** It is generated on the first send and lives in the phone app's private storage. It is excluded from
   backup. **If you uninstall the phone app (or clear its data) the key is lost, a new key is generated, and the watch
-  rejects every update because it is signed with a different key. Recovery means removing the installed face package
-  from the watch by hand (not tried in the POC; `adb shell pm uninstall com.seyedjafari.analogplus.watchfacepush.analog`
-  on the watch is the first thing to try; the app never removes a face itself). The Share tab has "Reset signing key"
-  for a damaged key; it only helps after the old face is gone from the watch.**
+  rejects every update because it is signed with a different key. Recovery means getting the old face off the watch (not tried on a real
+  watch in the POC): first uninstall the Analog Plus watch app, which removes the face it pushed and resets the one-shot
+  activation, then install the watch app again and press **Activate face** after the next send. Only if the face is still
+  there, try `adb -s <watch-serial> shell pm uninstall com.seyedjafari.analogplus.watchfacepush.analog` (that leaves the
+  watch app's "activated" flag set, so activation stays used and the face must be picked in the face picker). The app
+  never removes a face itself. The Share tab has "Reset signing key" for a damaged key; it only helps after the old face
+  is gone from the watch.**
   Do not uninstall the phone app during the test.
 - Photo backgrounds are resized and compressed to fit Bluetooth (350 KB cap); the build fails with a message if it
   cannot. Share links do not carry the photo.
@@ -85,6 +89,11 @@ scripts/poc_e2e.sh                  # a few minutes: both emulators, 3 designs, 
 scripts/poc_e2e.sh --with-tests     # also unit tests and device tests of every module (slow)
 ```
 
+The phone phase (install and the three builds) holds the phone emulator lock (`scripts/_lock.sh`, the same lock as
+`scripts/with_phone_emulator_lock.sh`); a second run waits and says who holds it. The lock is freed when the owning
+process dies. The script checks that the installed apps are byte-identical to the fresh builds and stops the emulators
+it started, even when one never reached `adb`.
+
 Needs the phone AVD `1_Pixel_8_API_33` and the watch AVD `GalaxyWatch7_API36` (started headless when not running, and
 stopped again only if the script started them), Python 3 with Pillow (`pip3 install -r requirements.txt`), and the Rust
 setup in `docs/poc/pack-native.md`. Screenshots go to `docs/screenshots/poc/`. The script fails when a face does not
@@ -95,3 +104,8 @@ activation.
 Device tests by hand: `./gradlew testDebugUnitTest`, then
 `scripts/with_phone_emulator_lock.sh ./gradlew :facegen:connectedDebugAndroidTest :packjni:connectedDebugAndroidTest :phone:connectedDebugAndroidTest`
 (phone emulator, port 5562) and `ANDROID_SERIAL=emulator-5560 ./gradlew :watch:connectedDebugAndroidTest` (watch emulator).
+
+Before the watch device tests, remove the app from the watch emulator: `adb -s emulator-5560 uninstall com.seyedjafari.analogplus`.
+`scripts/poc_e2e.sh` leaves the watch app, a pushed face (version 3 or higher) and the used activation behind, and the tests
+would fail ("version not higher", activation already used). Gradle installs over the existing app and removes it only
+after its own run, so only the first run after the e2e needs the uninstall (`--with-tests` does it for you).

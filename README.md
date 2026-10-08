@@ -37,7 +37,7 @@ Package: `com.seyedjafari.analogwatchface`.
 
 ```bash
 pip3 install -r requirements.txt     # Pillow, for the image generator only
-./gradlew assembleDebug              # app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:assembleDebug        # app/build/outputs/apk/debug/app-debug.apk
 scripts/install.sh <adb-serial>      # build, install, activate (emulators)
 ```
 
@@ -53,6 +53,11 @@ complications) builds and signs a face and pushes it to a Wear OS 6 watch with W
 `facegen/`, `packjni/`, `protocol/`, `phone/` and `watch/` and does not change the face above. Install, usage, known
 limits, the real-device checklist and the emulator end-to-end run (`scripts/poc_e2e.sh`, screenshots in
 `docs/screenshots/poc/`) are in [`docs/poc/README.md`](docs/poc/README.md).
+
+Building the builder modules (`:phone:`, `:watch:`, `:packjni:`, or a bare `./gradlew assembleDebug`, which builds every
+module) needs Rust, `cargo-ndk`, Android NDK 28.2 and network for the first build; see
+[`docs/poc/pack-native.md`](docs/poc/pack-native.md). The face build above is unchanged: `:app:assembleDebug` and
+`:app:assembleRelease` (also used by `scripts/install.sh` and the CI workflows) never touch Rust.
 
 ## Changing the design
 

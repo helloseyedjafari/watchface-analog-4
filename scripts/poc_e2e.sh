@@ -9,9 +9,13 @@
 # colour and that the version number went up. Finally checks that exactly one face is installed.
 # --with-tests also runs the unit tests and the device test suites of every module (slow).
 # Emulators that were already running are left running; the ones this script started are stopped on exit.
+# The phone emulator phase (install + the three builds) runs under the machine-wide phone emulator lock
+# (scripts/_lock.sh, also used by scripts/with_phone_emulator_lock.sh), so a parallel :phone:connectedDebugAndroidTest
+# cannot uninstall the app mid-run. The lock is released before the optional --with-tests part.
 # Screenshots: docs/screenshots/poc/<n>-<design>.png.   Exit code is nonzero when any step or assertion fails.
 set -euo pipefail
 source "$(dirname "$0")/_env.sh"
+source "$(dirname "$0")/_lock.sh"
 
 PHONE_AVD="1_Pixel_8_API_33"; PHONE_PORT=5562; PHONE="emulator-$PHONE_PORT"
 WATCH_AVD="GalaxyWatch7_API36"; WATCH_PORT=5560; WATCH="emulator-$WATCH_PORT"
@@ -28,22 +32,35 @@ for a in "$@"; do
   case "$a" in
     --with-tests) WITH_TESTS=yes ;;
     --keep-emulators) KEEP=yes ;;
-    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
     *) echo "unknown argument: $a" >&2; exit 2 ;;
   esac
 done
 
-STARTED=()
+STARTED=()      # serials of the emulators this script started
+EMU_PIDS=()     # their host processes (fallback when adb never saw them)
+BATTERY_SET=no
 step() { printf '\n== %s\n' "$*"; }
 info() { printf '   %s\n' "$*"; }
 die()  { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 cleanup() {
-  rm -rf "$WORK"
+  local s pid
+  phone_lock_release
+  # undo "dumpsys battery unplug" (matters for a watch emulator that was already running and stays up)
+  if [ "$BATTERY_SET" = yes ]; then "$ADB" -s "$WATCH" shell dumpsys battery reset >/dev/null 2>&1 || true; fi
   if [ "$KEEP" = no ]; then
     for s in ${STARTED[@]+"${STARTED[@]}"}; do info "stopping $s"; "$ADB" -s "$s" emu kill >/dev/null 2>&1 || true; done
+    sleep 2
+    # an emulator that never reached adb is still running headless: stop its process too
+    for pid in ${EMU_PIDS[@]+"${EMU_PIDS[@]}"}; do
+      if kill -0 "$pid" 2>/dev/null; then pkill -P "$pid" 2>/dev/null || true; kill "$pid" 2>/dev/null || true; fi
+    done
   fi
+  rm -rf "$WORK"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 adbp() { "$ADB" -s "$PHONE" "$@"; }
 adbw() { "$ADB" -s "$WATCH" "$@"; }
@@ -51,16 +68,20 @@ adbw() { "$ADB" -s "$WATCH" "$@"; }
 boot_done() { [ "$("$ADB" -s "$1" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; }
 
 ensure_emulator() { # avd port
-  local avd="$1" port="$2" serial="emulator-$2" tries=0
-  if "$ADB" devices | grep -q "^$serial[[:space:]]*device"; then
+  local avd="$1" port="$2" serial="emulator-$2" tries=0 pid=""
+  if "$ADB" devices | grep -q "^${serial}[[:space:]]*device"; then
     info "$serial already running"
   else
     info "starting $avd on port $port (headless)"
     "$EMULATOR" -avd "$avd" -port "$port" -no-window -no-audio -no-snapshot -no-boot-anim >"$WORK/emulator-$port.log" 2>&1 &
-    STARTED+=("$serial")
-    "$ADB" wait-for-device >/dev/null 2>&1 || true
+    pid=$!
+    STARTED+=("$serial"); EMU_PIDS+=("$pid")
   fi
   until boot_done "$serial"; do
+    if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+      tail -n 20 "$WORK/emulator-$port.log" >&2 || true
+      die "the $avd emulator process exited before it booted"
+    fi
     tries=$((tries + 1)); [ "$tries" -le 100 ] || die "$serial did not finish booting in 5 minutes"
     sleep 3
   done
@@ -82,7 +103,8 @@ wait_log() { # serial tag regex seconds -> prints the matching line
 step "1. emulators"
 ensure_emulator "$PHONE_AVD" "$PHONE_PORT"
 ensure_emulator "$WATCH_AVD" "$WATCH_PORT"
-adbw shell dumpsys battery unplug >/dev/null   # the emulator boots "charging", which covers the face with the charging screen
+BATTERY_SET=yes
+adbw shell dumpsys battery unplug >/dev/null   # the emulator boots "charging", which covers the face with the charging screen (reset on exit)
 
 # ---------------------------------------------------------------- 2. build and install
 step "2. build and install"
@@ -90,9 +112,31 @@ step "2. build and install"
 PHONE_APK="$ROOT/phone/build/outputs/apk/debug/phone-debug.apk"
 WATCH_APK="$ROOT/watch/build/outputs/apk/debug/watch-debug.apk"
 for f in "$PHONE_APK" "$WATCH_APK"; do [ -f "$f" ] || die "missing build output $f"; done
-adbp install -r "$PHONE_APK" >/dev/null && info "phone app installed on $PHONE"
+
+# The installed base APK must be byte-identical to the one just built; a failed install (for example out of storage)
+# would otherwise leave the previously installed app in place and the run would test the wrong build.
+host_sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
+device_sha() { # serial -> sha256 of the installed base APK of $APP
+  local apk; apk="$("$ADB" -s "$1" shell pm path "$APP" 2>/dev/null | tr -d '\r' | sed -n 's/^package://p' | grep -m1 'base\.apk$' || true)"
+  [ -n "$apk" ] || return 1
+  "$ADB" -s "$1" shell sha256sum "$apk" 2>/dev/null | tr -d '\r' | cut -d' ' -f1
+}
+install_checked() { # serial apk label
+  local serial="$1" apk="$2" label="$3" out want got
+  if ! out="$("$ADB" -s "$serial" install -r "$apk" 2>&1)"; then die "$label install failed on $serial: $out"; fi
+  case "$out" in *Success*) ;; *) die "$label install did not report Success on $serial: $out" ;; esac
+  want="$(host_sha "$apk")"
+  got="$(device_sha "$serial" || true)"
+  [ -n "$got" ] || die "cannot read the installed $label APK on $serial to verify it"
+  [ "$got" = "$want" ] || die "installed $label APK on $serial is not the one just built (device $got, build $want)"
+  info "$label app installed on $serial (sha256 ${want:0:12} verified)"
+}
+step "2b. phone emulator lock"
+phone_lock_acquire
+info "holding the phone emulator lock ($PHONE_LOCK)"
+install_checked "$PHONE" "$PHONE_APK" phone
 adbw uninstall "$APP" >/dev/null 2>&1 || true        # fresh install: the one-shot activation is available again
-adbw install -r "$WATCH_APK" >/dev/null && info "watch app installed on $WATCH"
+install_checked "$WATCH" "$WATCH_APK" watch
 # PUSH_WATCH_FACES is granted at install time (pm grant refuses it); SET_PUSHED_WATCH_FACE_AS_ACTIVE is a runtime permission.
 adbw shell pm grant "$APP" com.google.wear.permission.SET_PUSHED_WATCH_FACE_AS_ACTIVE
 PERMS="$(adbw shell dumpsys package "$APP" | tr -d '\r')"
@@ -173,6 +217,7 @@ PY
 run_design 1 default      "#E22B07" yes
 run_design 2 blue-moveTop "#1E6BFF" no "--es accent '#FF1E6BFF' --ez moveTop true"
 run_design 3 quarterRings "#22C55E" no "--es accent '#FF22C55E' --ez quarterRings true"
+phone_lock_release   # the phone emulator is not used again
 
 # ---------------------------------------------------------------- 4b. exactly one face installed
 step "4. installed faces"

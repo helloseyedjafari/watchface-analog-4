@@ -60,7 +60,7 @@ jobs:
       - name: Debug APK
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew :app:assembleDebug --stacktrace
 
       - name: Decode signing keystore
         if: env.HAS_SIGNING == 'true'
@@ -74,7 +74,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --stacktrace
+        run: ./gradlew :app:assembleRelease --stacktrace
 
       - name: Stage release assets
         run: |
