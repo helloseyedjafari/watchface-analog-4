@@ -27,6 +27,8 @@ val cargoNdkBuild = tasks.register<Exec>("cargoNdkBuild") {
     val ndkHome = System.getenv("ANDROID_NDK_HOME") ?: "$sdk/ndk/$NDK_VERSION"
     environment("ANDROID_NDK_HOME", ndkHome)
     environment("PATH", "$home/.cargo/bin:" + System.getenv("PATH"))
+    // one build cache for every worktree
+    environment("CARGO_TARGET_DIR", System.getenv("CARGO_TARGET_DIR") ?: "$home/.cache/analogplus/cargo-target")
 
     val cargo = File("$home/.cargo/bin/cargo").takeIf { it.canExecute() }?.path ?: "cargo"
     val cmd = mutableListOf(cargo, "ndk", "--platform", "28")

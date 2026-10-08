@@ -3,8 +3,8 @@ package com.seyedjafari.analogplus.facegen.xml
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.validate
 
-/** type: raw|drawable|xml|values */
-data class FaceResource(val type: String, val name: String, val bytes: ByteArray)
+/** type: raw|drawable|xml|values. One class for facegen and the native packer. */
+typealias FaceResource = com.seyedjafari.analogplus.packjni.FaceResource
 
 data class FaceFiles(val manifest: String, val resources: List<FaceResource>)
 
