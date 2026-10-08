@@ -1,12 +1,113 @@
 package com.seyedjafari.analogplus.watch
 
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.Gravity
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
+import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
+private const val PERM_PUSH = "com.google.wear.permission.PUSH_WATCH_FACES"
+private const val PERM_ACTIVE = "com.google.wear.permission.SET_PUSHED_WATCH_FACE_AS_ACTIVE"
+
+/** Status screen: installed face version, active or not, last error, and the activation button. */
 class MainActivity : Activity() {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val controller by lazy { PushController(this) }
+    private lateinit var statusView: TextView
+    private lateinit var noteView: TextView
+    private lateinit var activateButton: Button
+    private var activateAfterPermission = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(TextView(this).apply { text = "Analog Plus" })
+        val pad = (resources.displayMetrics.density * 28).toInt()
+        statusView = TextView(this).apply { textSize = 13f; gravity = Gravity.CENTER }
+        noteView = TextView(this).apply { textSize = 11f; gravity = Gravity.CENTER }
+        activateButton = Button(this).apply { text = "Activate face"; setOnClickListener { onActivateClicked() } }
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(pad, pad, pad, pad)
+            addView(TextView(context).apply { text = "Analog Plus"; textSize = 15f; gravity = Gravity.CENTER })
+            addView(statusView)
+            addView(activateButton)
+            addView(noteView)
+        }
+        setContentView(ScrollView(this).apply { addView(column) })
+        requestMissing(PERM_PUSH, PERM_ACTIVE).also { if (!it) refresh() }
+    }
+
+    override fun onResume() { super.onResume(); if (::statusView.isInitialized) refresh(installDefault = false) }
+
+    override fun onDestroy() { scope.cancel(); super.onDestroy() }
+
+    /** Asks for the permissions that are not granted yet. Returns true when a request is pending. */
+    private fun requestMissing(vararg perms: String): Boolean {
+        val missing = perms.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (missing.isEmpty()) return false
+        requestPermissions(missing.toTypedArray(), 1)
+        return true
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        val activate = activateAfterPermission
+        activateAfterPermission = false
+        if (activate) activateNow() else refresh()
+    }
+
+    private fun onActivateClicked() {
+        if (requestMissing(PERM_PUSH, PERM_ACTIVE)) activateAfterPermission = true else activateNow()
+    }
+
+    private fun activateNow() {
+        scope.launch {
+            val result = controller.activateOnce()
+            noteView.text = if (result.ok) "" else result.error.orEmpty()
+            render()
+        }
+    }
+
+    /** First launch: with no face installed, install the bundled default. */
+    private fun refresh(installDefault: Boolean = true) {
+        scope.launch {
+            if (installDefault && controller.status().installedVersion == null) {
+                val result = controller.apply(copyAsset("default_watchface.apk"), getString(R.string.default_wf_token), 1)
+                noteView.text = if (result.ok) "Default face installed." else result.error.orEmpty()
+            }
+            render()
+        }
+    }
+
+    private suspend fun render() {
+        val s = controller.status()
+        val active = when (s.active) {
+            ActiveState.ACTIVE -> "active"
+            ActiveState.NOT_ACTIVE -> "not active"
+            ActiveState.UNKNOWN -> "unknown"
+        }
+        statusView.text = buildString {
+            append(if (s.installedVersion == null) "Face: none" else "Face: version ${s.installedVersion}")
+            append("\nActive: ").append(active)
+            s.lastError?.let { append("\nError: ").append(it) }
+        }
+        activateButton.isEnabled = s.installedVersion != null && s.active != ActiveState.ACTIVE
+        if (s.active != ActiveState.ACTIVE && controller.activationDone && noteView.text.isNullOrEmpty()) {
+            noteView.text = "Activation was already used. Pick Analog Plus in the watch face picker."
+        }
+    }
+
+    private fun copyAsset(name: String): File {
+        val f = File(cacheDir, name)
+        assets.open(name).use { i -> f.outputStream().use { o -> i.copyTo(o) } }
+        return f
     }
 }
