@@ -32,7 +32,7 @@ class DebugApplyReceiver : BroadcastReceiver() {
                 val path = intent.getStringExtra("path") ?: error("missing extra 'path'")
                 val token = intent.getStringExtra("token") ?: error("missing extra 'token'")
                 val versionCode = intent.extras?.get("versionCode")?.toString()?.toIntOrNull() ?: error("missing int extra 'versionCode'")
-                val copy = File(app.cacheDir, "debug_apply.apk")
+                val copy = File.createTempFile("debug_apply", ".apk", app.cacheDir) // own file per broadcast
                 File(path).inputStream().use { i -> copy.outputStream().use { o -> i.copyTo(o) } }
                 try { PushController(app).apply(copy, token, versionCode) } finally { copy.delete() }
             } catch (e: Exception) {

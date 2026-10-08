@@ -7,7 +7,6 @@ import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
 import com.seyedjafari.analogplus.protocol.Protocol
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,8 +22,7 @@ class ApplyReceiver : WearableListenerService() {
 
     override fun onChannelOpened(channel: ChannelClient.Channel) {
         if (channel.path != Protocol.FILE_PATH) return
-        val file = incomingFile(this)
-        file.delete()
+        val file = ApkInbox.of(applicationContext).newFile()
         Wearable.getChannelClient(this).receiveFile(channel, Uri.fromFile(file), false)
     }
 
@@ -34,7 +32,7 @@ class ApplyReceiver : WearableListenerService() {
         val json = String(event.data, Charsets.UTF_8)
         val node = event.sourceNodeId
         scope.launch {
-            val result = ApplyFlow.run(json, incomingFile(app), PushController(app))
+            val result = ApplyFlow.run(json, ApkInbox.of(app), PushController(app))
             Log.i(TAG, "apply result ${result.toJson()}")
             try {
                 Wearable.getMessageClient(app).sendMessage(node, Protocol.RESULT, result.toJson().toByteArray(Charsets.UTF_8)).await()
@@ -49,5 +47,3 @@ class ApplyReceiver : WearableListenerService() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 }
-
-internal fun incomingFile(context: android.content.Context) = File(context.cacheDir, "incoming_face.apk")
