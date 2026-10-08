@@ -8,3 +8,4 @@ tools/*.log
 __pycache__/
 *.jks
 dist/
+*.pem
