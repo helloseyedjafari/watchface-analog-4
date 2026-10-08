@@ -9,3 +9,6 @@ __pycache__/
 *.jks
 dist/
 *.pem
+phone/build
+watch/build
+**/target/

@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "AnalogWatchFace"
-include(":app")
+include(":app", ":protocol", ":facegen", ":packjni", ":phone", ":watch")
