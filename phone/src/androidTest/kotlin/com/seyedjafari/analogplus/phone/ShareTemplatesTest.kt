@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -129,21 +130,29 @@ class ShareTemplatesTest {
 
     @Test fun resetSigningKeyAsksFirstAndThenRemovesTheKey() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-        val keys = com.seyedjafari.analogplus.facegen.KeyStore(ctx)
-        val before = keys.pem()
-        val state = EditorState(DesignSettings())
-        rule.setContent {
-            androidx.compose.foundation.layout.Column(
-                androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
-            ) { ShareTab(state) }
+        // a key file of the test's own: the app's real signing-key.pem (which may have signed the face on a watch) is never touched
+        val testKeyName = "test-signing-key.pem"
+        val keys = com.seyedjafari.analogplus.facegen.KeyStore(ctx, testKeyName)
+        try {
+            val before = keys.pem()
+            val state = EditorState(DesignSettings())
+            rule.setContent {
+                androidx.compose.foundation.layout.Column(
+                    androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                ) { ShareTab(state) { c -> com.seyedjafari.analogplus.facegen.KeyStore(c, testKeyName) } }
+            }
+            rule.onNodeWithTag(Tags.RESET_KEY_BUTTON).performScrollTo().performClick()
+            // nothing happens until the dialog is confirmed
+            assertEquals(before, keys.pem())
+            rule.onNodeWithTag(Tags.RESET_KEY_CONFIRM).performClick()
+            // the reset runs off the main thread
+            rule.waitUntil(10_000) { rule.onAllNodesWithTag(Tags.RESET_KEY_NOTICE).fetchSemanticsNodes().isNotEmpty() }
+            rule.onNodeWithTag(Tags.RESET_KEY_NOTICE).assertIsDisplayed()
+            assertEquals(false, keys.hasKey())
+            assertNotEquals(before, keys.pem())
+        } finally {
+            keys.resetKey()
+            ctx.deleteFile(testKeyName + ".tmp")
         }
-        rule.onNodeWithTag(Tags.RESET_KEY_BUTTON).performScrollTo().performClick()
-        // nothing happens until the dialog is confirmed
-        assertEquals(before, keys.pem())
-        rule.onNodeWithTag(Tags.RESET_KEY_CONFIRM).performClick()
-        rule.onNodeWithTag(Tags.RESET_KEY_NOTICE).assertIsDisplayed()
-        assertEquals(false, keys.hasKey())
-        assertNotEquals(before, keys.pem())
-        keys.resetKey()
     }
 }

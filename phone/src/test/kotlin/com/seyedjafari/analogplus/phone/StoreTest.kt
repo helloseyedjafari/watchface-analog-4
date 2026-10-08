@@ -18,10 +18,15 @@ import org.junit.rules.TemporaryFolder
 
 class FakeKeyValueStore : KeyValueStore {
     val map = HashMap<String, Any>()
+    /** While true, [putLong] fails like a full disk (SharedPreferences `commit` returning false). */
+    var failLongWrites = false
     override fun getString(key: String) = map[key] as String?
     override fun getLong(key: String, default: Long) = (map[key] as Long?) ?: default
     override fun putString(key: String, value: String) { map[key] = value }
-    override fun putLong(key: String, value: Long) { map[key] = value }
+    override fun putLong(key: String, value: Long) {
+        if (failLongWrites) throw java.io.IOException("disk full")
+        map[key] = value
+    }
 }
 
 class StoreTest {
@@ -180,5 +185,94 @@ class StoreTest {
         val s = store(kv)
         s.saveNamed("Good", Templates.all[1])
         assertEquals(listOf("Good"), s.savedDesigns().map { it.name })
+    }
+
+    // ---- durable counter, fingerprint, lazy photo, shared lock ------------------------------------------------
+
+    @Test fun failedCounterWriteHandsOutNoNumberAndTheNextTryReusesNothing() {
+        val kv = FakeKeyValueStore()
+        val s = store(kv, now = { at(500_000) })
+        assertEquals(500_000, s.nextVersionCode())
+        kv.failLongWrites = true
+        val e = assertThrows(VersionCounterException::class.java) { s.nextVersionCode() }
+        assertTrue(e.message!!, e.message!!.contains("version counter"))
+        assertEquals(500_000L, kv.getLong("version_counter", 0)) // nothing half written
+        kv.failLongWrites = false
+        assertEquals(500_001, s.nextVersionCode())
+    }
+
+    @Test fun sentKeyFingerprintIsNullUntilSavedAndSurvivesANewStore() {
+        val kv = FakeKeyValueStore()
+        assertNull(store(kv).lastSentKeyFingerprint())
+        store(kv).saveSentKeyFingerprint("abcd1234abcd1234")
+        assertEquals("abcd1234abcd1234", store(kv).lastSentKeyFingerprint())
+    }
+
+    @Test fun designLoadsWithoutThePhotoFirstAndKeepsItsPhotoKind() {
+        val kv = FakeKeyValueStore()
+        val photo = ByteArray(2000) { (it % 200).toByte() }
+        store(kv).saveCurrent(DesignSettings(background = BackgroundDesign(BackgroundKind.PHOTO, photoJpeg = photo, dimPercent = 20)))
+        val s = store(kv)
+        val first = s.loadCurrentWithoutPhoto()
+        assertNull(first.background.photoJpeg)
+        assertEquals(BackgroundKind.PHOTO, first.background.kind)
+        assertArrayEquals(photo, s.readPhotoFile())
+    }
+
+    @Test fun savingWhileThePhotoIsStillLoadingNeverDropsTheStoredPhoto() {
+        val kv = FakeKeyValueStore()
+        val photo = byteArrayOf(1, 2, 3, 4)
+        store(kv).saveCurrent(DesignSettings(background = BackgroundDesign(BackgroundKind.PHOTO, photoJpeg = photo)))
+        val s = store(kv)
+        val loaded = s.loadCurrentWithoutPhoto()
+        s.saveCurrent(loaded) // the autosave fires before the photo is in memory
+        s.saveCurrent(loaded.copy(accent = "#FF112233"))
+        assertTrue(File(tmp.root, "background.jpg").exists())
+        s.finishPhotoLoad(s.readPhotoFile())
+        s.saveCurrent(loaded.copy(accent = "#FF112233", background = loaded.background.copy(photoJpeg = photo))) // same photo: no rewrite needed
+        assertArrayEquals(photo, File(tmp.root, "background.jpg").readBytes())
+        assertEquals("#FF112233", store(kv).loadCurrent().accent)
+    }
+
+    @Test fun aPhotoChosenWhileLoadingIsKeptAndNotOverwrittenByTheOldOne() {
+        val kv = FakeKeyValueStore()
+        store(kv).saveCurrent(DesignSettings(background = BackgroundDesign(BackgroundKind.PHOTO, photoJpeg = byteArrayOf(1, 2, 3))))
+        val s = store(kv)
+        val loaded = s.loadCurrentWithoutPhoto()
+        val old = s.readPhotoFile()
+        val chosen = byteArrayOf(9, 8, 7, 6)
+        s.saveCurrent(loaded.copy(background = loaded.background.copy(photoJpeg = chosen)))
+        s.finishPhotoLoad(old) // arrives late
+        s.saveCurrent(loaded.copy(background = loaded.background.copy(photoJpeg = chosen)))
+        assertArrayEquals(chosen, File(tmp.root, "background.jpg").readBytes())
+    }
+
+    @Test fun afterTheLoadFinishesRemovingThePhotoDeletesTheFile() {
+        val kv = FakeKeyValueStore()
+        store(kv).saveCurrent(DesignSettings(background = BackgroundDesign(BackgroundKind.PHOTO, photoJpeg = byteArrayOf(1, 2, 3))))
+        val s = store(kv)
+        val loaded = s.loadCurrentWithoutPhoto()
+        s.finishPhotoLoad(s.readPhotoFile())
+        s.saveCurrent(loaded)
+        assertFalse(File(tmp.root, "background.jpg").exists())
+    }
+
+    @Test fun noPhotoFileMeansTheSolidFallbackRightAway() {
+        val kv = FakeKeyValueStore()
+        store(kv).saveCurrent(DesignSettings(background = BackgroundDesign(BackgroundKind.PHOTO, photoJpeg = byteArrayOf(1, 2, 3))))
+        File(tmp.root, "background.jpg").delete()
+        assertEquals(BackgroundKind.SOLID, store(kv).loadCurrentWithoutPhoto().background.kind)
+    }
+
+    @Test fun twoStoreInstancesShareOneLock() {
+        // a debug build and the UI each have their own Store: they must still never hand out the same version
+        val kv = FakeKeyValueStore()
+        val a = store(kv); val b = store(kv)
+        val seen = java.util.Collections.synchronizedList(ArrayList<Int>())
+        val threads = (0 until 8).map { i ->
+            Thread { repeat(50) { seen += (if (i % 2 == 0) a else b).nextVersionCode() } }
+        }
+        threads.forEach { it.start() }; threads.forEach { it.join() }
+        assertEquals(400, seen.toSet().size)
     }
 }

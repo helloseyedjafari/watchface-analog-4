@@ -1,5 +1,6 @@
 package com.seyedjafari.analogplus.phone
 
+import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -28,26 +30,45 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignJson
+import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-/**
- * Loads a pasted or tapped share link into [state]. Returns null on success or the text to show the user;
- * never throws. The design is replaced as is (it may be invalid; the editor then shows what is wrong).
- */
-fun loadShareLink(state: EditorState, link: String): String? {
+/** The outcome of reading a share link: the design, or the text to show the user. */
+sealed interface ShareLinkResult {
+    data class Ok(val design: DesignSettings) : ShareLinkResult
+    data class Problem(val text: String) : ShareLinkResult
+}
+
+/** Reads a share link (up to 1 MiB: call off the main thread). Never throws. The design may be invalid; the editor shows what is wrong. */
+fun parseShareLink(link: String): ShareLinkResult {
     val text = link.trim()
-    if (text.isEmpty()) return "Paste an analogplus://design link first."
+    if (text.isEmpty()) return ShareLinkResult.Problem("Paste an analogplus://design link first.")
     return try {
-        state.replace(DesignJson.fromShareLink(text))
-        null
+        ShareLinkResult.Ok(DesignJson.fromShareLink(text))
     } catch (e: IllegalArgumentException) {
-        e.message ?: "That is not an Analog Plus design link."
+        ShareLinkResult.Problem(e.message ?: "That is not an Analog Plus design link.")
     } catch (e: Exception) {
-        "That link could not be read: ${e.message ?: e.javaClass.simpleName}"
+        ShareLinkResult.Problem("That link could not be read: ${e.message ?: e.javaClass.simpleName}")
     }
 }
 
+/**
+ * Loads a pasted share link into [state]. Returns null on success or the text to show the user; never throws.
+ * The design is replaced as is (it may be invalid; the editor then shows what is wrong).
+ */
+fun loadShareLink(state: EditorState, link: String): String? = when (val r = parseShareLink(link)) {
+    is ShareLinkResult.Ok -> { state.replace(r.design); null }
+    is ShareLinkResult.Problem -> r.text
+}
+
+/**
+ * [keyStoreFactory] makes the [KeyStore] that "Reset signing key" deletes; tests pass one on a file of their own so the
+ * real key is never touched.
+ */
 @Composable
-fun ShareTab(state: EditorState) {
+fun ShareTab(state: EditorState, keyStoreFactory: (Context) -> KeyStore = { KeyStore(it) }) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val ownLink = remember(state.design) { DesignJson.shareLink(state.design) }
@@ -103,7 +124,7 @@ fun ShareTab(state: EditorState) {
             modifier = Modifier.testTag(Tags.SHARE_LOAD_BUTTON),
         ) { Text("Load design") }
 
-        SigningKeySection(Modifier.padding(top = 16.dp))
+        SigningKeySection(keyStoreFactory, Modifier.padding(top = 16.dp))
     }
 }
 
@@ -112,9 +133,11 @@ fun ShareTab(state: EditorState) {
  * removes a face (that would burn the one-time activation), so this only helps after the old face was removed by hand.
  */
 @Composable
-private fun SigningKeySection(modifier: Modifier = Modifier) {
+private fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier: Modifier = Modifier) {
     val context = LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
     var confirming by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf<String?>(null) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Signing key", style = MaterialTheme.typography.titleMedium)
@@ -123,7 +146,7 @@ private fun SigningKeySection(modifier: Modifier = Modifier) {
                 "rejects updates after a reinstall, you can make a new key here.",
             style = MaterialTheme.typography.bodySmall,
         )
-        OutlinedButton(onClick = { confirming = true }, modifier = Modifier.testTag(Tags.RESET_KEY_BUTTON)) { Text("Reset signing key") }
+        OutlinedButton(onClick = { confirming = true }, enabled = !busy, modifier = Modifier.testTag(Tags.RESET_KEY_BUTTON)) { Text("Reset signing key") }
         done?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag(Tags.RESET_KEY_NOTICE)) }
     }
     if (confirming) {
@@ -140,9 +163,17 @@ private fun SigningKeySection(modifier: Modifier = Modifier) {
             confirmButton = {
                 TextButton(
                     onClick = {
-                        KeyStore(context).resetKey()
                         confirming = false
-                        done = "Signing key reset. A new key is made on the next send."
+                        busy = true
+                        done = null
+                        scope.launch {
+                            // the key lock can be held for about a second while a key is generated
+                            val problem = withContext(Dispatchers.IO) {
+                                try { keyStoreFactory(context).resetKey(); null } catch (e: Exception) { e.message ?: "The key could not be reset." }
+                            }
+                            busy = false
+                            done = problem ?: "Signing key reset. A new key is made on the next send."
+                        }
                     },
                     modifier = Modifier.testTag(Tags.RESET_KEY_CONFIRM),
                 ) { Text("Reset") }
