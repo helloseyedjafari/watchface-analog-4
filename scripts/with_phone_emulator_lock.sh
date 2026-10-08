@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # Runs a command while holding a machine-wide lock for the phone emulator (emulator-5562), so parallel agents never
 # install the same app over each other. Usage: scripts/with_phone_emulator_lock.sh ./gradlew :phone:connectedDebugAndroidTest
+# The lock logic (owner PID, stale = owner gone, waiters say who holds it) is in scripts/_lock.sh.
 set -u
-LOCK="${TMPDIR:-/tmp}/analogplus-phone-emulator.lock"
-until mkdir "$LOCK" 2>/dev/null; do
-  # a lock older than 20 minutes belongs to a dead run
-  if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +20 2>/dev/null)" ]; then rmdir "$LOCK" 2>/dev/null; fi
-  sleep 5
-done
-trap 'rmdir "$LOCK"' EXIT INT TERM
+source "$(dirname "$0")/_lock.sh"
+phone_lock_acquire
+trap phone_lock_release EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5562}" "$@"

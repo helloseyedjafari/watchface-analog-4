@@ -18,7 +18,11 @@ Android NDK 28.2.13676358 must be installed (`sdkmanager "ndk;28.2.13676358"`). 
 - `packjni/build.gradle.kts` registers `cargoNdkBuild` (an `Exec` task) and makes `preBuild` depend on it, so every Gradle build of any module that uses `packjni` has the `.so` files.
 - It runs `cargo ndk --platform 28 -t arm64-v8a -t armeabi-v7a -t x86_64 -o src/main/jniLibs build --release` in `packjni/`. Output goes to `packjni/src/main/jniLibs/<abi>/libpackjni.so` (git-ignored, about 2.2 MB arm64, 1.4 MB armv7, 2.5 MB x86_64).
 - Inputs are `Cargo.toml`, `Cargo.lock`, `src/**/*.rs` and the ABI list; the task is `UP-TO-DATE` when none changed, so Rust is not rebuilt. First build downloads and compiles the crates (about 1 minute for three ABIs); later Rust edits take about 20 s.
-- Fewer ABIs while iterating: `./gradlew ... -PpackjniAbis=arm64-v8a,x86_64`.
+- Fewer ABIs while iterating: `./gradlew ... -PpackjniAbis=arm64-v8a,x86_64`. The task first deletes every ABI directory in `src/main/jniLibs` that is not in the list (cargo-ndk never does), so old libraries cannot be packaged next to new ones.
+- `cargo` runs with `--locked`: the committed `Cargo.lock` is used as is and the build fails rather than rewriting it. After changing `Cargo.toml`, run `cargo update -p <crate>` or `cargo generate-lockfile` in `packjni/` and commit the lock file.
+- All worktrees share one cargo target directory (`~/.cache/analogplus/cargo-target`, or `CARGO_TARGET_DIR`). Cargo locks it while compiling; parallel builds of the same ABI wait for each other.
+- `packjni/consumer-rules.pro` keeps `PackException` (thrown from native code by name) and the native methods from being renamed by R8 in the apps that use the library.
+- Building any module that depends on `packjni` (or a bare `./gradlew assembleDebug`) runs this task. The original face does not: use `./gradlew :app:assembleDebug`.
 - If `cargo`, `cargo-ndk` or the NDK is missing the task fails with a message saying what to install.
 - `Cargo.lock` is committed. `pack-api` is built with its `cert-gen` feature (random RSA key plus self-signed certificate); `rsa` and `pem` are direct dependencies only to write that key out as PEM.
 
