@@ -23,6 +23,8 @@ android {
     sourceSets {
         getByName("main").java.srcDir("src/main/kotlin")
         getByName("androidTest").java.srcDir("src/androidTest/kotlin")
+        getByName("debug").java.srcDir("src/debug/kotlin")
+        getByName("test").java.srcDir("src/test/kotlin")
     }
 }
 
@@ -32,6 +34,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
