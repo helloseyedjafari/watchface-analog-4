@@ -15,4 +15,16 @@ object Tags {
     fun template(name: String) = "template_$name"
     fun slot(id: Int) = "slot_$id"
     fun field(name: String) = "field_$name"
+
+    // phone shell (send panel, share, templates, saved designs)
+    const val SEND_VALIDATION = "send_validation"
+    const val SHARE_OWN_LINK = "share_own_link"
+    const val SHARE_COPY_BUTTON = "share_copy_button"
+    const val SHARE_SHARE_BUTTON = "share_share_button"
+    const val SHARE_ERROR = "share_error"
+    const val SAVE_NAME_FIELD = "save_name_field"
+    const val SAVE_BUTTON = "save_button"
+    const val SAVE_ERROR = "save_error"
+    fun saved(name: String) = "saved_$name"
+    fun savedDelete(name: String) = "saved_delete_$name"
 }
