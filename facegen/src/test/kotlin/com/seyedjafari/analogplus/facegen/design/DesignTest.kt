@@ -242,4 +242,17 @@ class DesignTest {
         assertTrue(DesignSettings(ring = RingDesign(startAngle = 400)).validate().any { it.field == "ring.startAngle" })
         assertTrue(DesignSettings(ring = RingDesign(startAngle = -90)).validate().isEmpty())
     }
+
+    @Test fun thousandsOfSlotsAreRejectedQuickly() {
+        val slots = (0 until 5000).map { SlotDesign(it % 6, "s$it", 100, 100, 8, 8) }
+        val t0 = System.nanoTime()
+        val errs = DesignSettings(slots = slots).validate()
+        assertTrue(errs.any { it.field == "slots" && "8" in it.message })
+        assertTrue("took too long", (System.nanoTime() - t0) < 500_000_000L)
+    }
+
+    @Test fun tooManyRingColoursAreRejected() {
+        val d = DesignSettings(ring = RingDesign(RingLayout.FULL, colors = List(100) { "#FFFFFFFF" }))
+        assertTrue(d.validate().any { it.field == "ring.colors" })
+    }
 }

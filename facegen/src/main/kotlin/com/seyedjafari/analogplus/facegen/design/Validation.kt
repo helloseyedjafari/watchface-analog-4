@@ -14,6 +14,7 @@ internal const val CENTRE = 225
 internal const val SAFE_RADIUS = 190
 internal const val HAND_CENTRE_HALF = 18 // 36-unit square around the centre
 internal const val MAX_SLOT_ID = 5
+internal const val MAX_RING_COLOURS = 8
 
 private fun RingLayout.segments(): Int = when (this) {
     RingLayout.NONE -> 0
@@ -52,7 +53,8 @@ fun DesignSettings.validate(): List<DesignError> {
     range("background.dimPercent", background.dimPercent, 0, 80)
 
     if (ring.colors.isEmpty()) err("ring.colors", "needs at least one colour")
-    ring.colors.forEach { colour("ring.colors", it) }
+    ring.colors.take(MAX_RING_COLOURS + 1).forEach { colour("ring.colors", it) }
+    if (ring.colors.size > MAX_RING_COLOURS) err("ring.colors", "at most $MAX_RING_COLOURS colours")
     colour("ring.trackColor", ring.trackColor)
     range("ring.thicknessPx", ring.thicknessPx, 4, 40)
     range("ring.gapDegrees", ring.gapDegrees, 0, 30)
@@ -61,7 +63,7 @@ fun DesignSettings.validate(): List<DesignError> {
         err("background.photoJpeg", "a photo background needs a photo")
     }
 
-    slots.forEachIndexed { i, s ->
+    slots.take(MAX_COMPLICATIONS + 1).forEachIndexed { i, s ->
         colour("slots[$i].backgroundColor", s.backgroundColor)
         colour("slots[$i].textColor", s.textColor)
         colour("slots[$i].iconColor", s.iconColor)
@@ -82,8 +84,11 @@ fun DesignSettings.validate(): List<DesignError> {
     }
     val ids = slots.map { it.id }
     if (ids.toSet().size != ids.size) err("slots", "slot ids must be unique")
-    for (i in slots.indices) for (j in i + 1 until slots.size) {
-        if (intersects(slots[i], slots[j])) err("slots", "slots '${slots[i].name}' and '${slots[j].name}' overlap")
+    // an imported design can carry thousands of slots: the pairwise check below is quadratic, so it only runs within the cap
+    if (slots.size <= MAX_COMPLICATIONS) {
+        for (i in slots.indices) for (j in i + 1 until slots.size) {
+            if (intersects(slots[i], slots[j])) err("slots", "slots '${slots[i].name}' and '${slots[j].name}' overlap")
+        }
     }
     val total = slots.size + ring.layout.segments()
     if (total > MAX_COMPLICATIONS) {
