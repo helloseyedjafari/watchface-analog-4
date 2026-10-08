@@ -203,6 +203,12 @@ PY
   info "watch applied version $version (previous $PREV_VERSION)"
   PREV_VERSION="$version"
   if [ "$activate" = yes ]; then
+    # the system finishes installing a pushed face a moment after the apply call returns: wait for the package
+    local waited=0
+    until adbw shell pm list packages "$FACE_PKG" | tr -d '\r' | grep -qx "package:$FACE_PKG"; do
+      [ "$waited" -lt 40 ] || die "the face package $FACE_PKG did not appear within 40 s of the apply"
+      sleep 2; waited=$((waited + 2))
+    done
     adbw logcat -c
     adbw shell am broadcast -n "$WATCH_RECV" -a "$APP.DEBUG_ACTIVATE" >/dev/null
     res="$(wait_log "$WATCH" AnalogPlusPush '"ok"' 30)" || die "no activation result within 30 s"
