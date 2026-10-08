@@ -9,7 +9,7 @@ face (Google `pack`) and pushes it with Watch Face Push (Wear OS 6 only).
 
 1. `docs/handoff/2026-10-08-builder-session.md` — decisions, spike findings, gotchas, current state, owner preferences
 2. `docs/superpowers/specs/2026-10-08-builder-app-design.md` — the builder design
-3. `docs/superpowers/plans/2026-10-08-builder-poc.md` — the POC plan (10 tasks; **not started**, waits for the owner's "go")
+3. `docs/superpowers/plans/2026-10-08-builder-poc.md` — the POC plan (10 tasks; **implemented and merged to `main` on 2026-10-08, not pushed**; how to run and test it: `docs/poc/README.md`; test map: `docs/superpowers/scenarios/2026-10-08-builder-poc-user-scenarios.md`)
 4. `docs/research/Customizable Wear OS watch face market.md` — market verdict (small, time-boxed bet)
 5. `docs/superpowers/specs/2026-10-08-configurable-watchface-design.md` — ON HOLD fallback (code-free face with fixed options)
 
@@ -20,6 +20,7 @@ face (Google `pack`) and pushes it with Watch Face Push (Wear OS 6 only).
 - Max 8 complication slots in total (ring segments count). Colours are `#AARRGGBB`. Clamp ranged values.
 - Push library needs AGP 8.9.1+/Gradle 8.11.1. Validator library needs phone minSdk 28.
 - Gradle file watching misses edits under `/private/tmp` (stale builds). Check the APK is newer than the source.
+- Uninstalling the watch app does NOT remove the pushed face (`com.seyedjafari.analogplus.watchfacepush.analog`); remove it with `adb shell pm uninstall com.seyedjafari.analogplus.watchfacepush.analog`. The phone-to-watch Data Layer transfer has never run on paired devices (emulators cannot be paired without a Google sign-in).
 - The real watch (SM-L315F) is on wireless debugging and drops often; emulators are not paired with each other.
 - The owner's watch still has the spike test app and test face installed; ask before removing (see handoff).
 
