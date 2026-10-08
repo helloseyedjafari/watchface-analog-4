@@ -324,25 +324,26 @@ class SlotGeometryTest {
         }
     }
 
-    @Test fun theDefaultSlotsOnlyGrazeTheCornerOfTheFourAndTheEightTiles() {
-        // the 48 unit tile is bigger than the glyph, so the stock face reports two harmless overlaps (right/4, left/8)
+    @Test fun theStockFaceReportsNoNumeralOverlap() {
+        // only the glyph area counts (30 units inside the 48 unit tile), so today's four slots are quiet
         val covered = defaultSlots().associate { it.name to SlotGeometry.numeralsCovered(it, NumeralMode.ALL) }
-        assertEquals(mapOf("top" to emptyList<Int>(), "right" to listOf(4), "left" to listOf(8), "bottom" to emptyList<Int>()), covered)
+        assertEquals(mapOf("top" to emptyList<Int>(), "right" to emptyList<Int>(), "left" to emptyList<Int>(), "bottom" to emptyList<Int>()), covered)
         for (s in defaultSlots()) assertEquals(s.name, emptyList<Int>(), SlotGeometry.numeralsCovered(s, NumeralMode.OFF))
     }
 
     @Test fun aSlotOverANumeralTileIsReportedAndOffMeansNone() {
-        val s = SlotDesign(0, "t", 200, 15, 50, 40) // over the 12 (tile 201..249 x 15..63)
+        val s = SlotDesign(0, "t", 200, 15, 50, 40) // over the 12 (glyph area about 210..240 x 24..54)
         assertEquals(listOf(12), SlotGeometry.numeralsCovered(s, NumeralMode.ALL))
         assertEquals(listOf(12), SlotGeometry.numeralsCovered(s, NumeralMode.QUARTERS))
         assertEquals(emptyList<Int>(), SlotGeometry.numeralsCovered(s, NumeralMode.OFF))
-        val one = SlotDesign(1, "o", 300, 50, 40, 40) // over the 1 (tile 294..342 x 40..88), a numeral that quarters do not show
+        val one = SlotDesign(1, "o", 300, 50, 40, 40) // over the 1 (glyph area about 303..333 x 49..79), a numeral that quarters do not show
         assertEquals(listOf(1), SlotGeometry.numeralsCovered(one, NumeralMode.ALL))
         assertEquals(emptyList<Int>(), SlotGeometry.numeralsCovered(one, NumeralMode.QUARTERS))
         // touching a tile is not overlapping
         val (tx, ty) = SlotGeometry.numeralTiles(NumeralMode.ALL).getValue(12)
-        assertEquals(emptyList<Int>(), SlotGeometry.numeralsCovered(SlotDesign(0, "e", tx + 48, ty, 40, 40), NumeralMode.QUARTERS))
-        assertEquals(listOf(12), SlotGeometry.numeralsCovered(SlotDesign(0, "e", tx + 47, ty, 40, 40), NumeralMode.QUARTERS))
+        // the glyph area is 30 units centred in the 48 unit tile: it spans tx+9 .. tx+39
+        assertEquals(emptyList<Int>(), SlotGeometry.numeralsCovered(SlotDesign(0, "e", tx + 39, ty, 40, 40), NumeralMode.QUARTERS))
+        assertEquals(listOf(12), SlotGeometry.numeralsCovered(SlotDesign(0, "e", tx + 38, ty, 40, 40), NumeralMode.QUARTERS))
     }
 
     @Test fun slotsOverTheLimitAreOnlyShownUpToTheCap() {

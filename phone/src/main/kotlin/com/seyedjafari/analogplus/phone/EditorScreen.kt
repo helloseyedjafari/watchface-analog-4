@@ -31,9 +31,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.seyedjafari.analogplus.facegen.FacePackager
+import com.seyedjafari.analogplus.facegen.design.designHints
 
 /** The tabs in order; the tab tag is `Tags.tab(name.lowercase())`. */
 private val TABS = listOf("Colours", "Dial", "Hands", "Background", "Complications", "Rings", "Templates", "Share")
@@ -44,7 +45,7 @@ fun rememberSendController(store: Store): SendController {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     return remember(store) {
-        SendController(lazy { FacePackager(context) }, DataLayerSender(context), store, scope)
+        SendController(lazy { FacePackager(context) }, DataLayerSender(context), store, scope, signingKeyFingerprintProvider(context))
     }
 }
 
@@ -63,6 +64,13 @@ fun EditorScreen(
         // insets: edge-to-edge is enforced on Android 15, and the keyboard must not cover the send panel
         Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
             PreviewPane(state, Modifier.padding(vertical = 8.dp).size(150.dp).align(Alignment.CenterHorizontally))
+            // soft, non-blocking notes (e.g. what always-on mode does with dark hands)
+            designHints(state.design).firstOrNull()?.let {
+                Text(
+                    it, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp).testTag(Tags.field("design_hint")),
+                )
+            }
             ScrollableTabRow(selectedTabIndex = selected, edgePadding = 8.dp) {
                 TABS.forEachIndexed { i, name ->
                     Tab(

@@ -74,11 +74,16 @@ object SlotGeometry {
 
     private const val NUMERAL_RING = 185.6
 
-    /** The numerals (1..12, ascending) whose tile intersects slot [s]; empty when numerals are OFF. */
+    /** The visible glyph is much smaller than its tile; only a slot over the glyph area is reported. */
+    private const val GLYPH_BOX = 30
+
+    /** The numerals (1..12, ascending) whose glyph area (centred in its tile) intersects slot [s]; empty when numerals are OFF. */
     fun numeralsCovered(s: SlotDesign, mode: NumeralMode): List<Int> {
-        val box = CoreSections.NUMERAL_BOX
+        val box = GLYPH_BOX
+        val inset = (CoreSections.NUMERAL_BOX - GLYPH_BOX) / 2
         return numeralTiles(mode).filter { (_, tile) ->
-            val (tx, ty) = tile
+            val tx = tile.first + inset
+            val ty = tile.second + inset
             s.x.toLong() < tx + box && tx.toLong() < s.x.toLong() + s.w &&
                 s.y.toLong() < ty + box && ty.toLong() < s.y.toLong() + s.h
         }.keys.sorted()
