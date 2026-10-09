@@ -6,13 +6,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -25,16 +25,16 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.parseArgb
+import com.seyedjafari.analogplus.phone.ui.components.ErrorBanner
+import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import com.seyedjafari.analogplus.phone.ui.theme.TabularNumbers
 
 /** Preset colours offered under every colour field (white, black, the red accent, blue, green, amber, magenta, grey). */
 val COLOUR_PRESETS: List<String> = listOf(
@@ -42,6 +42,7 @@ val COLOUR_PRESETS: List<String> = listOf(
 )
 
 private const val MAX_ERROR_CHARS = 200
+private val PresetSize = Spacing.xxl + Spacing.xs
 
 /** Test tag of a preset chip: `preset_<fieldTag>_<hex>`. */
 fun presetTag(fieldTag: String, hex: String) = "preset_${fieldTag}_$hex"
@@ -61,15 +62,15 @@ fun ColourField(
     fieldTag: String = "",
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
             OutlinedTextField(
                 value = value,
                 onValueChange = { onChange(normaliseColourInput(it)) },
                 label = { Text(label) },
                 singleLine = true,
                 isError = errorText != null,
-                textStyle = TextStyle(fontFamily = FontFamily.Monospace),
+                textStyle = TabularNumbers.merge(MaterialTheme.typography.bodyLarge),
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Characters,
                     autoCorrectEnabled = false,
@@ -80,28 +81,31 @@ fun ColourField(
             Swatch(parseArgb(value))
         }
         if (errorText != null) {
-            Text(
+            ErrorBanner(
                 errorText.shortForDisplay(MAX_ERROR_CHARS),
+                if (fieldTag.isNotBlank()) Modifier.testTag(Tags.error(fieldTag)) else Modifier,
                 maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = if (fieldTag.isNotBlank()) Modifier.testTag(Tags.error(fieldTag)) else Modifier,
             )
         }
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             COLOUR_PRESETS.forEach { hex ->
                 val argb = parseArgb(hex)!!
-                Row(
+                val presetDescription = stringResource(R.string.colour_preset_description, hex)
+                Box(
                     Modifier
-                        .size(36.dp)
+                        .size(Spacing.minTouch)
                         .clip(CircleShape)
-                        .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), CircleShape)
                         .clickable(role = Role.Button) { onChange(hex) }
-                        .semantics { contentDescription = "Preset $hex" }
+                        .semantics { contentDescription = presetDescription }
                         .then(if (fieldTag.isNotBlank()) Modifier.testTag(presetTag(fieldTag, hex)) else Modifier),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Canvas(Modifier.size(36.dp)) { drawRect(Color(argb)) }
+                    Canvas(
+                        Modifier
+                            .size(PresetSize)
+                            .clip(CircleShape)
+                            .border(BorderStroke(Spacing.hairline, MaterialTheme.colorScheme.outline), CircleShape),
+                    ) { drawRect(Color(argb)) }
                 }
             }
         }
@@ -112,17 +116,20 @@ fun ColourField(
 @Composable
 private fun Swatch(argb: Int?) {
     val outline = MaterialTheme.colorScheme.outline
+    val shape = MaterialTheme.shapes.extraSmall
+    val description = stringResource(if (argb != null) R.string.colour_swatch_valid else R.string.colour_swatch_invalid)
     Canvas(
         Modifier
-            .size(40.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .border(BorderStroke(1.dp, outline), RoundedCornerShape(6.dp)),
+            .size(Spacing.xxl + Spacing.sm)
+            .clip(shape)
+            .border(BorderStroke(Spacing.hairline, outline), shape)
+            .semantics { contentDescription = description },
     ) {
         if (argb != null) {
             drawRect(Color(argb))
         } else {
-            drawLine(outline, Offset(0f, 0f), Offset(size.width, size.height), strokeWidth = 2.dp.toPx())
-            drawLine(outline, Offset(size.width, 0f), Offset(0f, size.height), strokeWidth = 2.dp.toPx())
+            drawLine(outline, Offset(0f, 0f), Offset(size.width, size.height), strokeWidth = (Spacing.xs / 2).toPx())
+            drawLine(outline, Offset(size.width, 0f), Offset(0f, size.height), strokeWidth = (Spacing.xs / 2).toPx())
         }
     }
 }

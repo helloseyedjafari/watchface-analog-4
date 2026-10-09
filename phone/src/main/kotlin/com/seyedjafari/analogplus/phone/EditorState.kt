@@ -9,18 +9,39 @@ import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.RingLayout
 import com.seyedjafari.analogplus.facegen.design.validate
 
+private const val PHOTO_FIELD = "background.photoJpeg"
+
+/** Whether the saved photo of the design is still being read from disk at start ([LOADING]) or is in [EditorState.design] ([READY]). */
+enum class PhotoLoad { LOADING, READY }
+
 /**
- * The design being edited. Every tab reads [design] and changes it through [update]; nothing else holds design state.
+ * The design being edited. Every section reads [design] and changes it through [update]; nothing else holds design state.
  * The design may be invalid while the user types: [errors] says what is wrong and Send is disabled until it is empty.
  */
-class EditorState(initial: DesignSettings = DesignSettings()) {
+class EditorState(initial: DesignSettings = DesignSettings(), photoLoad: PhotoLoad = PhotoLoad.READY) {
     var design: DesignSettings by mutableStateOf(initial)
         private set
+
+    /** [PhotoLoad.LOADING] while the app is reading the saved photo in the background at start; sections show a skeleton for it. */
+    var photoLoad: PhotoLoad by mutableStateOf(photoLoad)
+        private set
+
+    /** The start-up read of the saved photo is over (whether or not there was one). */
+    fun photoLoaded() {
+        photoLoad = PhotoLoad.READY
+    }
 
     /** Last bitmap [PreviewPane] drew (tests read its pixels). */
     var lastPreview: Bitmap? = null
 
     val errors: List<DesignError> get() = design.validate()
+
+    /**
+     * [errors] as the screens show them. While the saved photo is still [PhotoLoad.LOADING] the "needs a photo" error is
+     * not real yet (the photo is about to arrive), so it is left out of the text; Send stays gated on [errors].
+     */
+    val shownErrors: List<DesignError>
+        get() = if (photoLoad == PhotoLoad.LOADING) errors.filter { it.field != PHOTO_FIELD } else errors
 
     fun errorsFor(field: String): List<DesignError> = errors.filter { it.field == field }
 

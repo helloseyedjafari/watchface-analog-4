@@ -34,6 +34,13 @@ android {
     }
 }
 
+// Some JVM tests read the sources and strings.xml as files (NoHardCodedLiteralsTest, StringsXmlMatchesCodeTest). They are
+// not on the test classpath, so without these inputs Gradle would call the tests up to date after an edit to them.
+tasks.withType<Test>().configureEach {
+    inputs.dir("src/main/kotlin").withPropertyName("mainSourcesRead")
+    inputs.dir("src/main/res/values").withPropertyName("stringsRead")
+}
+
 dependencies {
     implementation(project(":facegen"))
     implementation(project(":protocol"))
@@ -43,6 +50,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     // qr

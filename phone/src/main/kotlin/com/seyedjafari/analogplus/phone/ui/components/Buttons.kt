@@ -1,0 +1,59 @@
+package com.seyedjafari.analogplus.phone.ui.components
+
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
+
+/** Test tag on the progress indicator shown while a [PrimaryButton] is loading. */
+internal const val LOADING_INDICATOR_TAG = "primary_button_loading"
+
+@Composable
+fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, loading: Boolean = false) {
+    val working = stringResource(R.string.common_working)
+    Button(
+        onClick = onClick, enabled = enabled && !loading,
+        modifier = modifier.heightIn(min = Spacing.minTouch).then(if (loading) Modifier.semantics { stateDescription = working } else Modifier),
+        shape = MaterialTheme.shapes.large,
+    ) {
+        if (loading) {
+            CircularProgressIndicator(Modifier.size(Spacing.lg).testTag(LOADING_INDICATOR_TAG), strokeWidth = Spacing.xs / 2, color = MaterialTheme.colorScheme.onPrimary)
+            Spacer(Modifier.width(Spacing.sm))
+        }
+        Text(text, style = MaterialTheme.typography.labelLarge, modifier = Modifier)
+    }
+}
+
+@Composable
+fun SecondaryButton(
+    text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
+    /** For a button whose [text] is only a symbol (an arrow): what a screen reader says instead of the symbol. */
+    contentDescription: String? = null,
+) {
+    OutlinedButton(
+        onClick = onClick, enabled = enabled,
+        modifier = modifier.heightIn(min = Spacing.minTouch)
+            .then(if (contentDescription != null) Modifier.semantics { this.contentDescription = contentDescription } else Modifier),
+        shape = MaterialTheme.shapes.large,
+    ) {
+        Text(
+            text, style = MaterialTheme.typography.labelLarge,
+            modifier = if (contentDescription != null) Modifier.clearAndSetSemantics {} else Modifier,
+        )
+    }
+}

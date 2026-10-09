@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Naming: <screen>_<purpose>. Product text only; test tags, intent actions and URL schemes stay in code. -->
+
+    <!-- Navigation: Destination.labelRes (the English default is also kept in Destination.label for tags and tests) -->
+    <string name="nav_design">Design</string>
+    <string name="nav_library">Library</string>
+    <string name="nav_send">Send</string>
+    <string name="nav_account">Account</string>
+
+    <!-- Components -->
+    <string name="common_working">Working</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="status_format_ok">OK: %1$s</string>
+    <string name="status_format_warning">Check: %1$s</string>
+    <string name="status_format_error">Problem: %1$s</string>
+    <string name="status_format_neutral">%1$s</string>
+    <string name="status_format_busy">Working: %1$s</string>
+    <string name="load_shared_title">Load shared design?</string>
+    <string name="load_shared_message">\"%1$s\" will replace the design you are editing.</string>
+    <string name="load_shared_button_load">Load</string>
+    <string name="load_shared_button_keep">Keep mine</string>
+    <string name="common_no_name">(no name)</string>
+    <string name="common_list_separator">", "</string>
+
+    <!-- Application -->
+    <string name="app_name">Analog Plus</string>
+
+    <!-- Share link and QR code problems (ShareProblem.text(Resources); the English wording is ShareProblem.english) -->
+    <string name="share_error_empty_link">Paste an analogplus://design link first.</string>
+    <string name="share_error_not_a_link">That is not an Analog Plus design link.</string>
+    <string name="share_error_unreadable">That link could not be read: %1$s</string>
+    <string name="qr_not_ours">That QR code is not an Analog Plus design.</string>
+    <string name="qr_scan_empty">The scan did not contain any text.</string>
+    <string name="qr_scanner_unavailable">The scanner is not available: %1$s. You can paste the link instead.</string>
+    <string name="qr_scanner_failed">The scanner could not start: %1$s. You can paste the link instead.</string>
+
+    <!-- QR code card -->
+    <string name="qr_title">QR code</string>
+    <string name="qr_image_description">QR code of the design \"%1$s\"</string>
+    <string name="qr_too_big">This design is too big for a QR code; use the link instead.</string>
+    <string name="qr_button_scan">Scan QR code</string>
+    <string name="qr_preparing">Preparing the scanner...</string>
+
+    <!-- Saved designs -->
+    <string name="mydesigns_error_name_required">Give the design a name</string>
+
+    <!-- Words inside validation lines (FieldTexts; the validation messages themselves are written by the face generator) -->
+    <string name="field_slot">slot %1$d</string>
+    <string name="field_slot_named">slot %1$d (%2$s)</string>
+    <string name="field_fix_first">Fix first: %1$s: %2$s</string>
+    <string name="field_and_more">(and %1$d more)</string>
+
+    <!-- Colour fields -->
+    <string name="colours_hand">Hand colour</string>
+    <string name="colours_inlay">Inlay colour</string>
+    <string name="hands_second_hand_use_accent">Use accent colour for the second hand</string>
+    <string name="hands_second_hand_colour">Second hand colour</string>
+    <string name="colour_preset_description">Preset %1$s</string>
+    <string name="colour_swatch_valid">Colour preview</string>
+    <string name="colour_swatch_invalid">Not a colour yet</string>
+
+    <!-- Preview and slot editor -->
+    <string name="preview_description">Watch face preview</string>
+    <string name="slot_editor_description">slot %1$d at %2$d,%3$d</string>
+    <string name="slot_editor_unnamed" translatable="false">?</string>
+
+    <!-- Option chips (DesignTexts.kt; kept equal to the old name-derived labels by DesignTextsTest) -->
+    <string name="hands_style_sweep">Sweep</string>
+    <string name="hands_style_tick">Tick</string>
+    <string name="hands_style_hidden">Hidden</string>
+    <string name="background_kind_solid">Solid</string>
+    <string name="background_kind_gradient">Gradient</string>
+    <string name="background_kind_photo">Photo</string>
+    <string name="dial_numerals_all">All</string>
+    <string name="dial_numerals_quarters">Quarters</string>
+    <string name="dial_numerals_off">Off</string>
+
+    <!-- Slot refusals (SlotRefusal.message is the English wording) -->
+    <string name="slot_refusal_outside_dial">Keep slots inside the dial</string>
+    <string name="slot_refusal_overlap">Slots may not overlap</string>
+    <string name="slot_refusal_on_centre">Too close to the hands\' centre</string>
+    <string name="slot_refusal_too_small">Slots must be at least 40 x 40</string>
+    <string name="slot_refusal_cap">At most 8 complications in total</string>
+    <string name="slot_refusal_no_free_id">At most 6 movable slots</string>
+    <string name="slot_refusal_no_space">No free space for another slot</string>
+    <string name="slot_refusal_unknown_slot">No such slot</string>
+
+    <!-- Ring layout limit hint -->
+    <string name="ring_limit_hint">Remove a slot to use %1$s</string>
+    <string name="ring_limit_or">%1$s or %2$s</string>
+    <string name="ring_noun_none">no ring</string>
+    <string name="ring_noun_full">a full ring</string>
+    <string name="ring_noun_halves">halves</string>
+    <string name="ring_noun_thirds">thirds</string>
+    <string name="ring_noun_quarters">quarter rings</string>
+
+    <!-- Design: sections -->
+    <string name="design_section_colours">Colours</string>
+    <string name="design_section_dial">Dial</string>
+    <string name="design_section_hands">Hands</string>
+    <string name="design_section_background">Background</string>
+    <string name="design_section_complications">Complications</string>
+    <string name="design_section_rings">Rings</string>
+    <string name="design_button_send_to_watch">Send to watch</string>
+
+    <!-- Design: Colours and Hands -->
+    <string name="colours_accent">Accent colour</string>
+    <string name="colours_tick">Tick colour</string>
+    <string name="colours_numeral">Numeral colour</string>
+    <string name="hands_second_hand">Second hand</string>
+
+    <!-- Design: Dial -->
+    <string name="dial_title_ticks">Ticks</string>
+    <string name="dial_show_minute_ticks">Show minute ticks</string>
+    <string name="dial_minute_tick_width">Minute tick width (1 to 8)</string>
+    <string name="dial_minute_tick_length">Minute tick length (3 to 20)</string>
+    <string name="dial_five_minute_dots">Five-minute dots</string>
+    <string name="dial_title_numerals">Numerals</string>
+    <string name="dial_numerals">Numerals</string>
+    <string name="dial_title_complications">Complications</string>
+    <string name="dial_text_size">Text size (10 to 48)</string>
+    <string name="dial_title_size">Title size (10 to 48)</string>
+    <string name="dial_show_titles">Show titles</string>
+    <string name="dial_show_icons">Show icons</string>
+
+    <!-- Design: Background -->
+    <string name="background_loading_photo">Loading photo</string>
+    <string name="background_reading_photo">Reading photo</string>
+    <string name="background_chosen_photo">Chosen photo</string>
+    <string name="background_preview_unavailable">Preview unavailable</string>
+    <string name="background_photo_too_large">That photo is larger than %1$d MB. Pick a smaller one.</string>
+    <string name="background_photo_empty">That file is empty.</string>
+    <string name="background_photo_unreadable">The photo could not be read.</string>
+    <string name="background_kind">Background</string>
+    <string name="background_colour_solid">Colour</string>
+    <string name="background_colour_gradient">Top colour</string>
+    <string name="background_colour_photo">Fallback colour</string>
+    <string name="background_colour_bottom">Bottom colour</string>
+    <string name="background_button_choose_photo">Choose photo</string>
+    <string name="background_button_change_photo">Change photo</string>
+    <string name="background_button_remove_photo">Remove photo</string>
+    <string name="background_dim">Dim photo (0 to 80 percent)</string>
+
+    <!-- Design: Rings -->
+    <string name="ring_title">Ring complications</string>
+    <string name="ring_error_line">%1$s: %2$s</string>
+    <string name="ring_errors_more">and %1$d more</string>
+    <string name="ring_button_reset">Reset ring to default</string>
+    <string name="ring_layout_none">None</string>
+    <string name="ring_layout_full">Full</string>
+    <string name="ring_layout_halves">2 halves</string>
+    <string name="ring_layout_thirds">3 thirds</string>
+    <string name="ring_layout_quarters">4 quarters</string>
+    <string name="ring_colour_single">Ring colour</string>
+    <string name="ring_colour_segment">Segment %1$d colour</string>
+    <string name="ring_colours_more">+%1$d more (fix by choosing a ring layout / resetting colours)</string>
+    <string name="ring_button_reset_colours">Reset ring colours</string>
+    <string name="ring_track_colour">Track colour</string>
+    <string name="ring_thickness">Thickness</string>
+    <string name="ring_gap">Gap (degrees)</string>
+    <string name="ring_start_angle">Start angle</string>
+    <string name="ring_ends">Ends</string>
+    <string name="ring_caps_round">Round</string>
+    <string name="ring_caps_flat">Flat</string>
+    <string name="ring_clockwise">Clockwise</string>
+    <string name="ring_choose_layout_hint">Choose a layout to put ring complications around the dial.</string>
+
+    <!-- Design: Complications -->
+    <string name="complications_title">Complications</string>
+    <string name="complications_cap_indicator">%1$d of %2$d</string>
+    <string name="complications_cap_over_limit">over limit</string>
+    <string name="complications_cap_within_limit">within the limit</string>
+    <string name="complications_slot_field_error">%1$s: %2$s</string>
+    <plurals name="complications_numeral_overlap">
+        <item quantity="one">Slot %1$d (%2$s) overlaps the numeral %3$s. That is allowed, but the numbers may be hard to read.</item>
+        <item quantity="other">Slot %1$d (%2$s) overlaps the numerals %3$s. That is allowed, but the numbers may be hard to read.</item>
+    </plurals>
+    <string name="complications_button_slots_classic">4 slots (classic)</string>
+    <string name="complications_button_slots_six">6 slots</string>
+    <string name="complications_button_add_slot">Add slot</string>
+    <string name="complications_button_remove_slot">Remove slot</string>
+    <string name="complications_slot_chip">%1$d: %2$s</string>
+    <string name="complications_slots_more">+%1$d more (fix by resetting slots)</string>
+    <string name="complications_button_reset_slots">Reset slots to default</string>
+    <string name="complications_tap_hint">Tap a slot to edit it, drag it to move it.</string>
+    <string name="complications_name">Name</string>
+    <string name="complications_shape_box">Box</string>
+    <string name="complications_shape_oval">Oval</string>
+    <string name="complications_shape_round_box">Rounded box</string>
+    <string name="complications_nudge_by">Nudge by</string>
+    <string name="complications_move_left">Move left</string>
+    <string name="complications_move_up">Move up</string>
+    <string name="complications_move_down">Move down</string>
+    <string name="complications_move_right">Move right</string>
+    <!-- arrow glyphs: symbols, not words -->
+    <string name="complications_arrow_left" translatable="false">←</string>
+    <string name="complications_arrow_up" translatable="false">↑</string>
+    <string name="complications_arrow_down" translatable="false">↓</string>
+    <string name="complications_arrow_right" translatable="false">→</string>
+    <string name="complications_field_x">x</string>
+    <string name="complications_field_y">y</string>
+    <string name="complications_field_width">width</string>
+    <string name="complications_field_height">height</string>
+    <string name="complications_background">Background</string>
+    <string name="complications_background_colour">Background colour</string>
+    <string name="complications_text_colour">Text colour</string>
+    <string name="complications_icon_accent">Icon uses the accent colour</string>
+    <string name="complications_icon_colour">Icon colour</string>
+
+    <!-- Send -->
+    <string name="send_watch_title">Your watch</string>
+    <string name="send_watch_paired">Watch paired</string>
+    <string name="send_watch_app">Analog Plus on the watch</string>
+    <string name="send_status_found">Found</string>
+    <string name="send_status_not_found">Not found</string>
+    <string name="send_status_installed">Installed</string>
+    <string name="send_status_not_installed">Not installed</string>
+    <string name="send_status_checking">Checking</string>
+    <string name="send_status_could_not_check">Could not check</string>
+    <string name="send_needs_wear_os">Needs a Wear OS 6 watch.</string>
+    <string name="send_button_check_again">Check again</string>
+    <string name="send_card_title">Send</string>
+    <string name="send_version_on_watch">Version %1$d is on the watch</string>
+    <string name="send_button_send_to_watch">Send to watch</string>
+    <string name="send_state_idle">Ready to send.</string>
+    <string name="send_state_building">Building the face...</string>
+    <string name="send_state_connecting">Looking for the watch...</string>
+    <string name="send_state_sending_file">Sending the face to the watch...</string>
+    <string name="send_state_sending_file_percent">Sending the face to the watch (%1$d%%)...</string>
+    <string name="send_state_applying">The watch is installing the face...</string>
+    <string name="send_state_done">The watch answered.</string>
+    <string name="send_state_success">Sent. The watch now has version %1$d.</string>
+
+    <!-- Send problems: SendProblem.text(Resources); the English wording is SendProblem.english (kept equal by SendProblemResourcesTest) -->
+    <string name="send_not_installed">The Analog Plus app is not installed on your watch yet. Install it on the watch, then try again.</string>
+    <string name="send_no_watch">No watch found. Open Bluetooth, make sure the watch is paired with this phone and the Analog Plus watch app is installed.</string>
+    <string name="send_error_could_not_reach">Could not reach the watch: %1$s. %2$s</string>
+    <string name="send_error_file_timeout">The face file did not reach the watch within %1$d seconds. Check that the watch is awake and connected to the phone, then try again.</string>
+    <string name="send_error_answer_timeout">The watch did not answer within %1$d seconds. Check that the watch is awake, connected to the phone, and has the Analog Plus watch app, then try again.</string>
+    <string name="send_error_send_failed">Sending to the watch failed: %1$s</string>
+    <string name="send_error_fix_design">Fix the design first: %1$s</string>
+    <string name="send_error_version_counter">Could not save the version counter; free some storage and try again.</string>
+    <string name="send_error_watch_refused">The watch refused the face: %1$s</string>
+    <string name="send_error_key_mismatch">This phone is signing with a different key than the face on your watch. The watch only accepts updates from the original key. Remove the old Analog Plus face from the watch (uninstalling the watch app does not remove it; with adb: pm uninstall com.seyedjafari.analogplus.watchfacepush.analog on the watch), then send again.\n\n(The watch said: %1$s)</string>
+    <string name="send_error_face_checks">The face did not pass the watch checks: %1$s</string>
+    <string name="send_error_not_buildable">The design cannot be built: %1$s</string>
+    <string name="send_error_out_of_memory">Not enough memory to build the face. Try a smaller photo.</string>
+    <string name="send_error_builder_missing">The face builder is missing on this device (%1$s).</string>
+    <string name="send_error_build_failed">Building the face failed: %1$s</string>
+    <string name="send_error_no_answer">The watch connection ended without an answer. Try again.</string>
+    <string name="send_error_could_not_send">Could not send the face: %1$s</string>
+    <string name="send_unknown_reason">unknown reason</string>
+    <string name="send_no_detail">no detail given</string>
+    <string name="send_invalid_design">invalid design</string>
+    <string name="send_detail_ended_early">The face file transfer ended early (%1$s).</string>
+    <string name="send_detail_closed_before_sent">The connection to the watch closed before the face file was fully sent (%1$s).</string>
+    <string name="send_close_normal">closed normally</string>
+    <string name="send_close_disconnected">watch disconnected</string>
+    <string name="send_close_by_watch">closed by the watch</string>
+    <string name="send_close_by_phone">closed by the phone</string>
+    <string name="send_close_other">reason %1$d</string>
+
+    <!-- Library -->
+    <string name="library_section_templates">Templates</string>
+    <string name="library_section_my_designs">My designs</string>
+    <string name="library_section_share">Share</string>
+    <string name="library_replace_title">Replace your current design?</string>
+    <string name="library_replace_message">\"%1$s\" will replace what you are editing.</string>
+    <string name="library_replace_button_confirm">Replace</string>
+    <string name="mydesigns_save_title">Save this design</string>
+    <string name="mydesigns_name_label">Name for the current design</string>
+    <string name="mydesigns_button_save">Save current design</string>
+    <string name="mydesigns_photos_note">Photos are not saved with a design.</string>
+    <string name="mydesigns_empty_title">Nothing saved yet</string>
+    <string name="mydesigns_empty_body">Name your current design and save it to find it here.</string>
+    <string name="mydesigns_button_load">Load</string>
+    <string name="mydesigns_button_delete">Delete</string>
+    <string name="share_title">Share this design</string>
+    <string name="share_link_label">Link</string>
+    <string name="share_photo_note">Links do not carry the photo; the other person gets a plain background.</string>
+    <string name="share_button_copy">Copy</string>
+    <string name="share_button_share">Share</string>
+    <string name="share_link_copied">Link copied.</string>
+    <string name="share_subject">Analog Plus design: %1$s</string>
+    <string name="share_chooser_title">Share design</string>
+    <string name="share_load_title">Load a design from a link</string>
+    <string name="share_paste_label">Paste analogplus://design?d=... here</string>
+    <string name="share_button_load">Load design</string>
+    <string name="share_design_loaded">Design loaded.</string>
+
+    <!-- Account -->
+    <string name="account_app_title">Analog Plus</string>
+    <string name="account_version">Version %1$s</string>
+    <string name="account_version_unknown">unknown</string>
+    <string name="account_backup_title">Backup and sync</string>
+    <string name="account_signin_coming">Sign-in is coming</string>
+    <string name="account_saved_on_phone">Your designs are saved on this phone.</string>
+    <string name="account_signing_key_title">Signing key</string>
+    <string name="signing_key_explanation">Every face is signed with a key stored in this app. If the app complains that the key is damaged, or the watch rejects updates after a reinstall, you can make a new key here.</string>
+    <string name="signing_key_button_reset">Reset signing key</string>
+    <string name="signing_key_dialog_title">Reset the signing key?</string>
+    <string name="signing_key_dialog_message">The watch only accepts updates signed with the key it first saw. After a reset the watch will refuse new faces until the old Analog Plus face is removed from the watch (uninstalling the watch app does not remove it; with adb: pm uninstall com.seyedjafari.analogplus.watchfacepush.analog).</string>
+    <string name="signing_key_button_confirm">Reset</string>
+    <string name="signing_key_reset_failed">The key could not be reset.</string>
+    <string name="signing_key_reset_done">Signing key reset. A new key is made on the next send.</string>
+</resources>

@@ -21,6 +21,10 @@ import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.NumeralMode
 import com.seyedjafari.analogplus.facegen.design.SecondHandStyle
+import com.seyedjafari.analogplus.phone.ui.design.BackgroundSection
+import com.seyedjafari.analogplus.phone.ui.design.ColoursSection
+import com.seyedjafari.analogplus.phone.ui.design.DialSection
+import com.seyedjafari.analogplus.phone.ui.design.HandsSection
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -56,7 +60,7 @@ class AppearanceTest {
 
     @Test fun typingTheAccentChangesDesignAndPreview() {
         val state = EditorState()
-        host(state) { ColoursTab(it) }
+        host(state) { ColoursSection(it) }
         waitForDisc(state, 0xFFE22B07.toInt())
         rule.onNodeWithTag(Tags.ACCENT_FIELD).performTextReplacement(blue)
         assertEquals(blue, state.design.accent)
@@ -66,7 +70,7 @@ class AppearanceTest {
 
     @Test fun badColourTextShowsTheErrorAndKeepsTheRawText() {
         val state = EditorState()
-        host(state) { ColoursTab(it) }
+        host(state) { ColoursSection(it) }
         rule.onNodeWithTag(Tags.ACCENT_FIELD).performTextReplacement("red")
         assertEquals("red", state.design.accent)
         assertTrue(state.errors.any { it.field == "accent" })
@@ -79,7 +83,7 @@ class AppearanceTest {
 
     @Test fun presetsWriteTheirColour() {
         val state = EditorState()
-        host(state) { ColoursTab(it) }
+        host(state) { ColoursSection(it) }
         rule.onNodeWithTag(presetTag(Tags.ACCENT_FIELD, blue)).performScrollTo().performClick()
         assertEquals(blue, state.design.accent)
         rule.onNodeWithTag(presetTag(Tags.field("handColor"), "#FF000000")).performScrollTo().performClick()
@@ -89,7 +93,7 @@ class AppearanceTest {
 
     @Test fun numberFieldRejectsLettersAndSurvivesHugeAndEmptyInput() {
         val state = EditorState()
-        host(state) { DialTab(it) }
+        host(state) { DialSection(it) }
         val field = Tags.field("minuteTickWidth")
         rule.onNodeWithTag(field).performScrollTo().performTextReplacement("abc")
         assertEquals(2, state.design.minuteTickWidth)
@@ -111,7 +115,7 @@ class AppearanceTest {
 
     @Test fun outOfRangeIsAnErrorAndTheSliderStaysInRange() {
         val state = EditorState()
-        host(state) { DialTab(it) }
+        host(state) { DialSection(it) }
         val field = Tags.field("complicationTextSize")
         rule.onNodeWithTag(field).performScrollTo().performTextReplacement("5")
         assertEquals(5, state.design.complicationTextSize)
@@ -126,7 +130,7 @@ class AppearanceTest {
 
     @Test fun dialSwitchesAndNumeralsWrite() {
         val state = EditorState()
-        host(state) { DialTab(it) }
+        host(state) { DialSection(it) }
         rule.onNodeWithTag(Tags.field("numerals_QUARTERS")).performScrollTo().performClick()
         assertEquals(NumeralMode.QUARTERS, state.design.numerals)
         rule.onNodeWithTag(Tags.field("numerals_QUARTERS")).assertIsSelected()
@@ -138,7 +142,7 @@ class AppearanceTest {
 
     @Test fun backgroundKindSwitch() {
         val state = EditorState()
-        host(state) { BackgroundTab(it) }
+        host(state) { BackgroundSection(it) }
         rule.onNodeWithTag(Tags.field("background_color2")).assertDoesNotExist()
         rule.onNodeWithTag(Tags.field("background_kind_GRADIENT")).performClick()
         assertEquals(BackgroundKind.GRADIENT, state.design.background.kind)
@@ -153,7 +157,7 @@ class AppearanceTest {
 
     @Test fun photoThumbnailDimAndRemove() {
         val state = EditorState()
-        host(state) { BackgroundTab(it) }
+        host(state) { BackgroundSection(it) }
         rule.onNodeWithTag(Tags.field("background_kind_PHOTO")).performClick()
         val bmp = Bitmap.createBitmap(64, 48, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.GREEN) }
         val jpeg = ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
@@ -175,7 +179,7 @@ class AppearanceTest {
 
     @Test fun secondHandUseAccentSwitch() {
         val state = EditorState()
-        host(state) { HandsTab(it) }
+        host(state) { HandsSection(it) }
         assertNull(state.design.secondHandColor)
         rule.onNodeWithTag(Tags.field("hands_secondHandColor")).assertDoesNotExist()
         rule.onNodeWithTag(Tags.field("hands_secondHandUseAccent")).performScrollTo().performClick()
@@ -190,7 +194,7 @@ class AppearanceTest {
 
     @Test fun colourTabSecondHandSwitchAndHandColour() {
         val state = EditorState()
-        host(state) { ColoursTab(it) }
+        host(state) { ColoursSection(it) }
         rule.onNodeWithTag(Tags.field("secondHandUseAccent")).performScrollTo().performClick()
         assertNotNull(state.design.secondHandColor)
         rule.onNodeWithTag(Tags.field("secondHandUseAccent")).performClick()
@@ -199,7 +203,7 @@ class AppearanceTest {
 
     @Test fun aPastedColourWithSurroundingWhitespaceIsAccepted() {
         val state = EditorState()
-        host(state) { ColoursTab(it) }
+        host(state) { ColoursSection(it) }
         rule.onNodeWithTag(Tags.ACCENT_FIELD).performTextReplacement("$blue ")
         assertEquals(blue, state.design.accent)
         rule.onNodeWithTag(Tags.error(Tags.ACCENT_FIELD)).assertDoesNotExist()
@@ -210,7 +214,7 @@ class AppearanceTest {
 
     @Test fun aHugeBadColourShowsAShortenedMessage() {
         val state = EditorState(com.seyedjafari.analogplus.facegen.design.DesignSettings(accent = "z".repeat(3_000)))
-        host(state) { ColoursTab(it) }
+        host(state) { ColoursSection(it) }
         val shown = rule.onNodeWithTag(Tags.error(Tags.ACCENT_FIELD)).fetchSemanticsNode()
             .config[androidx.compose.ui.semantics.SemanticsProperties.Text].joinToString("") { it.text }
         assertTrue(shown, shown.length < 100)
@@ -255,13 +259,13 @@ class AppearanceTest {
 
     @Test fun backgroundTabWithAHugeOrBrokenPhotoStillOpens() {
         val state = EditorState()
-        host(state) { BackgroundTab(it) }
+        host(state) { BackgroundSection(it) }
         rule.onNodeWithTag(Tags.field("background_kind_PHOTO")).performClick()
         state.update { it.copy(background = it.background.copy(photoJpeg = hugePng(65_535, 500))) }
         rule.waitUntil(15_000) {
             rule.onAllNodesWithTagCount(Tags.field("background_thumb")) + rule.onAllNodesWithTagCount(Tags.field("background_thumb_unavailable")) == 1
         }
-        // bytes that are no image: the preview says so, the rest of the tab keeps working
+        // bytes that are no image: the preview says so, the rest of the section keeps working
         state.update { it.copy(background = it.background.copy(photoJpeg = ByteArray(50) { 3 })) }
         rule.waitUntil(15_000) { rule.onAllNodesWithTagCount(Tags.field("background_thumb_unavailable")) == 1 }
         rule.onNodeWithTag(Tags.field("background_thumb_unavailable")).performScrollTo().assertTextEquals("Preview unavailable")

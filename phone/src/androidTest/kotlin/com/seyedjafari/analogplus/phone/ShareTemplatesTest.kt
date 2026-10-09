@@ -1,6 +1,11 @@
 package com.seyedjafari.analogplus.phone
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -16,6 +21,14 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.Templates
+import com.seyedjafari.analogplus.phone.ui.account.AccountScreen
+import com.seyedjafari.analogplus.phone.ui.library.LibraryScreen
+import com.seyedjafari.analogplus.phone.ui.library.LibrarySection
+import com.seyedjafari.analogplus.phone.ui.library.ShareSection
+import com.seyedjafari.analogplus.phone.ui.library.tag
+import com.seyedjafari.analogplus.phone.ui.nav.Destination
+import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
+import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -27,53 +40,53 @@ import org.junit.runner.RunWith
 class ShareTemplatesTest {
     @get:Rule val rule = createComposeRule()
 
-    private fun freshStore(): Store {
-        val dir = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
-        return Store(FakeKv(), File(dir, "test-background-${System.nanoTime()}.jpg"))
-    }
+    private fun freshStore(): Store = testStore()
 
-    private class FakeKv : KeyValueStore {
-        private val m = HashMap<String, Any>()
-        override fun getString(key: String) = m[key] as String?
-        override fun getLong(key: String, default: Long) = (m[key] as Long?) ?: default
-        override fun putString(key: String, value: String) { m[key] = value }
-        override fun putLong(key: String, value: Long) { m[key] = value }
+    /** The Share section in the scrolling Column the Library screen puts it in: its three cards stack instead of overlapping. */
+    private fun showShare(state: EditorState) {
+        rule.setContent {
+            AnalogTheme {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                    ShareSection(state)
+                }
+            }
+        }
     }
 
     @Test fun pastingAValidLinkLoadsThatDesign() {
         val target = Templates.all.first { it.name == "Neon" }
         val state = EditorState(DesignSettings())
-        rule.setContent { ShareTab(state) }
-        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performTextInput(DesignJson.shareLink(target))
-        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performClick()
+        showShare(state)
+        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performScrollTo().performTextInput(DesignJson.shareLink(target))
+        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performScrollTo().performClick()
         rule.waitForIdle()
         assertEquals(target, state.design)
     }
 
     @Test fun garbageLinkShowsAnErrorAndKeepsTheDesign() {
         val state = EditorState(DesignSettings())
-        rule.setContent { ShareTab(state) }
-        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performTextInput("analogplus://design?d=@@not-a-design@@")
-        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performClick()
-        rule.onNodeWithTag(Tags.SHARE_ERROR).assertIsDisplayed()
+        showShare(state)
+        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performScrollTo().performTextInput("analogplus://design?d=@@not-a-design@@")
+        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performScrollTo().performClick()
+        rule.onNodeWithTag(Tags.SHARE_ERROR).performScrollTo().assertIsDisplayed()
         assertEquals(DesignSettings(), state.design)
     }
 
     @Test fun nonLinkTextShowsAnErrorAndEmptyFieldToo() {
         val state = EditorState(DesignSettings())
-        rule.setContent { ShareTab(state) }
-        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performClick()
-        rule.onNodeWithTag(Tags.SHARE_ERROR).assertIsDisplayed()
-        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performTextInput("hello world")
-        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performClick()
-        rule.onNodeWithTag(Tags.SHARE_ERROR).assertIsDisplayed()
+        showShare(state)
+        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performScrollTo().performClick()
+        rule.onNodeWithTag(Tags.SHARE_ERROR).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performScrollTo().performTextInput("hello world")
+        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performScrollTo().performClick()
+        rule.onNodeWithTag(Tags.SHARE_ERROR).performScrollTo().assertIsDisplayed()
         assertEquals(DesignSettings(), state.design)
     }
 
     @Test fun tappingATemplateAsksBeforeReplacingTheWholeDesign() {
         val state = EditorState(DesignSettings(accent = "#FF00FF00", showTitles = false))
         val store = freshStore()
-        rule.setContent { TemplatesTab(state, store) }
+        rule.setContent { AnalogTheme { LibraryScreen(state, store) } }
         val midnight = Templates.all.first { it.name == "Midnight" }
         val before = state.design
         assertNotEquals(midnight, before)
@@ -97,7 +110,7 @@ class ShareTemplatesTest {
     @Test fun choosingTheDesignThatIsAlreadyOpenAsksNothing() {
         val midnight = Templates.all.first { it.name == "Midnight" }
         val state = EditorState(midnight)
-        rule.setContent { TemplatesTab(state, freshStore()) }
+        rule.setContent { AnalogTheme { LibraryScreen(state, freshStore()) } }
         rule.onNodeWithTag(Tags.template("Midnight")).performClick()
         rule.waitForIdle()
         rule.onNodeWithTag(Tags.field("replace_dialog")).assertDoesNotExist()
@@ -107,7 +120,8 @@ class ShareTemplatesTest {
     @Test fun saveLoadAndDeleteMyDesigns() {
         val state = EditorState(DesignSettings(name = "Mine", accent = "#FF123456"))
         val store = freshStore()
-        rule.setContent { TemplatesTab(state, store) }
+        rule.setContent { AnalogTheme { LibraryScreen(state, store) } }
+        rule.onNodeWithTag(LibrarySection.MY_DESIGNS.tag()).performClick()
         rule.onNodeWithTag(Tags.SAVE_NAME_FIELD).performTextInput("Mine")
         rule.onNodeWithTag(Tags.SAVE_BUTTON).performClick()
         rule.onNodeWithTag(Tags.saved("Mine")).assertIsDisplayed()
@@ -133,31 +147,30 @@ class ShareTemplatesTest {
 
     @Test fun savingWithoutANameShowsAnError() {
         val state = EditorState(DesignSettings())
-        rule.setContent { TemplatesTab(state, freshStore()) }
+        rule.setContent { AnalogTheme { LibraryScreen(state, freshStore()) } }
+        rule.onNodeWithTag(LibrarySection.MY_DESIGNS.tag()).performClick()
         rule.onNodeWithTag(Tags.SAVE_BUTTON).performClick()
         rule.onNodeWithTag(Tags.SAVE_ERROR).assertIsDisplayed()
     }
 
-    @Test fun shellShowsTabsSwitchesThemAndDisablesSendForAnInvalidDesign() {
+    @Test fun shellShowsTheFourDestinationsAndDisablesSendForAnInvalidDesign() {
         val state = EditorState(DesignSettings(accent = "red"))
         val store = freshStore()
-        val send = SendController(
-            FaceBuilder { _, _ -> error("not called") }, FaceSender { kotlinx.coroutines.flow.emptyFlow() }, store,
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default),
-        )
-        rule.setContent { EditorScreen(state, store, send) }
-        for (n in listOf("colours", "dial", "hands", "background", "complications", "rings", "templates", "share")) {
-            rule.onNodeWithTag(Tags.tab(n)).assertExists()
-        }
+        rule.setContent { AppShell(state, store, testSend(store), watchReady, null) {} }
+        Destination.entries.forEach { rule.onNodeWithTag(it.tag).assertExists() }
+        rule.onNodeWithTag(Tags.field("design_send")).assertIsNotEnabled()
+        rule.onNodeWithTag(Destination.SEND.tag).performClick()
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsNotEnabled()
         rule.onNodeWithTag(Tags.SEND_VALIDATION).assertIsDisplayed()
-        rule.onNodeWithTag(Tags.tab("templates")).performScrollTo().performClick()
-        rule.onNodeWithTag(Tags.template("Neon")).performClick()
+        rule.onNodeWithTag(Destination.LIBRARY.tag).performClick()
+        rule.onNodeWithTag(Tags.template("Neon")).performScrollTo().performClick()
         rule.onNodeWithTag(Tags.field("replace_confirm")).performClick()
         rule.waitForIdle()
         assertEquals(Templates.all.first { it.name == "Neon" }, state.design)
+        rule.onNodeWithTag(Destination.SEND.tag).performClick()
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled()
-        rule.onNodeWithTag(Tags.tab("share")).performScrollTo().performClick()
+        rule.onNodeWithTag(Destination.LIBRARY.tag).performClick()
+        rule.onNodeWithTag(LibrarySection.SHARE.tag()).performClick()
         rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).assertIsDisplayed()
     }
 
@@ -168,11 +181,8 @@ class ShareTemplatesTest {
         val keys = com.seyedjafari.analogplus.facegen.KeyStore(ctx, testKeyName)
         try {
             val before = keys.pem()
-            val state = EditorState(DesignSettings())
             rule.setContent {
-                androidx.compose.foundation.layout.Column(
-                    androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
-                ) { ShareTab(state) { c -> com.seyedjafari.analogplus.facegen.KeyStore(c, testKeyName) } }
+                AnalogTheme { AccountScreen(keyStoreFactory = { c -> com.seyedjafari.analogplus.facegen.KeyStore(c, testKeyName) }) }
             }
             rule.onNodeWithTag(Tags.RESET_KEY_BUTTON).performScrollTo().performClick()
             // nothing happens until the dialog is confirmed
@@ -180,7 +190,7 @@ class ShareTemplatesTest {
             rule.onNodeWithTag(Tags.RESET_KEY_CONFIRM).performClick()
             // the reset runs off the main thread
             rule.waitUntil(10_000) { rule.onAllNodesWithTag(Tags.RESET_KEY_NOTICE).fetchSemanticsNodes().isNotEmpty() }
-            rule.onNodeWithTag(Tags.RESET_KEY_NOTICE).performScrollTo().assertIsDisplayed() // the QR section above pushes it down
+            rule.onNodeWithTag(Tags.RESET_KEY_NOTICE).performScrollTo().assertIsDisplayed()
             assertEquals(false, keys.hasKey())
             assertNotEquals(before, keys.pem())
         } finally {

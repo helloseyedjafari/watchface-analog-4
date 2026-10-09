@@ -50,7 +50,9 @@ Bottom navigation, four destinations (replaces the eight-tab `EditorScreen`):
   respect the system "remove animations" setting (duration scale 0 -> snap).
 - **Icons:** Material Symbols outlined, one set.
 - **Accessibility:** touch targets 48 dp, content descriptions on every icon-only control, TalkBack order follows
-  visual order, text scales to 200 % without clipping, no information carried by colour alone.
+  visual order, text scales to 200 % without clipping, no information carried by colour alone. One owner-approved
+  exception (2026-10-09): the four bottom-navigation labels stop growing at 1.3x so "Account" stays on one line; all
+  screen content still scales to 200 %.
 
 ## States
 
