@@ -42,6 +42,8 @@ object Dimens {
     val CompactHeight = 480.dp
     /** Width of the preview column of the Design screen when it sits beside the controls: the most it takes (a narrow window gives it a share of its width). */
     val SidePaneWidth = 200.dp
+    /** The navigation rail of a phone held sideways never takes more than this (the M3 rail is 80 dp; this leaves room for a larger one), and never more than a third of the window. */
+    val RailMaxWidth = 120.dp
     /** The slot drag canvas in a short window shrinks to fit the section area, but not below this: a smaller one is too small to drag on. */
     val SlotEditorMinSide = 96.dp
 }

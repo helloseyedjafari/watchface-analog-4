@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
+import com.seyedjafari.analogplus.phone.Tags
+import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -40,6 +42,9 @@ import com.seyedjafari.analogplus.phone.ui.theme.rememberSharedAxis
 
 private const val NAV_MAX_FONT_SCALE = 1.3f
 
+/** The rail takes at most one this-th of the window width. */
+private const val RAIL_MAX_WINDOW_SHARE = 3
+
 /** The two parts of [AppNavLayout]. */
 private enum class NavPart { NAV, CONTENT }
 
@@ -69,7 +74,7 @@ fun AppNav(
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = minOf(density.fontScale, NAV_MAX_FONT_SCALE))) {
                 if (rail) {
-                    NavigationRail {
+                    NavigationRail(Modifier.testTag(Tags.NAV_RAIL)) {
                         // with the keyboard open the window is short (adjustResize), and the rail stays: its items keep their size and scroll
                         Column(
                             Modifier.verticalScroll(rememberScrollState()),
@@ -131,7 +136,7 @@ private fun AppNavLayout(rail: Boolean, nav: @Composable () -> Unit, body: @Comp
         val navMeasurable = measurables.first { it.layoutId == NavPart.NAV }
         val bodyMeasurable = measurables.first { it.layoutId == NavPart.CONTENT }
         if (rail) {
-            val navPlaceable = navMeasurable.measure(Constraints(maxHeight = height))
+            val navPlaceable = navMeasurable.measure(Constraints(maxWidth = minOf(width / RAIL_MAX_WINDOW_SHARE, Dimens.RailMaxWidth.roundToPx()), maxHeight = height))
             val bodyPlaceable = bodyMeasurable.measure(Constraints.fixed((width - navPlaceable.width).coerceAtLeast(0), height))
             layout(width, height) {
                 navPlaceable.placeRelative(0, 0)

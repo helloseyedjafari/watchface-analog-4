@@ -29,6 +29,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.seyedjafari.analogplus.phone.ui.nav.AppNav
 import com.seyedjafari.analogplus.phone.ui.nav.Destination
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
+import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -94,6 +95,11 @@ class NavigationRailTest {
             assertEquals("the ${d.label} label is capped at 1.3x", 1.3f, layout.layoutInput.density.fontScale, 0.001f)
             val bounds = label.fetchSemanticsNode().boundsInRoot
             assertTrue("the ${d.label} label ($bounds) is inside its item ($item)", bounds.left >= item.left && bounds.right <= item.right && bounds.top >= item.top && bounds.bottom <= item.bottom)
+            // boundsInRoot is clipped to what contains it and the box is as wide as the room it was given, so those checks cannot fail on
+            // their own: the width of the laid-out text itself must fit the item
+            val textWidth = layout.getLineRight(0) - layout.getLineLeft(0)
+            val itemWidth = rule.onNodeWithTag(d.tag).fetchSemanticsNode().size.width
+            assertTrue("the ${d.label} text ($textWidth px) is wider than its item ($itemWidth px)", textWidth <= itemWidth)
             rule.onNodeWithTag(d.tag).assertHeightIsAtLeast(48.dp)
         }
     }
@@ -134,6 +140,22 @@ class NavigationRailTest {
         rule.onNodeWithText("screen ${last.name}").assertExists()
         rule.onNodeWithTag(last.tag).assertIsSelected()
     }
+
+
+    private fun assertRailWithinBound(window: WindowDp) {
+        var density = Density(1f)
+        rule.setContent {
+            AnalogTheme { PinnedWindow(window, onDensity = { density = it }) { AppNav(content = { d, _ -> Text("screen ${d.name}") }) } }
+        }
+        val rail = rule.onNodeWithTag(Tags.NAV_RAIL).fetchSemanticsNode().size.width / density.density
+        val bound = minOf(window.width / 3f, Dimens.RailMaxWidth.value)
+        assertTrue("on $window the rail is $rail dp wide, over its bound of $bound dp", rail <= bound + 0.5f)
+    }
+
+    /** The rail takes a third of the window at most, and never more than [Dimens.RailMaxWidth]: it cannot crowd out the content. */
+    @Test fun theRailOfALandscapePhoneIsNoWiderThanItsBound() = assertRailWithinBound(PHONE_LANDSCAPE)
+
+    @Test fun theRailOfAVeryNarrowWindowIsNoWiderThanAThirdOfIt() = assertRailWithinBound(WindowDp(210, 200))
 
     private companion object {
         const val KEYBOARD_DP = 200

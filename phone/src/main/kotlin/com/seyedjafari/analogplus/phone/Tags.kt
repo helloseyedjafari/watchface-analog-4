@@ -14,6 +14,8 @@ object Tags {
     const val SHARE_LINK_FIELD = "share_link_field"
     const val SHARE_LOAD_BUTTON = "share_load_button"
     const val SLOT_CANVAS = "slot_canvas"
+    /** The navigation rail of a phone held sideways. */
+    const val NAV_RAIL = "nav_rail"
     fun tab(name: String) = "tab_$name"
     fun error(field: String) = "error_$field"
     fun template(name: String) = "template_$name"
