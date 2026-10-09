@@ -57,6 +57,19 @@ class PaletteContrastTest {
         assertAa("inversePrimary/inverseSurface", Palette.darkInversePrimary, Palette.darkInverseSurface)
     }
 
+    /** The cards are surfaceVariant, so the error line, a link-coloured text and the outline of a field sit on it. */
+    @Test fun lightCardPairsMeetTheirContrast() {
+        assertAa("error/surfaceVariant", Palette.lightError, Palette.lightSurfaceVariant)
+        assertAa("primary/surfaceVariant", Palette.lightPrimary, Palette.lightSurfaceVariant)
+        assertNonText("outline/surfaceVariant", Palette.lightOutline, Palette.lightSurfaceVariant)
+    }
+
+    @Test fun darkCardPairsMeetTheirContrast() {
+        assertAa("error/surfaceVariant", Palette.darkError, Palette.darkSurfaceVariant)
+        assertAa("primary/surfaceVariant", Palette.darkPrimary, Palette.darkSurfaceVariant)
+        assertNonText("outline/surfaceVariant", Palette.darkOutline, Palette.darkSurfaceVariant)
+    }
+
     @Test fun outlineMeetsNonTextContrastAgainstSurface() {
         assertNonText("light outline/surface", Palette.lightOutline, Palette.lightSurface)
         assertNonText("dark outline/surface", Palette.darkOutline, Palette.darkSurface)
