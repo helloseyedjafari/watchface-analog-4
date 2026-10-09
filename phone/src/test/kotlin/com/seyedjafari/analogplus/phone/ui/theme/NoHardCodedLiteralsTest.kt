@@ -13,7 +13,8 @@ import org.junit.Test
  */
 class NoHardCodedLiteralsTest {
     enum class Rule(val pattern: Regex, val what: String) {
-        DP_LITERAL(Regex("""\d+\.dp\b"""), "dp literal (use Spacing/Dimens)"),
+        DP_LITERAL(Regex("""\b[\d_]+(?:\.\d+)?f?\.dp\b"""), "dp literal (use Spacing/Dimens)"),
+        SP_LITERAL(Regex("""\b[\d_]+(?:\.\d+)?f?\.sp\b|\bfontSize\s*=\s*\d"""), "sp literal (use MaterialTheme.typography)"),
         COLOUR(Regex("""\bColor\(|0xFF|\bColor\.(?!Transparent|Unspecified)[A-Z]\w*"""), "colour literal (use MaterialTheme.colorScheme)"),
         RAW_BUTTON(Regex("""\b(Button|OutlinedButton|TextButton|FilledTonalButton)\("""), "raw Material button (use PrimaryButton/SecondaryButton)"),
         RAW_SWITCH(Regex("""\bSwitch\("""), "raw Switch (use SwitchRow)"),
@@ -45,12 +46,33 @@ class NoHardCodedLiteralsTest {
 
     private val root = File("src/main/kotlin/com/seyedjafari/analogplus/phone")
 
-    private fun isComment(line: String) = line.trimStart().let { it.startsWith("//") || it.startsWith("*") || it.startsWith("/*") }
+    /**
+     * The code part of each line: text inside a block comment or KDoc (which may span lines, or sit inside one line) is
+     * blanked, and so is a line that starts with `//`. A line that merely starts with `*` is code (a continuation line
+     * of a multiplication, say) unless a block comment is open.
+     */
+    fun codeOf(lines: List<String>): List<String> {
+        var inBlock = false
+        return lines.map { line ->
+            val out = StringBuilder()
+            var i = 0
+            while (i < line.length) {
+                if (inBlock) {
+                    val end = line.indexOf("*/", i)
+                    if (end < 0) { i = line.length } else { inBlock = false; i = end + 2 }
+                } else {
+                    val start = line.indexOf("/*", i)
+                    if (start < 0) { out.append(line, i, line.length); i = line.length }
+                    else { out.append(line, i, start); inBlock = true; i = start + 2 }
+                }
+            }
+            out.toString().let { if (it.trimStart().startsWith("//")) "" else it }
+        }
+    }
 
     /** Every rule hit in [lines] of the file at [path], comments skipped. */
-    fun scan(path: String, lines: List<String>): List<Hit> = lines.flatMapIndexed { i, line ->
-        if (isComment(line)) emptyList()
-        else Rule.entries.filter { it.pattern.containsMatchIn(line) }.map { Hit(path, i + 1, it, line) }
+    fun scan(path: String, lines: List<String>): List<Hit> = codeOf(lines).flatMapIndexed { i, code ->
+        Rule.entries.filter { it.pattern.containsMatchIn(code) }.map { Hit(path, i + 1, it, lines[i]) }
     }
 
     private fun allSources(): List<Pair<String, List<String>>> {
@@ -82,12 +104,41 @@ class NoHardCodedLiteralsTest {
             "val w = Color.White",
             "PrimaryButton(\"Go\", {})",
             "Switch(checked = true, onCheckedChange = null)",
+            "Text(\"x\", fontSize = 14.sp)",
+            "Text(\"x\", fontSize = 14f.sp)",
+            "val a = 1_000.dp",
+            "val b = 0.5.dp",
+            "val c = 8f.dp",
+            "val d = 12.5f.sp",
+            "Text(\"x\", fontSize = size)",
         ))
         assertEquals(
-            listOf(3 to Rule.DP_LITERAL, 4 to Rule.COLOUR, 5 to Rule.RAW_BUTTON, 6 to Rule.RAW_BUTTON, 7 to Rule.COLOUR, 9 to Rule.RAW_SWITCH),
+            listOf(
+                3 to Rule.DP_LITERAL, 4 to Rule.COLOUR, 5 to Rule.RAW_BUTTON, 6 to Rule.RAW_BUTTON, 7 to Rule.COLOUR, 9 to Rule.RAW_SWITCH,
+                10 to Rule.SP_LITERAL, 11 to Rule.SP_LITERAL, 12 to Rule.DP_LITERAL, 13 to Rule.DP_LITERAL, 14 to Rule.DP_LITERAL,
+                15 to Rule.SP_LITERAL,
+            ),
             hits.map { it.line to it.rule },
         )
         assertTrue(hits.first().toString().startsWith("ui/x/Demo.kt:3"))
+    }
+
+    @Test fun commentsAreSkippedOnlyInsideCommentsNotOnEveryLineThatStartsWithAStar() {
+        val hits = scan("ui/x/Demo.kt", listOf(
+            "/**",
+            " * padding of 8.dp is described here",
+            " */",
+            "/* 9.dp */ val ok = 1",
+            "val total = a",
+            "    * 10.dp",
+            "val inline = /* 11.dp */ 12.dp",
+            "/*",
+            "13.dp",
+            "*/",
+            "val after = 14.sp",
+            "// 15.dp",
+        ))
+        assertEquals(listOf(6 to Rule.DP_LITERAL, 7 to Rule.DP_LITERAL, 11 to Rule.SP_LITERAL), hits.map { it.line to it.rule })
     }
 
     @Test fun anAllowanceOnlyCoversItsOwnFileRuleAndLines() {
