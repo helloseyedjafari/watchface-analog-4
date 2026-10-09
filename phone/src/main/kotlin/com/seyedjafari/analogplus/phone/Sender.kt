@@ -12,7 +12,6 @@ import com.seyedjafari.analogplus.protocol.ApplyMessage
 import com.seyedjafari.analogplus.protocol.Protocol
 import com.seyedjafari.analogplus.protocol.ResultMessage
 import java.io.File
-import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
@@ -29,7 +28,14 @@ sealed interface SendState {
     data class SendingFile(val percent: Int?) : SendState
     data object Applying : SendState
     data class Done(val result: ResultMessage) : SendState
-    data class Failed(val text: String) : SendState
+    /** A send that failed; [problem] is what the screen turns into text, [text] is its English wording. Equal when the English is equal. */
+    class Failed(val problem: SendProblem) : SendState {
+        constructor(text: String) : this(SendProblem.Plain(text))
+        val text: String get() = problem.english
+        override fun equals(other: Any?) = other is Failed && other.text == text
+        override fun hashCode() = text.hashCode()
+        override fun toString() = "Failed(text=$text)"
+    }
 }
 
 fun interface FaceSender {
@@ -91,18 +97,18 @@ class DataLayerSender(
             // a nearby (Bluetooth-direct) watch first; several watches with the app are otherwise equal
             val chosen = (withApp.firstOrNull { it.isNearby } ?: withApp.firstOrNull())?.id
             if (chosen == null && transport.connectedNodeIds().isNotEmpty()) {
-                send(SendState.Failed(NOT_INSTALLED_TEXT))
+                send(SendState.Failed(SendProblem.NotInstalled))
                 return@channelFlow
             }
             chosen
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            send(SendState.Failed("Could not reach the watch: ${e.message ?: e.javaClass.simpleName}. $NO_WATCH_TEXT"))
+            send(SendState.Failed(SendProblem.CouldNotReach(e.message ?: e.javaClass.simpleName)))
             return@channelFlow
         }
         if (nodeId == null) {
-            send(SendState.Failed(NO_WATCH_TEXT))
+            send(SendState.Failed(SendProblem.NoWatch))
             return@channelFlow
         }
 
@@ -118,10 +124,7 @@ class DataLayerSender(
             try {
                 withTimeout(fileTimeoutMs) { transport.sendFile(nodeId, Protocol.filePath(bundle.versionCode), bundle.apk) }
             } catch (e: TimeoutCancellationException) {
-                send(SendState.Failed(
-                    "The face file did not reach the watch within ${fileTimeoutMs / 1000} seconds. Check that the watch " +
-                        "is awake and connected to the phone, then try again.",
-                ))
+                send(SendState.Failed(SendProblem.FileTimeout(fileTimeoutMs / 1000)))
                 return@channelFlow
             }
             send(SendState.Applying)
@@ -130,17 +133,14 @@ class DataLayerSender(
             val result = try {
                 withTimeout(answerTimeoutMs) { answer.await() }
             } catch (e: TimeoutCancellationException) {
-                send(SendState.Failed(
-                    "The watch did not answer within ${answerTimeoutMs / 1000} seconds. Check that the watch is awake, " +
-                        "connected to the phone, and has the Analog Plus watch app, then try again.",
-                ))
+                send(SendState.Failed(SendProblem.AnswerTimeout(answerTimeoutMs / 1000)))
                 return@channelFlow
             }
             send(SendState.Done(result))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            send(SendState.Failed("Sending to the watch failed: ${e.message ?: e.javaClass.simpleName}"))
+            send(SendState.Failed(SendProblem.SendFailed(SendDetail.of(e))))
         } finally {
             val s = subscription
             if (s != null) withContext(NonCancellable) { try { s.remove() } catch (_: Exception) { } }
@@ -165,23 +165,24 @@ internal class ChannelTransferWatcher {
 
     fun onOutputClosed(closeReason: Int) {
         if (closeReason == ChannelClient.ChannelCallback.CLOSE_REASON_NORMAL) _done.complete(Unit)
-        else _done.completeExceptionally(IOException("The face file transfer ended early (${reasonText(closeReason)})."))
+        else _done.completeExceptionally(TransferException(SendDetail.EndedEarly(reasonOf(closeReason))))
     }
 
     /** A channel that closes before its output closed means the file did not arrive complete. */
     fun onChannelClosed(closeReason: Int) {
-        _done.completeExceptionally(
-            IOException("The connection to the watch closed before the face file was fully sent (${reasonText(closeReason)})."),
-        )
+        _done.completeExceptionally(TransferException(SendDetail.ClosedBeforeSent(reasonOf(closeReason))))
     }
 
-    private fun reasonText(reason: Int) = when (reason) {
-        ChannelClient.ChannelCallback.CLOSE_REASON_NORMAL -> "closed normally"
-        ChannelClient.ChannelCallback.CLOSE_REASON_DISCONNECTED -> "watch disconnected"
-        ChannelClient.ChannelCallback.CLOSE_REASON_REMOTE_CLOSE -> "closed by the watch"
-        ChannelClient.ChannelCallback.CLOSE_REASON_LOCAL_CLOSE -> "closed by the phone"
-        else -> "reason $reason"
-    }
+    private fun reasonOf(reason: Int) = CloseReason(
+        when (reason) {
+            ChannelClient.ChannelCallback.CLOSE_REASON_NORMAL -> CloseKind.NORMAL
+            ChannelClient.ChannelCallback.CLOSE_REASON_DISCONNECTED -> CloseKind.DISCONNECTED
+            ChannelClient.ChannelCallback.CLOSE_REASON_REMOTE_CLOSE -> CloseKind.CLOSED_BY_WATCH
+            ChannelClient.ChannelCallback.CLOSE_REASON_LOCAL_CLOSE -> CloseKind.CLOSED_BY_PHONE
+            else -> CloseKind.OTHER
+        },
+        reason,
+    )
 }
 
 /** The steps of one channel file transfer, so the ordering logic in [handOverFile] runs under JVM tests. */

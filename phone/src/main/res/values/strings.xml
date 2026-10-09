@@ -158,6 +158,35 @@
     <string name="send_state_done">The watch answered.</string>
     <string name="send_state_success">Sent. The watch now has version %1$d.</string>
 
+    <!-- Send problems: SendProblem.text(Resources); the English wording is SendProblem.english (kept equal by SendProblemResourcesTest) -->
+    <string name="send_not_installed">The Analog Plus app is not installed on your watch yet. Install it on the watch, then try again.</string>
+    <string name="send_no_watch">No watch found. Open Bluetooth, make sure the watch is paired with this phone and the Analog Plus watch app is installed.</string>
+    <string name="send_error_could_not_reach">Could not reach the watch: %1$s. %2$s</string>
+    <string name="send_error_file_timeout">The face file did not reach the watch within %1$d seconds. Check that the watch is awake and connected to the phone, then try again.</string>
+    <string name="send_error_answer_timeout">The watch did not answer within %1$d seconds. Check that the watch is awake, connected to the phone, and has the Analog Plus watch app, then try again.</string>
+    <string name="send_error_send_failed">Sending to the watch failed: %1$s</string>
+    <string name="send_error_fix_design">Fix the design first: %1$s</string>
+    <string name="send_error_version_counter">Could not save the version counter; free some storage and try again.</string>
+    <string name="send_error_watch_refused">The watch refused the face: %1$s</string>
+    <string name="send_error_key_mismatch">This phone is signing with a different key than the face on your watch. The watch only accepts updates from the original key. Remove the old Analog Plus face from the watch (uninstalling the watch app does not remove it; with adb: pm uninstall com.seyedjafari.analogplus.watchfacepush.analog on the watch), then send again.\n\n(The watch said: %1$s)</string>
+    <string name="send_error_face_checks">The face did not pass the watch checks: %1$s</string>
+    <string name="send_error_not_buildable">The design cannot be built: %1$s</string>
+    <string name="send_error_out_of_memory">Not enough memory to build the face. Try a smaller photo.</string>
+    <string name="send_error_builder_missing">The face builder is missing on this device (%1$s).</string>
+    <string name="send_error_build_failed">Building the face failed: %1$s</string>
+    <string name="send_error_no_answer">The watch connection ended without an answer. Try again.</string>
+    <string name="send_error_could_not_send">Could not send the face: %1$s</string>
+    <string name="send_unknown_reason">unknown reason</string>
+    <string name="send_no_detail">no detail given</string>
+    <string name="send_invalid_design">invalid design</string>
+    <string name="send_detail_ended_early">The face file transfer ended early (%1$s).</string>
+    <string name="send_detail_closed_before_sent">The connection to the watch closed before the face file was fully sent (%1$s).</string>
+    <string name="send_close_normal">closed normally</string>
+    <string name="send_close_disconnected">watch disconnected</string>
+    <string name="send_close_by_watch">closed by the watch</string>
+    <string name="send_close_by_phone">closed by the phone</string>
+    <string name="send_close_other">reason %1$d</string>
+
     <!-- Library -->
     <string name="library_section_templates">Templates</string>
     <string name="library_section_my_designs">My designs</string>

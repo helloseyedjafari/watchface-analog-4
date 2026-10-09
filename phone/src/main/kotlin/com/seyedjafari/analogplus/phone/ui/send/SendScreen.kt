@@ -24,12 +24,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.seyedjafari.analogplus.phone.EditorState
-import com.seyedjafari.analogplus.phone.NOT_INSTALLED_TEXT
-import com.seyedjafari.analogplus.phone.NO_WATCH_TEXT
 import com.seyedjafari.analogplus.phone.SendController
 import com.seyedjafari.analogplus.phone.SendState
 import com.seyedjafari.analogplus.phone.SendUi
 import com.seyedjafari.analogplus.phone.Tags
+import com.seyedjafari.analogplus.phone.currentResources
+import com.seyedjafari.analogplus.phone.text
 import com.seyedjafari.analogplus.phone.fixFirstText
 import com.seyedjafari.analogplus.phone.isBusy
 import com.seyedjafari.analogplus.phone.ui.components.ErrorBanner
@@ -80,8 +80,8 @@ private fun WatchStatusCard(watch: WatchStatusChecker) {
             ok = stringResource(R.string.send_status_installed), action = stringResource(R.string.send_status_not_installed), tag = Tags.WATCH_APP,
         )
         when {
-            status.paired == CheckStatus.ACTION_NEEDED -> Text(NO_WATCH_TEXT, style = MaterialTheme.typography.bodyMedium)
-            status.appInstalled == CheckStatus.ACTION_NEEDED -> Text(NOT_INSTALLED_TEXT, style = MaterialTheme.typography.bodyMedium)
+            status.paired == CheckStatus.ACTION_NEEDED -> Text(stringResource(R.string.send_no_watch), style = MaterialTheme.typography.bodyMedium)
+            status.appInstalled == CheckStatus.ACTION_NEEDED -> Text(stringResource(R.string.send_not_installed), style = MaterialTheme.typography.bodyMedium)
         }
         Text(
             stringResource(R.string.send_needs_wear_os), style = MaterialTheme.typography.bodySmall,
@@ -154,8 +154,8 @@ internal fun sendStatusText(ui: SendUi): String = when (ui) {
             if (s.percent != null) stringResource(R.string.send_state_sending_file_percent, s.percent) else stringResource(R.string.send_state_sending_file)
         SendState.Applying -> stringResource(R.string.send_state_applying)
         is SendState.Done -> stringResource(R.string.send_state_done)
-        is SendState.Failed -> s.text
+        is SendState.Failed -> s.problem.text(currentResources())
     }
     is SendUi.Success -> stringResource(R.string.send_state_success, ui.version)
-    is SendUi.Error -> ui.text
+    is SendUi.Error -> ui.problem.text(currentResources())
 }
