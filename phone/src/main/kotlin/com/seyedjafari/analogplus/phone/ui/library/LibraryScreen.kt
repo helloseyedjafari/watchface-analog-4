@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -27,6 +28,8 @@ import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SectionChips
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
 import androidx.compose.ui.res.stringResource
 import com.seyedjafari.analogplus.phone.R
 import androidx.annotation.StringRes
@@ -73,13 +76,19 @@ internal fun ReplaceDialog(pending: PendingReplace?, onConfirm: (PendingReplace)
 fun LibraryScreen(state: EditorState, store: Store, modifier: Modifier = Modifier) {
     var selected by rememberSaveable { mutableStateOf(LibrarySection.TEMPLATES) }
     val sections = rememberSaveableStateHolder()
+    // each section keeps its own scroll position (saved across recreation); choosing a chip enters that section at its top
+    val scrolls = LibrarySection.entries.associateWith { rememberSaveable("library_scroll_" + it.name, saver = ScrollState.Saver) { ScrollState(0) } }
+    val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf<PendingReplace?>(null) }
     val askToReplace: (String, DesignSettings) -> Unit = { name, target -> if (target != state.design) pending = PendingReplace(name, target) }
     ReplaceDialog(pending, onConfirm = { state.replace(it.design); pending = null }, onCancel = { pending = null })
     Column(modifier.fillMaxSize()) {
-        SectionChips(LibrarySection.entries, selected, { selected = it }, { stringResource(it.labelRes) }, { it.tag() }, Modifier.padding(vertical = Spacing.sm))
+        SectionChips(LibrarySection.entries, selected, {
+            if (it != selected) scope.launch(start = CoroutineStart.UNDISPATCHED) { scrolls.getValue(it).scrollTo(0) }
+            selected = it
+        }, { stringResource(it.labelRes) }, { it.tag() }, Modifier.padding(vertical = Spacing.sm))
         Column(
-            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(Spacing.lg),
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(scrolls.getValue(selected)).padding(Spacing.lg),
             verticalArrangement = Arrangement.spacedBy(Spacing.md),
         ) {
             // a section that leaves composition would lose its rememberSaveable state (name draft, pasted link); keep it per section
