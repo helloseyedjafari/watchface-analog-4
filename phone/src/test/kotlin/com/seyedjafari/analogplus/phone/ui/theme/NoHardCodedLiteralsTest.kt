@@ -95,7 +95,6 @@ class NoHardCodedLiteralsTest {
         Allow("QrSection.kt", Rule.COLOUR, "a QR code is dark on light in every theme", listOf(".background(Color.White)")),
         Allow("SlotDragEditor.kt", Rule.COLOUR, "it draws the watch face (dial, slots, rings), not app chrome"),
         Allow("ui/components/Buttons.kt", Rule.RAW_BUTTON, "the wrappers around the Material buttons"),
-        Allow("PreviewPane.kt", Rule.PARAMETER_LITERAL, "animation label shown in the Android Studio inspector only", listOf("label = \"preview\"")),
         Allow("ui/design/DesignScreen.kt", Rule.PARAMETER_LITERAL, "animation label shown in the inspector only", listOf("label = \"design-section\"")),
         Allow("ui/components/States.kt", Rule.PARAMETER_LITERAL, "animation labels shown in the inspector only", listOf("label = \"skeleton\"", "label = \"alpha\"")),
         Allow("ui/nav/AppNav.kt", Rule.PARAMETER_LITERAL, "animation label shown in the inspector only", listOf("label = \"destination\"")),
