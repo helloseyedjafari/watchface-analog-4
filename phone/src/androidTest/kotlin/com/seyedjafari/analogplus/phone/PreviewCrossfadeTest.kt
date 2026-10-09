@@ -1,6 +1,7 @@
 package com.seyedjafari.analogplus.phone
 
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertWidthIsAtLeast
@@ -10,6 +11,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
+import com.seyedjafari.analogplus.phone.ui.theme.LocalAnimationScale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -36,7 +38,10 @@ class PreviewCrossfadeTest {
     @Test fun aNewRenderFadesInOverTheOldOneAndTheOldOneIsThenGone() {
         val state = EditorState()
         rule.mainClock.autoAdvance = false
-        rule.setContent { AnalogTheme { PreviewPane(state, Modifier.size(300.dp)) } }
+        // the crossfade is timed on the manual clock, so a device with animations off or slowed must not change it
+        rule.setContent {
+            CompositionLocalProvider(LocalAnimationScale provides 1f) { AnalogTheme { PreviewPane(state, Modifier.size(300.dp)) } }
+        }
         advanceUntil("the first render") { state.lastPreview != null && images() == 1 }
         rule.mainClock.advanceTimeBy(600)
         assertEquals("a settled preview shows one image", 1, images())

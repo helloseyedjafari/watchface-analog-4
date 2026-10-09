@@ -1,6 +1,8 @@
 package com.seyedjafari.analogplus.phone.ui
 
+import android.content.res.Configuration
 import androidx.compose.foundation.layout.size
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
@@ -106,8 +108,13 @@ class ComponentsTest {
     private fun centrePixel(tag: String): Int =
         rule.onNodeWithTag(tag).captureToImage().asAndroidBitmap().let { it.getPixel(it.width / 2, it.height / 2) }
 
+    /** The skeleton tests compare against the light palette, so the light theme is forced whatever the device is set to. */
     private fun showSkeleton(animationScale: Float?) = rule.setContent {
-        CompositionLocalProvider(LocalAnimationScale provides animationScale) {
+        val base = LocalConfiguration.current
+        val light = Configuration(base).apply {
+            uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or Configuration.UI_MODE_NIGHT_NO
+        }
+        CompositionLocalProvider(LocalConfiguration provides light, LocalAnimationScale provides animationScale) {
             AnalogTheme { Surface(color = MaterialTheme.colorScheme.background) { Skeleton(Modifier.size(100.dp).testTag("sk")) } }
         }
     }

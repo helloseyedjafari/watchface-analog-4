@@ -1,7 +1,9 @@
 package com.seyedjafari.analogplus.phone
 
+import android.provider.Settings
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -56,9 +58,13 @@ class AnimationsOffTest {
 
     @Test fun withoutAnOverrideTheSystemSettingIsRead() {
         var read = -1f
-        rule.setContent { read = rememberAnimationScale() }
+        var expected = -1f
+        rule.setContent {
+            expected = Settings.Global.getFloat(LocalContext.current.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+            read = rememberAnimationScale()
+        }
         rule.waitForIdle()
-        assertTrue("the system animator scale is not negative (was $read)", read >= 0f)
+        assertEquals(expected, read, 0f)
     }
 
     @Test fun aDestinationSwitchHasNoIntermediateFrameWhenAnimationsAreOff() {
