@@ -105,16 +105,15 @@ class NavigationRailTest {
             val layout = layoutOf(label)
             assertEquals("the ${d.label} label wraps", 1, layout.lineCount)
             assertFalse("the ${d.label} label does not fit its item", layout.multiParagraph.didExceedMaxLines)
-            // (didOverflowWidth is not used: the paragraph is laid out unbounded, so it always reads true; the width check is the bounds below)
+            // Width: the rail gives the label at most its own width (the item grows with the label up to it), so a label that is too wide
+            // does not read as wider than its room: it wraps, or is cut by maxLines, which the two checks above catch (sabotage-checked
+            // with a long label: "does not fit its item"). TextLayoutResult.didOverflowWidth is no use here, it compares the text with the
+            // width it was laid out in and reads true for any label shorter than that room. The rail's own bound is the tests at the end.
             assertFalse("the ${d.label} label is cut off", layout.didOverflowHeight)
             assertEquals("the ${d.label} label is capped at 1.3x", 1.3f, layout.layoutInput.density.fontScale, 0.001f)
             val bounds = label.fetchSemanticsNode().boundsInRoot
+            // (the bounds are clipped to what contains the label, so this cannot fail on its own either; wrapping above is the guard)
             assertTrue("the ${d.label} label ($bounds) is inside its item ($item)", bounds.left >= item.left && bounds.right <= item.right && bounds.top >= item.top && bounds.bottom <= item.bottom)
-            // boundsInRoot is clipped to what contains it and the box is as wide as the room it was given, so those checks cannot fail on
-            // their own: the width of the laid-out text itself must fit the item
-            val textWidth = layout.getLineRight(0) - layout.getLineLeft(0)
-            val itemWidth = rule.onNodeWithTag(d.tag).fetchSemanticsNode().size.width
-            assertTrue("the ${d.label} text ($textWidth px) is wider than its item ($itemWidth px)", textWidth <= itemWidth)
             rule.onNodeWithTag(d.tag).assertHeightIsAtLeast(48.dp)
         }
     }
