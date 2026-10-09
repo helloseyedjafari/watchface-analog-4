@@ -29,6 +29,7 @@ import com.seyedjafari.analogplus.phone.fixFirstText
 import com.seyedjafari.analogplus.phone.ui.components.ErrorBanner
 import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SectionChips
+import com.seyedjafari.analogplus.phone.ui.components.keyboardIsOpen
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import com.seyedjafari.analogplus.phone.ui.theme.rememberSharedAxis
 
@@ -40,6 +41,7 @@ private val PREVIEW_SIZE = 150.dp   // the one size literal: the hero preview, a
  */
 @Composable
 fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modifier: Modifier = Modifier) {
+    val keyboardOpen = keyboardIsOpen()
     var selected by rememberSaveable { mutableStateOf(DesignSection.COLOURS) }
     // keyed on the section: a new section starts at the top, while rotation still restores the offset of the same one
     val scroll = rememberSaveable(selected, saver = ScrollState.Saver) { ScrollState(0) }
@@ -77,10 +79,13 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
                 maxLines = 2,
             )
         }
-        PrimaryButton(
-            "Send to watch", onSend,
-            Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.sm).testTag(Tags.field("design_send")),
-            enabled = state.errors.isEmpty(), loading = sendBusy,
-        )
+        // with the keyboard open the send row would eat the little space left for the field being edited
+        if (!keyboardOpen) {
+            PrimaryButton(
+                "Send to watch", onSend,
+                Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.sm).testTag(Tags.field("design_send")),
+                enabled = state.errors.isEmpty(), loading = sendBusy,
+            )
+        }
     }
 }

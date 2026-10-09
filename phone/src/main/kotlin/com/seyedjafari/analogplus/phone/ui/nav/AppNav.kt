@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.semantics.contentDescription
+import com.seyedjafari.analogplus.phone.ui.components.keyboardIsOpen
 import com.seyedjafari.analogplus.phone.ui.theme.rememberSharedAxis
 import androidx.compose.ui.semantics.semantics
 
@@ -36,21 +37,25 @@ fun AppNav(
     val stateHolder = rememberSaveableStateHolder()
     BackHandler(enabled = selected.backTarget() != null) { selected.backTarget()?.let { selected = it } }
     val destinationTransition = rememberSharedAxis<Destination>()
+    // with the keyboard open the bar would eat the little space left for the field being edited
+    val keyboardOpen = keyboardIsOpen()
     Scaffold(
         modifier = modifier,
         bottomBar = {
-            // four labels share the width: at the largest font scales "Account" would break mid-word, so the bar stops growing at 1.3x
-            val density = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = minOf(density.fontScale, NAV_MAX_FONT_SCALE))) {
-                NavigationBar {
-                    Destination.entries.forEach { d ->
-                        NavigationBarItem(
-                            selected = d == selected, onClick = { selected = d },
-                            icon = { Icon(d.icon(), contentDescription = null) },
-                            label = { Text(d.label, maxLines = 1) },
-                            alwaysShowLabel = true,
-                            modifier = Modifier.testTag(d.tag).semantics { contentDescription = d.label },
-                        )
+            if (!keyboardOpen) {
+                // four labels share the width: at the largest font scales "Account" would break mid-word, so the bar stops growing at 1.3x
+                val density = LocalDensity.current
+                CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = minOf(density.fontScale, NAV_MAX_FONT_SCALE))) {
+                    NavigationBar {
+                        Destination.entries.forEach { d ->
+                            NavigationBarItem(
+                                selected = d == selected, onClick = { selected = d },
+                                icon = { Icon(d.icon(), contentDescription = null) },
+                                label = { Text(d.label, maxLines = 1) },
+                                alwaysShowLabel = true,
+                                modifier = Modifier.testTag(d.tag).semantics { contentDescription = d.label },
+                            )
+                        }
                     }
                 }
             }
