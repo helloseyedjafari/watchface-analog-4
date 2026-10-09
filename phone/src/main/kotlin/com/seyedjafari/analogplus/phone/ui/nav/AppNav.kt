@@ -80,7 +80,7 @@ fun AppNav(
                         // This Column sits between M3's own selectableGroup() and the items, so it is the group too: TalkBack reads "1 of 4" from the node directly above the items
                         Column(
                             Modifier.verticalScroll(rememberScrollState()).selectableGroup(),
-                            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Destination.entries.forEach { d ->
