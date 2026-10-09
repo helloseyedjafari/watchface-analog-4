@@ -1,5 +1,6 @@
 package com.seyedjafari.analogplus.phone.ui.design
 
+import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -24,6 +25,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.phone.ChoiceRow
@@ -31,12 +34,14 @@ import com.seyedjafari.analogplus.phone.ColourField
 import com.seyedjafari.analogplus.phone.EditorState
 import com.seyedjafari.analogplus.phone.IntField
 import com.seyedjafari.analogplus.phone.MAX_PHOTO_BYTES
+import com.seyedjafari.analogplus.phone.PhotoLoad
 import com.seyedjafari.analogplus.phone.PhotoRead
 import com.seyedjafari.analogplus.phone.TabColumn
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.decodeThumbnail
 import com.seyedjafari.analogplus.phone.firstError
-import com.seyedjafari.analogplus.phone.readLimited
+import com.seyedjafari.analogplus.phone.readPhotoFromUri
+import com.seyedjafari.analogplus.phone.ui.components.Skeleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -48,13 +53,33 @@ private sealed interface Thumb {
     data object Unavailable : Thumb
 }
 
+/**
+ * The thumbnail of [bytes]: a [Skeleton] while it is decoded off the main thread, then the picture, or "Preview
+ * unavailable" when the bytes cannot be decoded. [decode] is the decoder (a parameter so tests can hold it back).
+ */
+@Composable
+internal fun PhotoThumb(bytes: ByteArray, decode: (ByteArray) -> android.graphics.Bitmap? = ::decodeThumbnail) {
+    val thumb by produceState<Thumb>(Thumb.Loading, bytes) {
+        value = withContext(Dispatchers.Default) { decode(bytes)?.let { Thumb.Ready(it) } ?: Thumb.Unavailable }
+    }
+    when (val t = thumb) {
+        Thumb.Loading -> Skeleton(Modifier.size(120.dp).testTag(Tags.field("background_thumb_loading")).semantics { contentDescription = "Loading photo" })
+        is Thumb.Ready -> Image(t.bitmap.asImageBitmap(), contentDescription = "Chosen photo", contentScale = ContentScale.Crop,
+            modifier = Modifier.size(120.dp).testTag(Tags.field("background_thumb")))
+        Thumb.Unavailable -> Text("Preview unavailable", style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.testTag(Tags.field("background_thumb_unavailable")))
+    }
+}
+
 /** Solid colour, gradient or photo background. The photo bytes are stored as picked (the renderer shrinks them). */
 @Composable
-fun BackgroundSection(state: EditorState) {
+internal fun BackgroundSection(state: EditorState, readPhoto: (Context, Uri) -> PhotoRead? = ::readPhotoFromUri) {
     val bg = state.design.background
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var message by remember { mutableStateOf<String?>(null) }
+    // the picked photo is being read (up to 25 MB, off the main thread)
+    var reading by remember { mutableStateOf(false) }
 
     fun setBackground(f: (com.seyedjafari.analogplus.facegen.design.BackgroundDesign) -> com.seyedjafari.analogplus.facegen.design.BackgroundDesign) =
         state.update { it.copy(background = f(it.background)) }
@@ -62,12 +87,11 @@ fun BackgroundSection(state: EditorState) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                try {
-                    context.contentResolver.openInputStream(uri)?.use { readLimited(it) }
-                } catch (e: Exception) {
-                    null
-                }
+            reading = true
+            val result = try {
+                withContext(Dispatchers.IO) { readPhoto(context, uri) }
+            } finally {
+                reading = false
             }
             when (result) {
                 is PhotoRead.Ok -> { message = null; setBackground { it.copy(photoJpeg = result.bytes) } }
@@ -117,19 +141,11 @@ fun BackgroundSection(state: EditorState) {
                     modifier = Modifier.testTag(Tags.field("background_message")))
             }
             val bytes = bg.photoJpeg
-            if (bytes != null) {
-                val thumb by produceState<Thumb>(Thumb.Loading, bytes) {
-                    value = withContext(Dispatchers.Default) {
-                        decodeThumbnail(bytes)?.let { Thumb.Ready(it) } ?: Thumb.Unavailable
-                    }
-                }
-                when (val t = thumb) {
-                    Thumb.Loading -> {}
-                    is Thumb.Ready -> Image(t.bitmap.asImageBitmap(), contentDescription = "Chosen photo", contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(120.dp).testTag(Tags.field("background_thumb")))
-                    Thumb.Unavailable -> Text("Preview unavailable", style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.testTag(Tags.field("background_thumb_unavailable")))
-                }
+            val loadingSaved = bytes == null && state.photoLoad == PhotoLoad.LOADING
+            when {
+                reading -> Skeleton(Modifier.size(120.dp).testTag(Tags.field("background_reading")).semantics { contentDescription = "Reading photo" })
+                loadingSaved -> Skeleton(Modifier.size(120.dp).testTag(Tags.field("background_loading")).semantics { contentDescription = "Loading photo" })
+                bytes != null -> PhotoThumb(bytes)
             }
         }
         // an invalid dim stays visible after switching away from PHOTO, like the colours above

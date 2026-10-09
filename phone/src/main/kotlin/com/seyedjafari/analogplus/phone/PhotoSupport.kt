@@ -1,9 +1,11 @@
 package com.seyedjafari.analogplus.phone
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.ExifInterface
+import android.net.Uri
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
@@ -30,6 +32,13 @@ internal fun readLimited(input: InputStream, maxBytes: Int = MAX_PHOTO_BYTES): P
         out.write(buf, 0, n)
     }
     return if (total == 0L) PhotoRead.Empty else PhotoRead.Ok(out.toByteArray())
+}
+
+/** Reads the photo the picker returned for [uri] (call off the main thread); null when it cannot be opened or read. */
+internal fun readPhotoFromUri(context: Context, uri: Uri): PhotoRead? = try {
+    context.contentResolver.openInputStream(uri)?.use { readLimited(it) }
+} catch (e: Exception) {
+    null
 }
 
 /** Largest power of two that keeps both sides at or above [target] pixels (at least 1). */

@@ -49,7 +49,7 @@ import kotlinx.coroutines.withContext
 class AppModel(app: Application) : AndroidViewModel(app) {
     val store = Store(app)
     // the photo (up to 25 MB) is read in the background and attached below
-    val state = EditorState(store.loadCurrentWithoutPhoto())
+    val state = EditorState(store.loadCurrentWithoutPhoto(), PhotoLoad.LOADING)
     /** A design from a tapped link, waiting for the user to confirm that it replaces the current one. */
     var pendingLinkDesign: DesignSettings? by mutableStateOf(null)
     val send = SendController(lazy { FacePackager(app) }, DataLayerSender(app), store, viewModelScope, signingKeyFingerprintProvider(app))
@@ -61,6 +61,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             // only a design whose background is still the one loaded (no photo yet, nothing changed) gets its photo back
             val untouched = photo != null && state.design.background == designAtStart.background
             if (untouched) state.update { it.copy(background = it.background.copy(photoJpeg = photo)) }
+            state.photoLoaded()
             withContext(Dispatchers.IO) { store.finishPhotoLoad(photo) }
         }
         // save shortly after the last change (one write per burst of typing)

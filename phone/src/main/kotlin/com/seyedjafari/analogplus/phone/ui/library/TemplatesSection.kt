@@ -1,5 +1,7 @@
 package com.seyedjafari.analogplus.phone.ui.library
 
+import android.content.Context
+import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +28,7 @@ import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.Templates
 import com.seyedjafari.analogplus.facegen.render.PreviewRenderer
 import com.seyedjafari.analogplus.phone.Tags
+import com.seyedjafari.analogplus.phone.ui.components.Skeleton
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -51,17 +54,34 @@ private fun TemplateCard(template: DesignSettings, modifier: Modifier, onClick: 
     }
 }
 
-/** The rendered face of [design], [sizeDp] square; empty until the render (off the main thread) is done. */
+/**
+ * The rendered face of [design], [sizeDp] square; a [Skeleton] until the render (off the main thread) is done, and an
+ * empty box when it fails. [render] draws the face (a parameter so tests can hold it back).
+ */
 @Composable
-internal fun DesignThumbnail(design: DesignSettings, sizeDp: Int) {
+internal fun DesignThumbnail(
+    design: DesignSettings,
+    sizeDp: Int,
+    render: (DesignSettings, Context, Int) -> Bitmap = { d, c, px -> PreviewRenderer.render(d, c, px) },
+) {
     val context = LocalContext.current
     val px = (sizeDp * context.resources.displayMetrics.density).toInt()
-    val bitmap by produceState<ImageBitmap?>(null, design, px) {
+    val thumb by produceState<ThumbState>(ThumbState.Loading, design, px) {
         value = withContext(Dispatchers.Default) {
-            try { PreviewRenderer.render(design, context, px).asImageBitmap() } catch (e: Exception) { null }
+            try { ThumbState.Ready(render(design, context, px).asImageBitmap()) } catch (e: Exception) { ThumbState.Failed }
         }
     }
     Box(Modifier.size(sizeDp.dp)) {
-        bitmap?.let { Image(it, contentDescription = null, modifier = Modifier.size(sizeDp.dp)) }
+        when (val t = thumb) {
+            ThumbState.Loading -> Skeleton(Modifier.matchParentSize().testTag(Tags.field("design_thumb_loading")))
+            is ThumbState.Ready -> Image(t.image, contentDescription = null, modifier = Modifier.size(sizeDp.dp).testTag(Tags.field("design_thumb")))
+            ThumbState.Failed -> {}
+        }
     }
+}
+
+private sealed interface ThumbState {
+    data object Loading : ThumbState
+    class Ready(val image: ImageBitmap) : ThumbState
+    data object Failed : ThumbState
 }
