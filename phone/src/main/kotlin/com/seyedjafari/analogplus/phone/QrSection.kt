@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
@@ -44,10 +45,11 @@ fun QrSection(state: EditorState, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val link = remember(state.design) { DesignJson.shareLink(state.design) }
     val encoded = remember(link) { QrCode.encode(link) }
+    val resources = currentResources()
 
     var scanning by remember { mutableStateOf(false) }
     var preparing by remember { mutableStateOf(false) }
-    var scanMessage by remember { mutableStateOf<String?>(null) }
+    var scanMessage by remember { mutableStateOf<ShareProblem?>(null) }
     var incoming by remember { mutableStateOf<DesignSettings?>(null) }
 
     // "Preparing the scanner..." only while this screen stays in front: the scanner's own screen (and a module
@@ -66,7 +68,7 @@ fun QrSection(state: EditorState, modifier: Modifier = Modifier) {
         onDispose { owner?.lifecycle?.removeObserver(observer) }
     }
 
-    SectionCard("QR code", modifier.testTag(Tags.field("qr_card"))) {
+    SectionCard(stringResource(R.string.qr_title), modifier.testTag(Tags.field("qr_card"))) {
         when (val e = encoded) {
             is QrCode.Encoded.Matrix -> {
                 val bitmap = remember(e) {
@@ -76,7 +78,7 @@ fun QrSection(state: EditorState, modifier: Modifier = Modifier) {
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Image(
                         bitmap = bitmap,
-                        contentDescription = "QR code of the design \"${QrCode.dialogName(state.design.name)}\"",
+                        contentDescription = stringResource(R.string.qr_image_description, QrCode.dialogName(state.design.name, stringResource(R.string.common_no_name))),
                         filterQuality = FilterQuality.None, // keep the modules sharp when scaled up
                         modifier = Modifier
                             .widthIn(max = Dimens.QrMaxWidth)
@@ -87,11 +89,11 @@ fun QrSection(state: EditorState, modifier: Modifier = Modifier) {
                     )
                 }
             }
-            QrCode.Encoded.TooBig -> ErrorBanner(QrCode.TOO_BIG_MESSAGE, Modifier.testTag(Tags.field("qr_too_big")))
+            QrCode.Encoded.TooBig -> ErrorBanner(stringResource(R.string.qr_too_big), Modifier.testTag(Tags.field("qr_too_big")))
         }
 
         SecondaryButton(
-            "Scan QR code",
+            stringResource(R.string.qr_button_scan),
             {
                 scanMessage = null
                 scanning = true
@@ -101,7 +103,7 @@ fun QrSection(state: EditorState, modifier: Modifier = Modifier) {
                         scanning = false
                         when (val outcome = QrCode.interpretScan(raw)) {
                             is QrCode.ScanOutcome.Design -> incoming = outcome.design
-                            is QrCode.ScanOutcome.Rejected -> scanMessage = outcome.message
+                            is QrCode.ScanOutcome.Rejected -> scanMessage = outcome.problem
                         }
                     },
                     onCancelled = { scanning = false },
@@ -112,9 +114,9 @@ fun QrSection(state: EditorState, modifier: Modifier = Modifier) {
             enabled = !scanning,
         )
         if (preparing && scanning) {
-            Text("Preparing the scanner...", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag(Tags.field("qr_preparing")))
+            Text(stringResource(R.string.qr_preparing), style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag(Tags.field("qr_preparing")))
         }
-        scanMessage?.let { ErrorBanner(it, Modifier.testTag(Tags.field("qr_scan_error"))) }
+        scanMessage?.let { ErrorBanner(it.text(resources), Modifier.testTag(Tags.field("qr_scan_error"))) }
     }
 
     incoming?.let { design ->
@@ -127,7 +129,7 @@ private fun startScan(
     context: android.content.Context,
     onText: (String?) -> Unit,
     onCancelled: () -> Unit,
-    onError: (String) -> Unit,
+    onError: (ShareProblem) -> Unit,
 ) {
     try {
         val options = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
@@ -138,9 +140,9 @@ private fun startScan(
                 // a user backing out of the scanner is reported as a failure with this wording on some versions
                 val text = e.message.orEmpty()
                 if (text.contains("cancel", ignoreCase = true)) onCancelled()
-                else onError("The scanner is not available: ${text.ifEmpty { e.javaClass.simpleName }}. You can paste the link instead.")
+                else onError(ShareProblem.ScannerUnavailable(text.ifEmpty { e.javaClass.simpleName }))
             }
     } catch (e: Exception) {
-        onError("The scanner could not start: ${e.message ?: e.javaClass.simpleName}. You can paste the link instead.")
+        onError(ShareProblem.ScannerFailedToStart(e.message ?: e.javaClass.simpleName))
     }
 }

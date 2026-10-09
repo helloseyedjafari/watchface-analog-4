@@ -38,6 +38,18 @@ fun SendProblem.text(r: Resources): String = when (this) {
     is SendProblem.CouldNotSend -> r.getString(R.string.send_error_could_not_send, detail)
 }
 
+/** What the user reads for [this] link or scan problem. In English it equals [ShareProblem.english]. */
+fun ShareProblem.text(r: Resources): String = when (this) {
+    is ShareProblem.Plain -> text
+    ShareProblem.EmptyLink -> r.getString(R.string.share_error_empty_link)
+    ShareProblem.NotADesignLink -> r.getString(R.string.share_error_not_a_link)
+    is ShareProblem.Unreadable -> r.getString(R.string.share_error_unreadable, detail)
+    ShareProblem.NotOurs -> r.getString(R.string.qr_not_ours)
+    ShareProblem.EmptyScan -> r.getString(R.string.qr_scan_empty)
+    is ShareProblem.ScannerUnavailable -> r.getString(R.string.qr_scanner_unavailable, detail)
+    is ShareProblem.ScannerFailedToStart -> r.getString(R.string.qr_scanner_failed, detail)
+}
+
 fun SendDetail.text(r: Resources): String = when (this) {
     is SendDetail.Raw -> text
     is SendDetail.EndedEarly -> r.getString(R.string.send_detail_ended_early, reason.text(r))

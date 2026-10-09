@@ -83,15 +83,21 @@ object QrCode {
         /** A readable design. It has not been applied to anything yet. */
         data class Design(val design: DesignSettings) : ScanOutcome
 
-        /** [message] is ready to show the user. */
-        data class Rejected(val message: String) : ScanOutcome
+        /** [problem] is what the screen turns into text, [message] its English wording. Equal when the English is equal. */
+        class Rejected(val problem: ShareProblem) : ScanOutcome {
+            constructor(message: String) : this(ShareProblem.Plain(message))
+            val message: String get() = problem.english
+            override fun equals(other: Any?) = other is Rejected && other.message == message
+            override fun hashCode() = message.hashCode()
+            override fun toString() = "Rejected(message=$message)"
+        }
     }
 
     /** Decides what scanned [raw] text means, using the same parser as the paste field. Never throws. */
     fun interpretScan(raw: String?): ScanOutcome {
         val text = raw?.trim().orEmpty()
-        if (text.isEmpty()) return ScanOutcome.Rejected("The scan did not contain any text.")
-        if (!text.startsWith(LINK_PREFIX)) return ScanOutcome.Rejected(NOT_OURS_MESSAGE)
+        if (text.isEmpty()) return ScanOutcome.Rejected(ShareProblem.EmptyScan)
+        if (!text.startsWith(LINK_PREFIX)) return ScanOutcome.Rejected(ShareProblem.NotOurs)
         val parsed = EditorState()
         val problem = loadShareLink(parsed, text)
         return if (problem != null) ScanOutcome.Rejected(problem) else ScanOutcome.Design(parsed.design)

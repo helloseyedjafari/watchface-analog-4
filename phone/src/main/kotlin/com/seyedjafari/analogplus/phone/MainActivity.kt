@@ -85,7 +85,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             when (val r = withContext(Dispatchers.Default) { parseShareLink(link) }) {
                 is ShareLinkResult.Ok -> pendingLinkDesign = r.design
-                is ShareLinkResult.Problem -> Toast.makeText(getApplication<Application>(), r.text, Toast.LENGTH_LONG).show()
+                is ShareLinkResult.Problem -> Toast.makeText(getApplication<Application>(), r.problem.text(getApplication<Application>().resources), Toast.LENGTH_LONG).show()
             }
         }
     }

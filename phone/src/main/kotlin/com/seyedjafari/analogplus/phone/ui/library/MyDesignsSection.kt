@@ -40,16 +40,19 @@ internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (S
     val saved = remember { mutableStateListOf<SavedDesign>().also { it.addAll(store.savedDesigns()) } }
     fun refresh() { saved.clear(); saved.addAll(store.savedDesigns()) }
     var name by rememberSaveable { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
+    // Store.saveNamed refuses only a blank name (an IllegalArgumentException); its English text is not shown
+    var nameRequired by remember { mutableStateOf(false) }
 
     SectionCard(stringResource(R.string.mydesigns_save_title)) {
         OutlinedTextField(
-            value = name, onValueChange = { name = it; error = null }, singleLine = true,
+            value = name, onValueChange = { name = it; nameRequired = false }, singleLine = true,
             label = { Text(stringResource(R.string.mydesigns_name_label)) },
-            isError = error != null,
+            isError = nameRequired,
             modifier = Modifier.fillMaxWidth().testTag(Tags.SAVE_NAME_FIELD),
         )
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(Tags.SAVE_ERROR)) }
+        if (nameRequired) {
+            Text(stringResource(R.string.mydesigns_error_name_required), color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(Tags.SAVE_ERROR))
+        }
         PrimaryButton(
             stringResource(R.string.mydesigns_button_save),
             {
@@ -58,7 +61,7 @@ internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (S
                     refresh()
                     name = ""
                 } catch (e: IllegalArgumentException) {
-                    error = e.message
+                    nameRequired = true
                 }
             },
             Modifier.testTag(Tags.SAVE_BUTTON),

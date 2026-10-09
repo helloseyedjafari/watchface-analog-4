@@ -22,8 +22,11 @@ import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.phone.EditorState
 import com.seyedjafari.analogplus.phone.QrSection
+import com.seyedjafari.analogplus.phone.ShareProblem
 import com.seyedjafari.analogplus.phone.Tags
+import com.seyedjafari.analogplus.phone.currentResources
 import com.seyedjafari.analogplus.phone.loadShareLink
+import com.seyedjafari.analogplus.phone.text
 import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SectionCard
@@ -38,7 +41,8 @@ internal fun ShareSection(state: EditorState) {
     val clipboard = LocalClipboardManager.current
     val ownLink = remember(state.design) { DesignJson.shareLink(state.design) }
     var pasted by rememberSaveable { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<ShareProblem?>(null) }
+    val resources = currentResources()
     var notice by remember { mutableStateOf<String?>(null) }
     val linkCopied = stringResource(R.string.share_link_copied)
     val designLoaded = stringResource(R.string.share_design_loaded)
@@ -84,7 +88,7 @@ internal fun ShareSection(state: EditorState) {
             modifier = Modifier.fillMaxWidth().testTag(Tags.SHARE_LINK_FIELD),
         )
         error?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(Tags.SHARE_ERROR))
+            Text(it.text(resources), color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(Tags.SHARE_ERROR))
         }
         PrimaryButton(
             stringResource(R.string.share_button_load),

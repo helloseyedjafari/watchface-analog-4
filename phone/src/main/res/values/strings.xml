@@ -23,6 +23,28 @@
     <string name="common_no_name">(no name)</string>
     <string name="common_list_separator">", "</string>
 
+    <!-- Application -->
+    <string name="app_name">Analog Plus</string>
+
+    <!-- Share link and QR code problems (ShareProblem.text(Resources); the English wording is ShareProblem.english) -->
+    <string name="share_error_empty_link">Paste an analogplus://design link first.</string>
+    <string name="share_error_not_a_link">That is not an Analog Plus design link.</string>
+    <string name="share_error_unreadable">That link could not be read: %1$s</string>
+    <string name="qr_not_ours">That QR code is not an Analog Plus design.</string>
+    <string name="qr_scan_empty">The scan did not contain any text.</string>
+    <string name="qr_scanner_unavailable">The scanner is not available: %1$s. You can paste the link instead.</string>
+    <string name="qr_scanner_failed">The scanner could not start: %1$s. You can paste the link instead.</string>
+
+    <!-- QR code card -->
+    <string name="qr_title">QR code</string>
+    <string name="qr_image_description">QR code of the design \"%1$s\"</string>
+    <string name="qr_too_big">This design is too big for a QR code; use the link instead.</string>
+    <string name="qr_button_scan">Scan QR code</string>
+    <string name="qr_preparing">Preparing the scanner...</string>
+
+    <!-- Saved designs -->
+    <string name="mydesigns_error_name_required">Give the design a name</string>
+
     <!-- Words inside validation lines (FieldTexts; the validation messages themselves are written by the face generator) -->
     <string name="field_slot">slot %1$d</string>
     <string name="field_slot_named">slot %1$d (%2$s)</string>
