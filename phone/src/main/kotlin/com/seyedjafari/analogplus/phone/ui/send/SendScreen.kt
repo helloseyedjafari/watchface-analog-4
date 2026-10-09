@@ -39,6 +39,8 @@ import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.components.StatusKind
 import com.seyedjafari.analogplus.phone.ui.components.StatusPill
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
 
 /**
  * Watch status card, then the send card. Scrolls, so no message is ever clipped. The [send] controller lives above
@@ -68,18 +70,24 @@ private fun WatchStatusCard(watch: WatchStatusChecker) {
         if (firstResume) firstResume = false else round++   // the first resume coincides with the initial check
         onPauseOrDispose { }
     }
-    SectionCard("Your watch") {
-        StatusRow("Watch paired", status.paired, ok = "Found", action = "Not found", tag = Tags.WATCH_PAIRED)
-        StatusRow("Analog Plus on the watch", status.appInstalled, ok = "Installed", action = "Not installed", tag = Tags.WATCH_APP)
+    SectionCard(stringResource(R.string.send_watch_title)) {
+        StatusRow(
+            stringResource(R.string.send_watch_paired), status.paired,
+            ok = stringResource(R.string.send_status_found), action = stringResource(R.string.send_status_not_found), tag = Tags.WATCH_PAIRED,
+        )
+        StatusRow(
+            stringResource(R.string.send_watch_app), status.appInstalled,
+            ok = stringResource(R.string.send_status_installed), action = stringResource(R.string.send_status_not_installed), tag = Tags.WATCH_APP,
+        )
         when {
             status.paired == CheckStatus.ACTION_NEEDED -> Text(NO_WATCH_TEXT, style = MaterialTheme.typography.bodyMedium)
             status.appInstalled == CheckStatus.ACTION_NEEDED -> Text(NOT_INSTALLED_TEXT, style = MaterialTheme.typography.bodyMedium)
         }
         Text(
-            "Needs a Wear OS 6 watch.", style = MaterialTheme.typography.bodySmall,
+            stringResource(R.string.send_needs_wear_os), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        SecondaryButton("Check again", { status = WatchStatus.CHECKING; round++ }, Modifier.testTag(Tags.WATCH_CHECK_AGAIN))
+        SecondaryButton(stringResource(R.string.send_button_check_again), { status = WatchStatus.CHECKING; round++ }, Modifier.testTag(Tags.WATCH_CHECK_AGAIN))
     }
 }
 
@@ -98,8 +106,8 @@ private fun StatusRow(label: String, status: CheckStatus, ok: String, action: St
         val (text, kind) = when (status) {
             CheckStatus.OK -> ok to StatusKind.OK
             CheckStatus.ACTION_NEEDED -> action to StatusKind.WARNING
-            CheckStatus.CHECKING -> "Checking" to StatusKind.BUSY
-            CheckStatus.UNKNOWN -> "Could not check" to StatusKind.NEUTRAL
+            CheckStatus.CHECKING -> stringResource(R.string.send_status_checking) to StatusKind.BUSY
+            CheckStatus.UNKNOWN -> stringResource(R.string.send_status_could_not_check) to StatusKind.NEUTRAL
         }
         StatusPill(text, kind, Modifier.testTag(tag))
     }
@@ -110,7 +118,7 @@ private fun SendCard(state: EditorState, send: SendController) {
     val ui by send.state.collectAsState()
     val errors = state.errors
     val busy = ui.isBusy
-    SectionCard("Send") {
+    SectionCard(stringResource(R.string.send_card_title)) {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (ui is SendUi.Error) {
             ErrorBanner(sendStatusText(ui), Modifier.testTag(Tags.SEND_STATUS))
@@ -126,26 +134,28 @@ private fun SendCard(state: EditorState, send: SendController) {
             )
         }
         (ui as? SendUi.Success)?.let {
-            StatusPill("Version ${it.version} is on the watch", StatusKind.OK, Modifier.testTag(Tags.SEND_SUCCESS))
+            StatusPill(stringResource(R.string.send_version_on_watch, it.version), StatusKind.OK, Modifier.testTag(Tags.SEND_SUCCESS))
         }
         PrimaryButton(
-            "Send to watch", { send.send(state.design) },
+            stringResource(R.string.send_button_send_to_watch), { send.send(state.design) },
             Modifier.fillMaxWidth().testTag(Tags.SEND_BUTTON),
             enabled = errors.isEmpty() && !busy, loading = busy,
         )
     }
 }
 
+@Composable
 internal fun sendStatusText(ui: SendUi): String = when (ui) {
-    SendUi.Idle -> "Ready to send."
-    SendUi.Building -> "Building the face..."
+    SendUi.Idle -> stringResource(R.string.send_state_idle)
+    SendUi.Building -> stringResource(R.string.send_state_building)
     is SendUi.Sending -> when (val s = ui.state) {
-        SendState.Connecting -> "Looking for the watch..."
-        is SendState.SendingFile -> "Sending the face to the watch" + (s.percent?.let { " ($it%)" } ?: "") + "..."
-        SendState.Applying -> "The watch is installing the face..."
-        is SendState.Done -> "The watch answered."
+        SendState.Connecting -> stringResource(R.string.send_state_connecting)
+        is SendState.SendingFile ->
+            if (s.percent != null) stringResource(R.string.send_state_sending_file_percent, s.percent) else stringResource(R.string.send_state_sending_file)
+        SendState.Applying -> stringResource(R.string.send_state_applying)
+        is SendState.Done -> stringResource(R.string.send_state_done)
         is SendState.Failed -> s.text
     }
-    is SendUi.Success -> "Sent. The watch now has version ${ui.version}."
+    is SendUi.Success -> stringResource(R.string.send_state_success, ui.version)
     is SendUi.Error -> ui.text
 }
