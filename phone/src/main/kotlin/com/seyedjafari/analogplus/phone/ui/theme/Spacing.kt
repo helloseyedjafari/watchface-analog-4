@@ -40,8 +40,8 @@ object Dimens {
     val IntFieldWidth = 96.dp
     /** Below this window height (and wider than tall) a screen lays out beside, not above: the stacked Design screen needs about 400 dp. */
     val CompactHeight = 480.dp
-    /** Height of the bottom navigation bar in a landscape phone (the standard bar is 80 dp, and the section area needs the room). */
-    val CompactNavBarHeight = 56.dp
-    /** Width of the preview column of the Design screen when it sits beside the controls. */
+    /** Width of the preview column of the Design screen when it sits beside the controls: the most it takes (a narrow window gives it a share of its width). */
     val SidePaneWidth = 200.dp
+    /** The slot drag canvas in a short window shrinks to fit the section area, but not below this: a smaller one is too small to drag on. */
+    val SlotEditorMinSide = 96.dp
 }

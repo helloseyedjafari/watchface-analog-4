@@ -3,7 +3,9 @@ package com.seyedjafari.analogplus.phone.ui.design
 import com.seyedjafari.analogplus.phone.rememberFieldTexts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -75,18 +77,23 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
         }, { stringResource(it.labelRes) }, { it.tag() })
     }
     val sectionArea: @Composable () -> Unit = {
-        AnimatedContent(
-            selected, Modifier.fillMaxSize().testTag(Tags.DESIGN_SECTION_AREA), transitionSpec = sectionTransition, label = "design-section",
-        ) { section ->
-            sections.SaveableStateProvider(section.name) {
-                Column(Modifier.fillMaxSize().verticalScroll(scrolls.getValue(section))) {
-                    when (section) {
-                        DesignSection.COLOURS -> ColoursSection(state)
-                        DesignSection.DIAL -> DialSection(state)
-                        DesignSection.HANDS -> HandsSection(state)
-                        DesignSection.BACKGROUND -> BackgroundSection(state)
-                        DesignSection.COMPLICATIONS -> ComplicationsSection(state)
-                        DesignSection.RINGS -> RingSection(state)
+        // the area's height reaches the sections, which can size their content to it (the slot canvas in a short window)
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            CompositionLocalProvider(LocalSectionViewportHeight provides maxHeight) {
+                AnimatedContent(
+                    selected, Modifier.fillMaxSize().testTag(Tags.DESIGN_SECTION_AREA), transitionSpec = sectionTransition, label = "design-section",
+                ) { section ->
+                    sections.SaveableStateProvider(section.name) {
+                        Column(Modifier.fillMaxSize().verticalScroll(scrolls.getValue(section))) {
+                            when (section) {
+                                DesignSection.COLOURS -> ColoursSection(state)
+                                DesignSection.DIAL -> DialSection(state)
+                                DesignSection.HANDS -> HandsSection(state)
+                                DesignSection.BACKGROUND -> BackgroundSection(state)
+                                DesignSection.COMPLICATIONS -> ComplicationsSection(state)
+                                DesignSection.RINGS -> RingSection(state)
+                            }
+                        }
                     }
                 }
             }

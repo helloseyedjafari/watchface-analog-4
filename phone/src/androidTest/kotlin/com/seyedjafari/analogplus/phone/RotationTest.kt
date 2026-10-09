@@ -2,6 +2,7 @@ package com.seyedjafari.analogplus.phone
 
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
@@ -52,9 +53,27 @@ class RotationTest {
         return rule.onNodeWithTag(Destination.DESIGN.tag).fetchSemanticsNode().boundsInRoot.height / density
     }
 
+    /** The text of the minute tick width field, as the design has it now (the Dial section must be showing). */
+    private fun fieldText(): String = rule.onNodeWithTag(field).performScrollTo().fetchSemanticsNode().config[SemanticsProperties.EditableText].text
+
     @Test fun theDestinationTheSectionAndTheDesignSurviveRotationBothWays() {
         scenario = ActivityScenario.launch(MainActivity::class.java)
         rule.onNodeWithTag(Destination.DESIGN.tag).assertIsSelected()
+        // this test edits the design the app really stores: remember the value it started with and put that back, whatever happens
+        rule.onNodeWithTag(Tags.tab("dial")).performScrollTo().performClick()
+        val original = fieldText()
+        try {
+            rotateAndCheck(original)
+        } finally {
+            // the app may be in either orientation, on any destination, with the tab bar scrolled: go back to the field and restore it
+            rule.onNodeWithTag(Destination.DESIGN.tag).performClick()
+            rule.onNodeWithTag(Tags.tab("dial")).performScrollTo().performClick()
+            rule.onNodeWithTag(field).performScrollTo().performTextReplacement(original)
+            rule.onNodeWithTag(field).assertTextEquals(original, includeEditableText = true)
+        }
+    }
+
+    private fun rotateAndCheck(original: String) {
         val portraitBar = dpOfBar()
         rule.onNodeWithTag(Tags.tab("dial")).performScrollTo().performClick()
         rule.onNodeWithTag(field).performScrollTo().performTextReplacement("7")
@@ -66,7 +85,7 @@ class RotationTest {
         rule.onNodeWithTag(Tags.tab("dial")).assertIsSelected()
         rule.onNodeWithTag(field).assertTextEquals("7", includeEditableText = true)
 
-        // turned sideways: the same section and design, the preview beside the controls, the lower bar
+        // turned sideways: the same section and design, the preview beside the controls, the rail instead of the bar
         rotateTo(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
         rule.onNodeWithTag(Destination.DESIGN.tag).assertIsSelected()
         rule.onNodeWithTag(Tags.tab("dial")).assertIsSelected()
@@ -76,7 +95,10 @@ class RotationTest {
         val chips = rule.onNodeWithTag(Tags.tab("dial")).fetchSemanticsNode().boundsInRoot
         assertTrue("the preview sits left of the chips in landscape ($preview, $chips)", preview.right <= chips.left)
         rule.onNodeWithTag(Tags.field("design_send")).assertIsDisplayed()
-        assertTrue("the bottom bar is lower in landscape (portrait $portraitBar dp, landscape ${dpOfBar()} dp)", dpOfBar() < portraitBar)
+        // the bottom bar has become a rail at the start edge: the items are stacked, left of the content
+        val items = Destination.entries.map { rule.onNodeWithTag(it.tag).fetchSemanticsNode().boundsInRoot }
+        assertTrue("the navigation is a rail in landscape ($items)", items.zipWithNext().all { (a, b) -> a.bottom <= b.top + 1f && a.left == b.left })
+        assertTrue("the preview is right of the rail ($preview, ${items.first()})", items.first().right <= preview.left)
 
         // another destination, then back to portrait
         rule.onNodeWithTag(Destination.LIBRARY.tag).performClick()
@@ -89,9 +111,5 @@ class RotationTest {
         rule.onNodeWithTag(Tags.tab("dial")).assertIsSelected()
         rule.onNodeWithTag(field).assertTextEquals("7", includeEditableText = true)
         rule.onNodeWithTag(Tags.PREVIEW).assertIsDisplayed()
-
-        // leave the stored design the way it was found
-        rule.onNodeWithTag(field).performScrollTo().performTextReplacement("2")
-        rule.onNodeWithTag(field).assertTextEquals("2", includeEditableText = true)
     }
 }

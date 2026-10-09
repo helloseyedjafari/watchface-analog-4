@@ -9,7 +9,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
@@ -58,17 +61,9 @@ class DesignLayoutTest {
 
     @Composable
     private fun Host(content: @Composable () -> Unit) {
-        BoxWithConstraints {
-            val real = LocalDensity.current
-            val (w, h) = hostSize
-            val fit = minOf(1f, constraints.maxWidth / (w * real.density), constraints.maxHeight / (h * real.density))
-            val scaled = Density(real.density * fit, real.fontScale)
-            density = scaled
-            // the window's configuration is what picks the layout: tell it the host's size
-            val configuration = Configuration(LocalConfiguration.current).apply { screenWidthDp = w; screenHeightDp = h }
-            CompositionLocalProvider(LocalDensity provides scaled, LocalConfiguration provides configuration, LocalAnimationScale provides 1f) {
-                Box(Modifier.size(w.dp, h.dp)) { content() }
-            }
+        // the window's configuration is what picks the layout: PinnedWindow tells it the host's size
+        PinnedWindow(WindowDp(hostSize.first, hostSize.second), onDensity = { density = it }) {
+            CompositionLocalProvider(LocalAnimationScale provides 1f) { content() }
         }
     }
 
@@ -77,7 +72,7 @@ class DesignLayoutTest {
         rule.setContent { AnalogTheme { Host { DesignScreen(state, onSend = {}, sendBusy = false) } } }
     }
 
-    /** The Design destination under the bottom bar, below a 24 dp status bar: what a landscape phone really leaves. */
+    /** The Design destination under the bottom bar or beside the rail, below a 24 dp status bar: what a landscape phone really leaves. */
     private fun showInShell(state: EditorState, size: Pair<Int, Int>) {
         hostSize = size
         rule.setContent {
@@ -198,39 +193,113 @@ class DesignLayoutTest {
         rule.onNodeWithTag(Tags.PREVIEW).assertIsDisplayed()
     }
 
-    @Test fun aLandscapePhoneWithTheBottomBarLeavesTheSectionAreaUsable() {
+    @Test fun aLandscapePhoneWithTheRailLeavesTheSectionAreaUsable() {
         showInShell(EditorState(), WIDE)
         val area = bounds(Tags.DESIGN_SECTION_AREA)
         val send = bounds(Tags.field("design_send"))
-        Log.i("R1b", "800x360 with bar and status bar, no error: section area ${dp(area.height)} dp tall x ${dp(area.width)} dp wide, send row ${dp(send.height)} dp")
+        Log.i("R2", "800x360 with rail and status bar, no error: section area ${dp(area.height)} dp tall x ${dp(area.width)} dp wide, send row ${dp(send.height)} dp")
         rule.onNodeWithTag(Tags.ACCENT_FIELD).assertIsDisplayed()
         rule.onNodeWithTag(Tags.field("design_send")).assertIsDisplayed()
         assertTrue("the section area is at least 120 dp tall (was ${dp(area.height)})", dp(area.height) >= 120f)
     }
 
-    @Test fun aLandscapePhoneWithTheBottomBarAndAnErrorLeavesTheSectionAreaUsable() {
+    @Test fun aLandscapePhoneWithTheRailAndAnErrorLeavesTheSectionAreaUsable() {
         showInShell(EditorState(DesignSettings(accent = "red")), WIDE)
         val area = bounds(Tags.DESIGN_SECTION_AREA)
         val summary = bounds(Tags.field("design_validation"))
-        Log.i("R1b", "800x360 with bar and status bar, with error: section area ${dp(area.height)} dp tall, summary ${dp(summary.height)} dp")
+        Log.i("R2", "800x360 with rail and status bar, with error: section area ${dp(area.height)} dp tall x ${dp(area.width)} dp wide, summary ${dp(summary.height)} dp")
         rule.onNodeWithTag(Tags.field("design_validation")).assertIsDisplayed()
         rule.onNodeWithTag(Tags.field("design_send")).assertIsDisplayed()
         assertTrue("the section area is at least 120 dp tall with the error shown (was ${dp(area.height)})", dp(area.height) >= 120f)
     }
 
-    @Test fun theBottomBarIsCompactOnlyInALandscapePhone() {
-        showInShell(EditorState(), TALL)
-        val tall = dp(bounds(Destination.DESIGN.tag).height)
-        Log.i("R1b", "bottom bar item height at 360x800: $tall dp")
-        assertEquals("the bar keeps its standard height in portrait", 80f, tall, 0.5f)
+    /** N6: at font scale 2 with an error shown, the landscape layout still shows the error line, the send row and some of the section. */
+    @Test fun aLandscapePhoneAtFontScale2WithAnErrorStillShowsTheSummaryAndTheSendRow() {
+        hostSize = WIDE
+        val state = EditorState(DesignSettings(accent = "red"))
+        rule.setContent {
+            val base = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(base.density, 2f)) {
+                AnalogTheme {
+                    Host { AppNav(content = { _, _ -> DesignScreen(state, onSend = {}, sendBusy = false) }, modifier = Modifier.padding(top = STATUS_BAR_DP.dp)) }
+                }
+            }
+        }
+        val area = bounds(Tags.DESIGN_SECTION_AREA)
+        val summary = bounds(Tags.field("design_validation"))
+        val send = bounds(Tags.field("design_send"))
+        Log.i("R2", "800x360 at font scale 2 with rail and error: section area ${dp(area.height)} dp tall x ${dp(area.width)} dp wide, summary ${dp(summary.height)} dp, send row ${dp(send.height)} dp")
+        rule.onNodeWithTag(Tags.field("design_validation")).assertIsDisplayed()
+        rule.onNodeWithTag(Tags.field("design_send")).assertIsDisplayed()
+        assertTrue("some of the section area is left (was ${dp(area.height)} dp)", dp(area.height) >= 48f)
     }
 
-    @Test fun theBottomBarIsCompactInALandscapePhone() {
+    @Test fun anUprightPhoneKeepsTheStandardBottomBar() {
+        showInShell(EditorState(), TALL)
+        val bar = dp(bounds(Destination.DESIGN.tag).height)
+        Log.i("R2", "bottom bar item height at 360x800: $bar dp")
+        assertEquals("the bar keeps its standard height in portrait", 80f, bar, 0.5f)
+        val items = Destination.entries.map { bounds(it.tag) }
+        assertTrue("the items sit side by side along the bottom", items.zipWithNext().all { (a, b) -> a.right <= b.left + 1f && a.top == b.top })
+        assertTrue("the bar is under the section area", bounds(Tags.DESIGN_SECTION_AREA).bottom <= items.first().top)
+    }
+
+    @Test fun aLandscapePhoneHasTheRailAtTheStartEdgeAndNoBottomBar() {
         showInShell(EditorState(), WIDE)
-        val wide = dp(bounds(Destination.DESIGN.tag).height)
-        Log.i("R1b", "bottom bar item height at 800x360: $wide dp")
-        assertEquals("the bar is the compact height in landscape", Dimens.CompactNavBarHeight.value, wide, 0.5f)
+        val items = Destination.entries.map { bounds(it.tag) }
+        items.forEachIndexed { i, b ->
+            Log.i("R2", "rail item $i: ${dp(b.width)} x ${dp(b.height)} dp at (${dp(b.left)}, ${dp(b.top)})")
+            assertTrue("rail item $i is at least 48 dp wide and tall (${dp(b.width)} x ${dp(b.height)})", dp(b.width) >= 48f && dp(b.height) >= 48f)
+        }
+        assertTrue("the items are stacked top to bottom", items.zipWithNext().all { (a, b) -> a.bottom <= b.top + 1f && a.left == b.left })
+        assertEquals("the rail is at the start edge", 0f, items.first().left, 1f)
+        val rail = items.first().right
+        assertTrue("the preview and the section area are right of the rail", bounds(Tags.PREVIEW).left >= rail && bounds(Tags.DESIGN_SECTION_AREA).left >= rail)
+        assertTrue("the last item ends within the content's height", items.last().bottom <= bounds(Tags.field("design_send")).bottom + 1f)
         Destination.entries.forEach { rule.onNodeWithTag(it.tag).assertIsDisplayed() }
+    }
+
+    /** N7: a narrow window (split screen) keeps most of its width for the controls, not 200 dp. */
+    @Test fun aNarrowSideBySideWindowGivesTheControlsMostOfItsWidth() {
+        showInShell(EditorState(), 480 to 360)
+        val rail = bounds(Destination.DESIGN.tag).right
+        val area = bounds(Tags.DESIGN_SECTION_AREA)
+        val available = dp(area.right - rail)
+        Log.i("R2", "480x360: rail ${dp(rail)} dp, section area ${dp(area.width)} dp of $available dp left of the rail")
+        assertTrue("the section area has at least 55% of the room right of the rail (${dp(area.width)} of $available)", dp(area.width) >= 0.55f * available)
+        rule.onNodeWithTag(Tags.PREVIEW).assertIsDisplayed()
+    }
+
+    /** N11: in a short window the slot canvas shrinks to the section area, so it is shown whole without scrolling, and still drags. */
+    @Test fun inALandscapePhoneTheSlotCanvasIsWholeWithoutScrollingAndStillDrags() {
+        val state = EditorState()
+        showInShell(state, WIDE)
+        rule.onNodeWithTag(Tags.tab("complications")).performScrollTo().performClick()
+        rule.waitForIdle()
+        val area = bounds(Tags.DESIGN_SECTION_AREA)
+        val canvas = bounds(Tags.SLOT_CANVAS)
+        Log.i("R2", "800x360 Complications: section area ${dp(area.height)} x ${dp(area.width)} dp, canvas ${dp(canvas.width)} x ${dp(canvas.height)} dp at top ${dp(canvas.top - area.top)}")
+        assertEquals("the canvas is square", canvas.width, canvas.height, 1f)
+        assertTrue("the canvas is whole inside the section area without scrolling ($canvas in $area)", canvas.top >= area.top && canvas.bottom <= area.bottom)
+        assertTrue("the canvas is big enough to drag on (${dp(canvas.width)} dp)", dp(canvas.width) >= 96f)
+        rule.onNodeWithTag(Tags.SLOT_CANVAS).assertIsDisplayed()
+
+        // the bottom slot has free space above it between its two neighbours; the pull is long enough to pass the touch slop on a canvas this small
+        val before = state.design.slots.first { it.id == 3 }
+        val k = canvas.width / 450f
+        rule.onNodeWithTag(Tags.SLOT_CANVAS).performTouchInput {
+            swipe(Offset((before.x + before.w / 2f) * k, (before.y + before.h / 2f) * k), Offset((before.x + before.w / 2f) * k, (before.y + before.h / 2f - 90f) * k), 300)
+        }
+        rule.waitForIdle()
+        val after = state.design.slots.first { it.id == 3 }
+        assertTrue("a drag on the shrunk canvas moves the slot (from (${before.x}, ${before.y}) to (${after.x}, ${after.y}))", after.y < before.y)
+    }
+
+    @Test fun anUprightPhoneKeepsTheFullSizeSlotCanvas() {
+        showInShell(EditorState(), TALL)
+        rule.onNodeWithTag(Tags.tab("complications")).performScrollTo().performClick()
+        rule.waitForIdle()
+        assertTrue("the canvas is wide (was ${dp(bounds(Tags.SLOT_CANVAS).width)} dp)", dp(bounds(Tags.SLOT_CANVAS).width) >= 300f)
     }
 
     private companion object {

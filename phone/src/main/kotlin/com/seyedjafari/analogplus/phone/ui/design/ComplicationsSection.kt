@@ -3,11 +3,18 @@ package com.seyedjafari.analogplus.phone.ui.design
 import com.seyedjafari.analogplus.phone.rememberFieldTexts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.isSpecified
+import com.seyedjafari.analogplus.phone.ui.theme.ScreenLayout
+import com.seyedjafari.analogplus.phone.ui.theme.rememberScreenLayout
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.FilterChip
@@ -92,16 +99,24 @@ fun ComplicationsSection(state: EditorState) {
     }
 
     Column(Modifier.fillMaxWidth().padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            SectionTitle(stringResource(R.string.complications_title))
-            CapIndicator(state)
-        }
-        SlotDragEditor(
-            state = state,
-            selectedId = selected?.id,
-            onSelect = { selectedId = it },
-            onRefusal = { message = it },
-            modifier = Modifier.fillMaxWidth().widthIn(max = Dimens.SlotEditorMaxWidth).align(Alignment.CenterHorizontally),
+        TitledSlotEditor(
+            // in a short window (a phone held sideways) the canvas shrinks to fit the section area, so it is not cut off by the scrolling
+            fitToViewport = rememberScreenLayout() == ScreenLayout.SIDE_BY_SIDE,
+            title = {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    SectionTitle(stringResource(R.string.complications_title))
+                    CapIndicator(state)
+                }
+            },
+            editor = {
+                SlotDragEditor(
+                    state = state,
+                    selectedId = selected?.id,
+                    onSelect = { selectedId = it },
+                    onRefusal = { message = it },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            },
         )
         message?.let {
             Text(stringResource(slotRefusalRes(it)), color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(Tags.field("slot_message")))
@@ -198,6 +213,40 @@ fun ComplicationsSection(state: EditorState) {
             Text(stringResource(R.string.complications_tap_hint), style = MaterialTheme.typography.bodySmall)
         } else {
             SelectedSlotControls(state, selected, onResult = ::apply)
+        }
+    }
+}
+
+private enum class EditorPart { TITLE, EDITOR }
+
+/**
+ * The section title row over the square slot canvas. The canvas is as wide as the section, at most
+ * [Dimens.SlotEditorMaxWidth]; with [fitToViewport] it is also no taller than what the section area (see
+ * [LocalSectionViewportHeight]) leaves under the title, so it is shown whole without scrolling. The section's own top padding
+ * is part of what the canvas has to leave.
+ */
+@Composable
+private fun TitledSlotEditor(fitToViewport: Boolean, title: @Composable () -> Unit, editor: @Composable () -> Unit) {
+    val viewport = LocalSectionViewportHeight.current
+    Layout(
+        content = {
+            Box(Modifier.layoutId(EditorPart.TITLE)) { title() }
+            Box(Modifier.layoutId(EditorPart.EDITOR)) { editor() }
+        },
+    ) { measurables, constraints ->
+        val titlePlaceable = measurables.first { it.layoutId == EditorPart.TITLE }.measure(Constraints(maxWidth = constraints.maxWidth))
+        val gap = Spacing.sm.roundToPx()
+        val side = slotCanvasSide(
+            maxSide = minOf(constraints.maxWidth, Dimens.SlotEditorMaxWidth.roundToPx()),
+            minSide = Dimens.SlotEditorMinSide.roundToPx(),
+            viewportHeight = if (fitToViewport && viewport.isSpecified) viewport.roundToPx() else null,
+            topPadding = Spacing.lg.roundToPx(),
+            aboveCanvas = titlePlaceable.height + gap,
+        )
+        val editorPlaceable = measurables.first { it.layoutId == EditorPart.EDITOR }.measure(Constraints.fixed(side, side))
+        layout(constraints.maxWidth, titlePlaceable.height + gap + side) {
+            titlePlaceable.placeRelative(0, 0)
+            editorPlaceable.placeRelative((constraints.maxWidth - side) / 2, titlePlaceable.height + gap)
         }
     }
 }

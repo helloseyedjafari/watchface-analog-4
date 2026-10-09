@@ -10,7 +10,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.seyedjafari.analogplus.phone.ui.nav.AppNav
 import com.seyedjafari.analogplus.phone.ui.nav.Destination
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
@@ -18,14 +17,18 @@ import com.seyedjafari.analogplus.phone.ui.theme.LocalAnimationScale
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.runners.Parameterized
 
-@RunWith(AndroidJUnit4::class)
-class NavigationTest {
+/** Navigation under the bottom bar (an upright phone) and beside the rail (a phone held sideways): the same behaviour in both. */
+@RunWith(Parameterized::class)
+class NavigationTest(private val window: WindowDp) {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     // the slide tests read mid-transition positions on the manual clock, so the device's animation setting must not change them
     private fun show() = rule.setContent {
-        CompositionLocalProvider(LocalAnimationScale provides 1f) { AnalogTheme { AppNav(content = { d, _ -> Text("screen ${d.name}") }) } }
+        CompositionLocalProvider(LocalAnimationScale provides 1f) {
+            AnalogTheme { PinnedWindow(window) { AppNav(content = { d, _ -> Text("screen ${d.name}") }) } }
+        }
     }
 
     @Test fun startsOnDesignAndEveryDestinationIsReachable() {
@@ -56,20 +59,26 @@ class NavigationTest {
     /** Shared axis: mid-transition the entering destination is still offset sideways (forward = from the right), not only faded. */
     @Test fun destinationsSlideInTheDirectionOfTheirOrder() {
         show()
+        // where a settled destination's left edge is: 0, or the width of the rail
+        val origin = leftOfScreen("DESIGN")
         rule.mainClock.autoAdvance = false
         rule.onNodeWithTag(Destination.SEND.tag).performClick()
         rule.mainClock.advanceTimeBy(100)
-        assertTrue("forward: Send enters from the right (left=${leftOfScreen("SEND")})", leftOfScreen("SEND") > 0f)
+        assertTrue("forward: Send enters from the right (left=${leftOfScreen("SEND")}, settled at $origin)", leftOfScreen("SEND") > origin)
         rule.mainClock.autoAdvance = true
         rule.waitForIdle()
-        assertEquals(0f, leftOfScreen("SEND"), 0.5f)
+        assertEquals(origin, leftOfScreen("SEND"), 0.5f)
 
         rule.mainClock.autoAdvance = false
         rule.onNodeWithTag(Destination.DESIGN.tag).performClick()
         rule.mainClock.advanceTimeBy(100)
-        assertTrue("backward: Design enters from the left (left=${leftOfScreen("DESIGN")})", leftOfScreen("DESIGN") < 0f)
+        assertTrue("backward: Design enters from the left (left=${leftOfScreen("DESIGN")}, settled at $origin)", leftOfScreen("DESIGN") < origin)
         rule.mainClock.autoAdvance = true
         rule.waitForIdle()
-        assertEquals(0f, leftOfScreen("DESIGN"), 0.5f)
+        assertEquals(origin, leftOfScreen("DESIGN"), 0.5f)
+    }
+
+    companion object {
+        @JvmStatic @Parameterized.Parameters(name = "{0}") fun windows() = listOf(PHONE_PORTRAIT, PHONE_LANDSCAPE)
     }
 }

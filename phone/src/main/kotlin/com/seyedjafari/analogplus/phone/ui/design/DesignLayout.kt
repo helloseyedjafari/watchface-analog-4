@@ -10,6 +10,16 @@ import androidx.compose.ui.unit.Constraints
 import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import com.seyedjafari.analogplus.phone.ui.theme.ScreenLayout
 
+/** The share of the available width the preview column may take. */
+internal const val SIDE_PANE_SHARE = 0.4f
+
+/**
+ * Width of the preview column when it sits beside the controls: [maxWidth], but never more than [SIDE_PANE_SHARE] of the
+ * [availableWidth] (the window less the navigation rail), so that in a narrow window (split screen) the controls keep most of it.
+ */
+internal fun sidePaneWidth(availableWidth: Int, maxWidth: Int): Int =
+    minOf(maxWidth, (availableWidth * SIDE_PANE_SHARE).toInt()).coerceAtLeast(0)
+
 /** The six parts of the Design screen; [DesignLayout] places them. */
 private enum class DesignPart { PREVIEW, HINT, CHIPS, AREA, SUMMARY, SEND }
 
@@ -49,7 +59,7 @@ internal fun DesignLayout(
         val height = constraints.maxHeight
         val part = DesignPart.entries.associateWith { p -> measurables.first { it.layoutId == p } }
         val stacked = layout == ScreenLayout.STACKED
-        val sideWidth = if (stacked) 0 else Dimens.SidePaneWidth.roundToPx().coerceAtMost(width)
+        val sideWidth = if (stacked) 0 else sidePaneWidth(width, Dimens.SidePaneWidth.roundToPx())
         // chips, area, summary and send row: the whole width, or the column on the right
         val mainWidth = width - sideWidth
 
