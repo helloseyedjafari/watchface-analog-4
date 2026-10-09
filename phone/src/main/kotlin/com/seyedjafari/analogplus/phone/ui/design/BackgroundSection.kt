@@ -9,9 +9,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,7 +25,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.phone.ChoiceRow
 import com.seyedjafari.analogplus.phone.ColourField
@@ -41,7 +38,11 @@ import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.decodeThumbnail
 import com.seyedjafari.analogplus.phone.firstError
 import com.seyedjafari.analogplus.phone.readPhotoFromUri
+import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
+import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.components.Skeleton
+import com.seyedjafari.analogplus.phone.ui.theme.Dimens
+import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -63,9 +64,9 @@ internal fun PhotoThumb(bytes: ByteArray, decode: (ByteArray) -> android.graphic
         value = withContext(Dispatchers.Default) { decode(bytes)?.let { Thumb.Ready(it) } ?: Thumb.Unavailable }
     }
     when (val t = thumb) {
-        Thumb.Loading -> Skeleton(Modifier.size(120.dp).testTag(Tags.field("background_thumb_loading")).semantics { contentDescription = "Loading photo" })
+        Thumb.Loading -> Skeleton(Modifier.size(Dimens.PhotoThumbSize).testTag(Tags.field("background_thumb_loading")).semantics { contentDescription = "Loading photo" })
         is Thumb.Ready -> Image(t.bitmap.asImageBitmap(), contentDescription = "Chosen photo", contentScale = ContentScale.Crop,
-            modifier = Modifier.size(120.dp).testTag(Tags.field("background_thumb")))
+            modifier = Modifier.size(Dimens.PhotoThumbSize).testTag(Tags.field("background_thumb")))
         Thumb.Unavailable -> Text("Preview unavailable", style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.testTag(Tags.field("background_thumb_unavailable")))
     }
@@ -119,16 +120,18 @@ internal fun BackgroundSection(state: EditorState, readPhoto: (Context, Uri) -> 
                 state.firstError("background.color2"), Tags.field("background_color2"))
         }
         if (bg.kind == BackgroundKind.PHOTO) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
-                    onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                    modifier = Modifier.testTag(Tags.field("background_pick")),
-                ) { Text(if (bg.photoJpeg == null) "Choose photo" else "Change photo") }
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                PrimaryButton(
+                    if (bg.photoJpeg == null) "Choose photo" else "Change photo",
+                    { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    Modifier.testTag(Tags.field("background_pick")),
+                )
                 if (bg.photoJpeg != null) {
-                    OutlinedButton(
-                        onClick = { message = null; setBackground { it.copy(photoJpeg = null) } },
-                        modifier = Modifier.testTag(Tags.field("background_remove")),
-                    ) { Text("Remove photo") }
+                    SecondaryButton(
+                        "Remove photo",
+                        { message = null; setBackground { it.copy(photoJpeg = null) } },
+                        Modifier.testTag(Tags.field("background_remove")),
+                    )
                 }
             }
             val photoError = state.firstError("background.photoJpeg")
@@ -143,8 +146,8 @@ internal fun BackgroundSection(state: EditorState, readPhoto: (Context, Uri) -> 
             val bytes = bg.photoJpeg
             val loadingSaved = bytes == null && state.photoLoad == PhotoLoad.LOADING
             when {
-                reading -> Skeleton(Modifier.size(120.dp).testTag(Tags.field("background_reading")).semantics { contentDescription = "Reading photo" })
-                loadingSaved -> Skeleton(Modifier.size(120.dp).testTag(Tags.field("background_loading")).semantics { contentDescription = "Loading photo" })
+                reading -> Skeleton(Modifier.size(Dimens.PhotoThumbSize).testTag(Tags.field("background_reading")).semantics { contentDescription = "Reading photo" })
+                loadingSaved -> Skeleton(Modifier.size(Dimens.PhotoThumbSize).testTag(Tags.field("background_loading")).semantics { contentDescription = "Loading photo" })
                 bytes != null -> PhotoThumb(bytes)
             }
         }
