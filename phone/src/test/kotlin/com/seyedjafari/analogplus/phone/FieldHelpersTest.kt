@@ -1,9 +1,6 @@
 package com.seyedjafari.analogplus.phone
 
 import org.junit.Assert.assertEquals
-import com.seyedjafari.analogplus.phone.ui.design.layoutBlocked
-import com.seyedjafari.analogplus.phone.ui.design.ringColoursFor
-import com.seyedjafari.analogplus.phone.ui.design.ringLayoutLimitHint
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.RingLayout
 import com.seyedjafari.analogplus.facegen.design.SlotDesign

@@ -4,12 +4,12 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,6 +42,8 @@ private val PREVIEW_SIZE = 150.dp   // the one size literal: the hero preview, a
 @Composable
 fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modifier: Modifier = Modifier) {
     var selected by rememberSaveable { mutableStateOf(DesignSection.COLOURS) }
+    // keyed on the section: a new section starts at the top, while rotation still restores the offset of the same one
+    val scroll = rememberSaveable(selected, saver = ScrollState.Saver) { ScrollState(0) }
     val fadeIn = fadeIn(motionSpec(Motion.MEDIUM))
     val fadeOut = fadeOut(motionSpec(Motion.SHORT))
     Column(modifier.fillMaxSize()) {
@@ -54,7 +56,7 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
             )
         }
         SectionChips(DesignSection.entries, selected, { selected = it }, { it.label }, { it.tag() })
-        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll)) {
             AnimatedContent(selected, transitionSpec = { fadeIn togetherWith fadeOut }, label = "design-section") { section ->
                 when (section) {
                     DesignSection.COLOURS -> ColoursSection(state)
@@ -69,7 +71,7 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
         PrimaryButton(
             "Send to watch", onSend,
             Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.sm).testTag(Tags.field("design_send")),
-            enabled = state.errors.isEmpty() && !sendBusy,
+            enabled = state.errors.isEmpty(), loading = sendBusy,
         )
     }
 }

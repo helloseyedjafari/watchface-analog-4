@@ -8,7 +8,7 @@ import com.seyedjafari.analogplus.phone.HandColourFields
 import com.seyedjafari.analogplus.phone.SecondHandColourFields
 import com.seyedjafari.analogplus.phone.TabColumn
 
-/** Hand and inlay colour (the same fields as the Colours tab) and the second hand style and colour. */
+/** Hand and inlay colour (the same fields as the Colours section) and the second hand style and colour. */
 @Composable
 fun HandsSection(state: EditorState) {
     TabColumn {

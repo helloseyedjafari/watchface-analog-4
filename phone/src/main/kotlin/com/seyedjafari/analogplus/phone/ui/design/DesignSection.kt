@@ -7,5 +7,5 @@ enum class DesignSection(val label: String) {
     COLOURS("Colours"), DIAL("Dial"), HANDS("Hands"), BACKGROUND("Background"), COMPLICATIONS("Complications"), RINGS("Rings"),
 }
 
-/** The chip's test tag: unchanged from the old editor tabs (`tab_colours` ...), so existing tests keep working. */
+/** The chip's test tag: unchanged from the old editor tab tags (`tab_colours` ...), so existing tests keep working. */
 fun DesignSection.tag(): String = Tags.tab(label.lowercase())

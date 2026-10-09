@@ -28,50 +28,21 @@ import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.RingCaps
 import com.seyedjafari.analogplus.facegen.design.RingDesign
 import com.seyedjafari.analogplus.facegen.design.RingLayout
-import com.seyedjafari.analogplus.facegen.design.parseArgb
 import com.seyedjafari.analogplus.phone.ColourField
 import com.seyedjafari.analogplus.phone.EditorState
 import com.seyedjafari.analogplus.phone.SlotGeometry
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.describe
 import com.seyedjafari.analogplus.phone.firstError
+import com.seyedjafari.analogplus.phone.layoutBlocked
+import com.seyedjafari.analogplus.phone.ringColoursFor
+import com.seyedjafari.analogplus.phone.ringLayoutLimitHint
 import kotlin.math.roundToInt
-
-/**
- * The ring colour list for [layout]: always max(1, segments) entries. Growing repeats the existing colours in order
- * (the face cycles `colors[i % size]` anyway), shrinking truncates. An empty list (invalid import) restarts from [fallback], or the default colour when that is no colour either.
- */
-internal fun ringColoursFor(old: List<String>, layout: RingLayout, fallback: String): List<String> {
-    val want = maxOf(1, SlotGeometry.ringSegments(layout))
-    val base = old.ifEmpty { listOf(fallback.takeIf { parseArgb(it) != null } ?: RingDesign().colors.first()) }
-    return List(want) { base[it % base.size] }
-}
-
-/** The sentence for the layout choices that would break the 8 complication cap with [slotCount] slots, or null if none do. */
-internal fun ringLayoutLimitHint(slotCount: Int): String? {
-    val blocked = RingLayout.entries.filter { layoutBlocked(slotCount, it) }
-    if (blocked.isEmpty()) return null
-    val names = blocked.map { layoutNoun(it) }
-    val list = if (names.size == 1) names[0] else names.dropLast(1).joinToString(", ") + " or " + names.last()
-    return "Remove a slot to use $list"
-}
-
-/** True when [layout] would put the total above the cap with [slotCount] slots; "None" is never blocked (the way out). */
-internal fun layoutBlocked(slotCount: Int, layout: RingLayout): Boolean =
-    layout != RingLayout.NONE && slotCount + SlotGeometry.ringSegments(layout) > SlotGeometry.MAX_COMPLICATIONS
-
-private fun layoutNoun(layout: RingLayout) = when (layout) {
-    RingLayout.NONE -> "no ring" // never listed: "None" is never blocked
-    RingLayout.FULL -> "a full ring"
-    RingLayout.HALVES -> "halves"
-    RingLayout.THIRDS -> "thirds"
-    RingLayout.QUARTERS -> "quarter rings"
-}
 
 private const val MAX_RING_ERROR_LINES = 4
 
 /**
- * Ring tab: layout, one colour per segment, track colour, thickness, gap, start angle (slider and typed number, typed
+ * Ring section: layout, one colour per segment, track colour, thickness, gap, start angle (slider and typed number, typed
  * values are written as they are so the validator can flag them), caps and direction. Plain Column: the host scrolls it.
  * Layouts that would take the total above 8 complications are disabled (a design that already is over keeps its red
  * indicator). Every `ring.*` error is listed at the top, with the fields shown and a reset button, so a ring error can

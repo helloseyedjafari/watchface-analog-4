@@ -96,6 +96,7 @@ fun ColourField(
                 Box(
                     Modifier
                         .size(Spacing.minTouch)
+                        .clip(CircleShape)
                         .clickable(role = Role.Button) { onChange(hex) }
                         .semantics { contentDescription = "Preset $hex" }
                         .then(if (fieldTag.isNotBlank()) Modifier.testTag(presetTag(fieldTag, hex)) else Modifier),

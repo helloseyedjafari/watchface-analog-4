@@ -64,9 +64,9 @@ fun CapIndicator(state: EditorState, modifier: Modifier = Modifier) {
 }
 
 /**
- * Complications tab: the drag canvas, the slot list, quick slot buttons, and for the selected slot its name, shape,
+ * Complications section: the drag canvas, the slot list, quick slot buttons, and for the selected slot its name, shape,
  * position and size (arrow buttons and number fields, which also work where dragging is awkward), and its colours.
- * Lays its content out in a plain Column: the tab host must scroll it.
+ * Lays its content out in a plain Column: the section host must scroll it.
  */
 @Composable
 fun ComplicationsSection(state: EditorState) {
