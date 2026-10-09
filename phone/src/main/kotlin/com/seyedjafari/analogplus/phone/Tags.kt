@@ -4,6 +4,8 @@ package com.seyedjafari.analogplus.phone
 object Tags {
     const val ACCENT_FIELD = "field_accent"
     const val PREVIEW = "preview"
+    /** The bitmap inside the preview; two of them exist while the crossfade between an old and a new render runs. */
+    const val PREVIEW_IMAGE = "preview_image"
     const val SEND_BUTTON = "send_button"
     const val SEND_STATUS = "send_status"
     const val CAP_INDICATOR = "cap_indicator"
