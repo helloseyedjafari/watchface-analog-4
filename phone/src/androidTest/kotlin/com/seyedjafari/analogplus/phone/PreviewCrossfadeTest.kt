@@ -81,12 +81,12 @@ class PreviewCrossfadeTest {
             CompositionLocalProvider(LocalAnimationScale provides 1f) { AnalogTheme { PreviewPane(state, Modifier.size(300.dp)) } }
         }
         advanceUntil("the first render") { state.lastPreview != null && images() == 1 }
-        val initial = state.lastPreview!!
+        val renders = mutableListOf(state.lastPreview!!)
         var most = images()
         // each new design is rendered while the fade of the previous render is still running (a slider or slot drag)
         repeat(20) { i ->
             val before = state.lastPreview
-            state.update { it.copy(accent = "#FF" + "%02X".format(20 + i * 10) + "6BFF") }
+            state.update { it.copy(accent = uniqueAccent(100 + i)) }
             advanceUntil("render $i") {
                 most = maxOf(most, images())
                 state.lastPreview !== before
@@ -94,17 +94,58 @@ class PreviewCrossfadeTest {
             rule.mainClock.advanceTimeByFrame()
             most = maxOf(most, images())
             assertTrue("at most two preview layers at any time, saw $most", most <= 2)
+            renders += state.lastPreview!!
         }
         rule.mainClock.advanceTimeBy(600)
         assertEquals("settled: one image", 1, images())
         assertTrue("never more than two layers, saw $most", most <= 2)
-        // the image on screen is the render of the last design
+        assertShowsLastRender(renders)
+    }
+
+    /** The settled image must be the LAST render: nearly identical to it, and strictly closer to it than to every earlier render. */
+    private fun assertShowsLastRender(renders: List<android.graphics.Bitmap>) {
         val shown = rule.onNodeWithTag(Tags.PREVIEW_IMAGE).captureToImage().asAndroidBitmap()
-        val last = state.lastPreview!!
+        val last = renders.last()
         assertEquals(last.width, shown.width)
         val diff = meanAbsoluteDifference(shown, last)
         assertTrue("the settled image is the last render (mean difference $diff)", diff < 1.0)
-        val staleDiff = meanAbsoluteDifference(shown, initial)
-        assertTrue("and not the first one (differences: last $diff, first $staleDiff)", staleDiff > diff)
+        renders.dropLast(1).forEachIndexed { index, earlier ->
+            val stale = meanAbsoluteDifference(shown, earlier)
+            assertTrue("the settled image is closer to the last render than to render $index (last $diff, render $index $stale)", stale > diff)
+        }
+    }
+
+    private fun uniqueAccent(n: Int) = "#FF%02X%02X%02X".format((n * 37) % 200 + 30, (n * 53) % 200 + 30, 0xFF)
+
+    /**
+     * A render that arrives in the last frames of the previous fade (the window in which the fade's completion could drop it):
+     * wherever in the fade the next design is changed, the preview ends up showing the last render.
+     */
+    @Test fun aRenderArrivingInTheLastFramesOfAFadeIsNeverDropped() {
+        val state = EditorState()
+        rule.mainClock.autoAdvance = false
+        rule.setContent {
+            CompositionLocalProvider(LocalAnimationScale provides 1f) { AnalogTheme { PreviewPane(state, Modifier.size(300.dp)) } }
+        }
+        advanceUntil("the first render") { state.lastPreview != null && images() == 1 }
+        val renders = mutableListOf(state.lastPreview!!)
+        var n = 0
+        for (intoFadeMs in 180..320 step 16) {
+            // the first design of the pair starts a fade ...
+            val before = state.lastPreview
+            state.update { it.copy(accent = uniqueAccent(n++)) }
+            advanceUntil("the render that starts the fade") { state.lastPreview !== before }
+            renders += state.lastPreview!!
+            rule.mainClock.advanceTimeByFrame()
+            rule.mainClock.advanceTimeBy(intoFadeMs.toLong())
+            // ... and the second one is rendered while that fade is about to finish (or has just finished)
+            val mid = state.lastPreview
+            state.update { it.copy(accent = uniqueAccent(n++)) }
+            advanceUntil("the render that arrives late in the fade") { state.lastPreview !== mid }
+            renders += state.lastPreview!!
+            rule.mainClock.advanceTimeBy(1_000)
+            assertEquals("settled after the pair at $intoFadeMs ms", 1, images())
+            assertShowsLastRender(renders)
+        }
     }
 }
