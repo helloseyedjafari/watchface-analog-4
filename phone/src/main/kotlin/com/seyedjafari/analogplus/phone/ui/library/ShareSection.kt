@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -34,13 +35,22 @@ import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import androidx.compose.ui.res.stringResource
 import com.seyedjafari.analogplus.phone.R
 
+/** Longest pasted text that goes into the saved instance state (a larger value could overflow the Activity's saved-state transaction). */
+internal const val MAX_SAVED_TEXT_CHARS = 16_384
+
+/** Saves text up to [MAX_SAVED_TEXT_CHARS] characters; anything longer is not saved, so the field comes back empty. */
+internal val BoundedTextSaver: Saver<String, String> = Saver(
+    save = { it.takeIf { text -> text.length <= MAX_SAVED_TEXT_CHARS } },
+    restore = { it },
+)
+
 /** Share the design being edited as a link or QR code, and load a design from a pasted link. */
 @Composable
 internal fun ShareSection(state: EditorState) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val ownLink = remember(state.design) { DesignJson.shareLink(state.design) }
-    var pasted by rememberSaveable { mutableStateOf("") }
+    var pasted by rememberSaveable(stateSaver = BoundedTextSaver) { mutableStateOf("") }
     var error by remember { mutableStateOf<ShareProblem?>(null) }
     val resources = currentResources()
     var notice by remember { mutableStateOf<String?>(null) }
@@ -96,6 +106,7 @@ internal fun ShareSection(state: EditorState) {
                 val problem = loadShareLink(state, pasted)
                 error = problem
                 notice = if (problem == null) designLoaded else null
+                if (problem == null) pasted = ""
             },
             Modifier.testTag(Tags.SHARE_LOAD_BUTTON),
         )

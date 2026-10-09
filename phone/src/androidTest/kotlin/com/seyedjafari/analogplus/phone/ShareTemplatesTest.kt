@@ -6,9 +6,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -24,6 +30,7 @@ import com.seyedjafari.analogplus.facegen.design.Templates
 import com.seyedjafari.analogplus.phone.ui.account.AccountScreen
 import com.seyedjafari.analogplus.phone.ui.library.LibraryScreen
 import com.seyedjafari.analogplus.phone.ui.library.LibrarySection
+import com.seyedjafari.analogplus.phone.ui.library.MAX_SAVED_TEXT_CHARS
 import com.seyedjafari.analogplus.phone.ui.library.ShareSection
 import com.seyedjafari.analogplus.phone.ui.library.tag
 import com.seyedjafari.analogplus.phone.ui.nav.Destination
@@ -61,6 +68,39 @@ class ShareTemplatesTest {
         rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performScrollTo().performClick()
         rule.waitForIdle()
         assertEquals(target, state.design)
+    }
+
+    private fun assertLinkFieldText(expected: String) {
+        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString(expected)))
+    }
+
+    @Test fun theLinkFieldIsEmptyAfterASuccessfulLoadAndKeepsItsTextAfterAFailedOne() {
+        val target = Templates.all.first { it.name == "Neon" }
+        val state = EditorState(DesignSettings())
+        showShare(state)
+        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performScrollTo().performTextInput("hello world")
+        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performScrollTo().performClick()
+        rule.waitForIdle()
+        assertLinkFieldText("hello world")
+        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performTextClearance()
+        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performTextInput(DesignJson.shareLink(target))
+        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performScrollTo().performClick()
+        rule.waitForIdle()
+        assertEquals(target, state.design)
+        assertLinkFieldText("")
+    }
+
+    @Test fun aSmallPastedLinkSurvivesRecreationButOneOverTheLimitIsNotSaved() {
+        val restoration = StateRestorationTester(rule)
+        val state = EditorState(DesignSettings())
+        restoration.setContent { AnalogTheme { ShareSection(state) } }
+        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performTextInput("analogplus://design?d=abc")
+        restoration.emulateSavedInstanceStateRestore()
+        assertLinkFieldText("analogplus://design?d=abc")
+        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performTextClearance()
+        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performTextInput("a".repeat(MAX_SAVED_TEXT_CHARS + 1))
+        restoration.emulateSavedInstanceStateRestore()
+        assertLinkFieldText("")
     }
 
     @Test fun garbageLinkShowsAnErrorAndKeepsTheDesign() {
