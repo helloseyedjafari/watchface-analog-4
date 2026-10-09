@@ -20,7 +20,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.designHints
 import com.seyedjafari.analogplus.phone.EditorState
 import com.seyedjafari.analogplus.phone.PreviewPane
@@ -30,10 +29,9 @@ import com.seyedjafari.analogplus.phone.ui.components.ErrorBanner
 import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SectionChips
 import com.seyedjafari.analogplus.phone.ui.components.keyboardIsOpen
+import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import com.seyedjafari.analogplus.phone.ui.theme.rememberSharedAxis
-
-private val PREVIEW_SIZE = 150.dp   // the one size literal: the hero preview, as in the POC
 
 /**
  * Pinned preview and hint, section chips, the selected section (scrolls vertically, so a section must not hold a lazy
@@ -49,7 +47,7 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
     val sections = rememberSaveableStateHolder()
     val sectionTransition = rememberSharedAxis<DesignSection>()
     Column(modifier.fillMaxSize()) {
-        PreviewPane(state, Modifier.padding(vertical = Spacing.sm).size(PREVIEW_SIZE).align(Alignment.CenterHorizontally))
+        PreviewPane(state, Modifier.padding(vertical = Spacing.sm).size(Dimens.PreviewSize).align(Alignment.CenterHorizontally))
         designHints(state.design).firstOrNull()?.let {
             Text(
                 it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

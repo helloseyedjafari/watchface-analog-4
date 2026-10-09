@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.core.app.ActivityOptionsCompat
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.seyedjafari.analogplus.facegen.design.BackgroundDesign
 import com.seyedjafari.analogplus.facegen.design.BackgroundKind
@@ -132,7 +133,7 @@ class PhotoLoadingTest {
     @Test fun aDesignThumbnailIsASkeletonUntilItIsRendered() {
         val gate = CountDownLatch(1)
         val rendered = bitmap()
-        rule.setContent { AnalogTheme { DesignThumbnail(Templates.all.first(), 96, render = { _, _, _ -> gate.await(); rendered }) } }
+        rule.setContent { AnalogTheme { DesignThumbnail(Templates.all.first(), 96.dp, render = { _, _, _ -> gate.await(); rendered }) } }
         rule.onNodeWithTag(Tags.field("design_thumb_loading")).assertIsDisplayed()
         assertEquals(0, count(Tags.field("design_thumb")))
         gate.countDown()

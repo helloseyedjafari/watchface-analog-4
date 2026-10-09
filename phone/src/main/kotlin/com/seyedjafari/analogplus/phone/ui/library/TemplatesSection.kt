@@ -22,13 +22,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.Templates
 import com.seyedjafari.analogplus.facegen.render.PreviewRenderer
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.ui.components.Skeleton
+import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -48,33 +50,33 @@ internal fun TemplatesSection(askToReplace: (String, DesignSettings) -> Unit) {
 private fun TemplateCard(template: DesignSettings, modifier: Modifier, onClick: () -> Unit) {
     Card(modifier.clickable(onClick = onClick).testTag(Tags.template(template.name))) {
         Column(Modifier.padding(Spacing.sm).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            DesignThumbnail(template, 96)
+            DesignThumbnail(template, Dimens.ThumbSizeLarge)
             Text(template.name, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = Spacing.xs))
         }
     }
 }
 
 /**
- * The rendered face of [design], [sizeDp] square; a [Skeleton] until the render (off the main thread) is done, and an
+ * The rendered face of [design], [size] square; a [Skeleton] until the render (off the main thread) is done, and an
  * empty box when it fails. [render] draws the face (a parameter so tests can hold it back).
  */
 @Composable
 internal fun DesignThumbnail(
     design: DesignSettings,
-    sizeDp: Int,
+    size: Dp,
     render: (DesignSettings, Context, Int) -> Bitmap = { d, c, px -> PreviewRenderer.render(d, c, px) },
 ) {
     val context = LocalContext.current
-    val px = (sizeDp * context.resources.displayMetrics.density).toInt()
+    val px = with(LocalDensity.current) { size.roundToPx() }
     val thumb by produceState<ThumbState>(ThumbState.Loading, design, px) {
         value = withContext(Dispatchers.Default) {
             try { ThumbState.Ready(render(design, context, px).asImageBitmap()) } catch (e: Exception) { ThumbState.Failed }
         }
     }
-    Box(Modifier.size(sizeDp.dp)) {
+    Box(Modifier.size(size)) {
         when (val t = thumb) {
             ThumbState.Loading -> Skeleton(Modifier.matchParentSize().testTag(Tags.field("design_thumb_loading")))
-            is ThumbState.Ready -> Image(t.image, contentDescription = null, modifier = Modifier.size(sizeDp.dp).testTag(Tags.field("design_thumb")))
+            is ThumbState.Ready -> Image(t.image, contentDescription = null, modifier = Modifier.size(size).testTag(Tags.field("design_thumb")))
             ThumbState.Failed -> {}
         }
     }

@@ -29,6 +29,7 @@ import com.seyedjafari.analogplus.phone.ui.components.EmptyState
 import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SectionCard
+import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 
 /** Naming and saving the current design, and the designs saved in [store]; [askToReplace] is called when one is chosen. */
@@ -68,7 +69,7 @@ internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (S
     }
     saved.forEach { s ->
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-            DesignThumbnail(s.design, 48)
+            DesignThumbnail(s.design, Dimens.ThumbSize)
             Text(
                 s.name.shortForDisplay(32),
                 Modifier.weight(1f).clickable { askToReplace(s.name, s.design) }.heightIn(min = Spacing.minTouch)
