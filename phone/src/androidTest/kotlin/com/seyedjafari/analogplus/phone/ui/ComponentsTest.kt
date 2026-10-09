@@ -1,6 +1,12 @@
 package com.seyedjafari.analogplus.phone.ui
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -22,10 +28,15 @@ import com.seyedjafari.analogplus.phone.ui.components.LOADING_INDICATOR_TAG
 import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SectionChips
+import com.seyedjafari.analogplus.phone.ui.components.Skeleton
 import com.seyedjafari.analogplus.phone.ui.components.StatusKind
 import com.seyedjafari.analogplus.phone.ui.components.StatusPill
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
+import com.seyedjafari.analogplus.phone.ui.theme.LocalAnimationScale
+import com.seyedjafari.analogplus.phone.ui.theme.Palette
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -90,5 +101,51 @@ class ComponentsTest {
         rule.setContent { AnalogTheme { SectionChips(listOf("a", "b"), picked, { picked = it }, { it.uppercase() }, { "chip_$it" }) } }
         rule.onNodeWithTag("chip_b").performClick()
         assertEquals("b", picked)
+    }
+
+    private fun centrePixel(tag: String): Int =
+        rule.onNodeWithTag(tag).captureToImage().asAndroidBitmap().let { it.getPixel(it.width / 2, it.height / 2) }
+
+    private fun showSkeleton(animationScale: Float?) = rule.setContent {
+        CompositionLocalProvider(LocalAnimationScale provides animationScale) {
+            AnalogTheme { Surface(color = MaterialTheme.colorScheme.background) { Skeleton(Modifier.size(100.dp).testTag("sk")) } }
+        }
+    }
+
+    @Test fun skeletonIsAPlaceholderBlockOfTheRequestedSize() {
+        showSkeleton(null)
+        rule.mainClock.autoAdvance = false
+        rule.onNodeWithTag("sk").assertIsDisplayed().assertHeightIsAtLeast(100.dp)
+    }
+
+    /** The pulse is an alpha layer: it must wrap the block's background, so the block blends into the surface behind it. */
+    @Test fun skeletonFadesItsBackgroundIntoTheSurfaceBehindIt() {
+        showSkeleton(0f)
+        rule.mainClock.autoAdvance = false
+        val solid = Palette.lightSurfaceVariant
+        assertNotEquals("the block is translucent, not the opaque surfaceVariant colour", solid, centrePixel("sk"))
+    }
+
+    /**
+     * Test rules cancel infinite animations, so the pulse cannot be stepped here. What is checkable: with animations on the
+     * block starts at the faint end of the pulse (alpha 0.4), fainter than the static 0.7 block shown when they are off.
+     */
+    @Test fun skeletonStartsAtTheFaintEndOfThePulseWhenAnimationsAreOn() {
+        showSkeleton(1f)
+        rule.mainClock.autoAdvance = false
+        val red = android.graphics.Color.red(centrePixel("sk"))
+        val bg = (Palette.lightBackground shr 16) and 0xFF
+        val fill = (Palette.lightSurfaceVariant shr 16) and 0xFF
+        val staticRed = bg + ((fill - bg) * 0.7f).toInt()
+        assertTrue("animated red $red is closer to the background than the static block's $staticRed", red > staticRed + 2)
+    }
+
+    @Test fun skeletonIsStaticWhenAnimationsAreOff() {
+        showSkeleton(0f)
+        rule.mainClock.autoAdvance = false
+        rule.mainClock.advanceTimeBy(100)
+        val early = centrePixel("sk")
+        rule.mainClock.advanceTimeBy(700)
+        assertEquals(early, centrePixel("sk"))
     }
 }

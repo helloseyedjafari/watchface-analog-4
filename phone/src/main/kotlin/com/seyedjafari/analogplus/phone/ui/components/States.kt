@@ -50,6 +50,7 @@ fun Skeleton(modifier: Modifier = Modifier) {
         a
     } else 0.7f
     Box(
-        modifier.clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surfaceVariant).alpha(alpha),
+        // alpha first: a layer only affects what comes after it in the chain, so it must wrap the background it pulses
+        modifier.alpha(alpha).clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surfaceVariant),
     )
 }
