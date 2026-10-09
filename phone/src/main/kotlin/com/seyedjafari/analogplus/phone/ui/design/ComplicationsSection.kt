@@ -222,7 +222,7 @@ private enum class EditorPart { TITLE, EDITOR }
 /**
  * The section title row over the square slot canvas. The canvas is as wide as the section, at most
  * [Dimens.SlotEditorMaxWidth]; with [fitToViewport] it is also no taller than what the section area (see
- * [LocalSectionViewportHeight]) leaves under the title, but never below [Dimens.SlotEditorMinSide] (the smallest default slot
+ * [LocalSectionViewportHeight]) leaves under the title, but never below [Dimens.SlotEditorMinSide] unless the section is narrower than that (the smallest default slot
  * stays a 48 dp target), so in a very short window the section scrolls to it. The section's own top padding is part of what
  * the canvas has to leave.
  */
