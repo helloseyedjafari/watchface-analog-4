@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -33,6 +34,11 @@ class DesignScreenTest {
     // a short host, so the Complications section is certainly taller than the scrolling area
     private fun show(state: EditorState, busy: Boolean = false) = rule.setContent {
         Box(Modifier.height(560.dp)) { DesignScreen(state, onSend = {}, sendBusy = busy) }
+    }
+
+    private fun scrollSectionToTheBottom() {
+        rule.onNode(verticalScroller).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
+        rule.waitForIdle()
     }
 
     @Test fun switchingSectionStartsAtTheTop() {
@@ -68,5 +74,22 @@ class DesignScreenTest {
         state.update { DesignSettings() }
         rule.onNodeWithTag(Tags.field("design_validation")).assertDoesNotExist()
         rule.onNodeWithTag(Tags.field("design_send")).assertIsEnabled()
+    }
+
+    @Test fun aSectionKeepsItsInnerStateWhenYouSwitchChipsAndBack() {
+        val state = EditorState()
+        show(state)
+        rule.onNodeWithTag(Tags.tab("complications")).performClick()
+        scrollSectionToTheBottom()
+        rule.onNodeWithTag(Tags.field("select_slot_0")).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(Tags.field("select_slot_0")).assertIsSelected()
+        rule.onNodeWithTag(Tags.field("slot_name")).assertExists()
+        rule.onNodeWithTag(Tags.tab("colours")).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(Tags.tab("complications")).performClick()
+        rule.waitForIdle()
+        // the selected slot (an inner rememberSaveable) is still selected: its editor is open
+        rule.onNodeWithTag(Tags.field("slot_name")).assertExists()
     }
 }

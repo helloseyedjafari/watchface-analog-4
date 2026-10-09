@@ -3,6 +3,7 @@ package com.seyedjafari.analogplus.phone
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
@@ -67,5 +68,22 @@ class LibraryAccountTest {
         rule.setContent { AnalogTheme { LibraryScreen(state, store) } }
         rule.onNodeWithTag("tab_mydesigns").performClick()
         rule.onNodeWithTag(Tags.saved("Mine")).performScrollTo().assertHeightIsAtLeast(48.dp)
+    }
+
+    @Test fun librarySectionsKeepTheirTypedTextWhenYouSwitchChipsAndBack() {
+        val state = EditorState(DesignSettings())
+        rule.setContent { AnalogTheme { LibraryScreen(state, testStore()) } }
+        rule.onNodeWithTag("tab_mydesigns").performClick()
+        rule.onNodeWithTag(Tags.SAVE_NAME_FIELD).performTextInput("Draft name")
+        rule.onNodeWithTag("tab_share").performClick()
+        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performScrollTo().performTextInput("analogplus://design?d=abc")
+        rule.onNodeWithTag("tab_templates").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag("tab_mydesigns").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(Tags.SAVE_NAME_FIELD).assertTextContains("Draft name")
+        rule.onNodeWithTag("tab_share").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performScrollTo().assertTextContains("analogplus://design?d=abc")
     }
 }

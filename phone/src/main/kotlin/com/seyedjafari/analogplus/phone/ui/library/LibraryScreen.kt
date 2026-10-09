@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -60,6 +61,7 @@ internal fun ReplaceDialog(pending: PendingReplace?, onConfirm: (PendingReplace)
 @Composable
 fun LibraryScreen(state: EditorState, store: Store, modifier: Modifier = Modifier) {
     var selected by rememberSaveable { mutableStateOf(LibrarySection.TEMPLATES) }
+    val sections = rememberSaveableStateHolder()
     var pending by remember { mutableStateOf<PendingReplace?>(null) }
     val askToReplace: (String, DesignSettings) -> Unit = { name, target -> if (target != state.design) pending = PendingReplace(name, target) }
     ReplaceDialog(pending, onConfirm = { state.replace(it.design); pending = null }, onCancel = { pending = null })
@@ -69,10 +71,13 @@ fun LibraryScreen(state: EditorState, store: Store, modifier: Modifier = Modifie
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(Spacing.lg),
             verticalArrangement = Arrangement.spacedBy(Spacing.md),
         ) {
-            when (selected) {
-                LibrarySection.TEMPLATES -> TemplatesSection(askToReplace)
-                LibrarySection.MY_DESIGNS -> MyDesignsSection(state, store, askToReplace)
-                LibrarySection.SHARE -> ShareSection(state)
+            // a section that leaves composition would lose its rememberSaveable state (name draft, pasted link); keep it per section
+            sections.SaveableStateProvider(selected.name) {
+                when (selected) {
+                    LibrarySection.TEMPLATES -> TemplatesSection(askToReplace)
+                    LibrarySection.MY_DESIGNS -> MyDesignsSection(state, store, askToReplace)
+                    LibrarySection.SHARE -> ShareSection(state)
+                }
             }
         }
     }

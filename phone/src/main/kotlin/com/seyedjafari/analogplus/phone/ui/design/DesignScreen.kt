@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +47,8 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
     var selected by rememberSaveable { mutableStateOf(DesignSection.COLOURS) }
     // keyed on the section: a new section starts at the top, while rotation still restores the offset of the same one
     val scroll = rememberSaveable(selected, saver = ScrollState.Saver) { ScrollState(0) }
+    // a section that leaves composition would lose its rememberSaveable state (selected slot, nudge step ...); keep it per section
+    val sections = rememberSaveableStateHolder()
     val fadeIn = fadeIn(motionSpec(Motion.MEDIUM))
     val fadeOut = fadeOut(motionSpec(Motion.SHORT))
     Column(modifier.fillMaxSize()) {
@@ -60,13 +63,15 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
         SectionChips(DesignSection.entries, selected, { selected = it }, { it.label }, { it.tag() })
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll)) {
             AnimatedContent(selected, transitionSpec = { fadeIn togetherWith fadeOut }, label = "design-section") { section ->
-                when (section) {
-                    DesignSection.COLOURS -> ColoursSection(state)
-                    DesignSection.DIAL -> DialSection(state)
-                    DesignSection.HANDS -> HandsSection(state)
-                    DesignSection.BACKGROUND -> BackgroundSection(state)
-                    DesignSection.COMPLICATIONS -> ComplicationsSection(state)
-                    DesignSection.RINGS -> RingSection(state)
+                sections.SaveableStateProvider(section.name) {
+                    when (section) {
+                        DesignSection.COLOURS -> ColoursSection(state)
+                        DesignSection.DIAL -> DialSection(state)
+                        DesignSection.HANDS -> HandsSection(state)
+                        DesignSection.BACKGROUND -> BackgroundSection(state)
+                        DesignSection.COMPLICATIONS -> ComplicationsSection(state)
+                        DesignSection.RINGS -> RingSection(state)
+                    }
                 }
             }
         }
