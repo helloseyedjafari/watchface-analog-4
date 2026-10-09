@@ -102,11 +102,14 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 }
 
+/** What a design without a (visible) name is called in the link dialog; screens pass the string resource instead. */
+internal const val NO_NAME = "(no name)"
+
 /** The design name for the link dialog: control and invisible formatting characters removed, at most 40 characters. */
-internal fun dialogName(name: String, max: Int = 40): String {
+internal fun dialogName(name: String, max: Int = 40, noName: String = NO_NAME): String {
     val clean = name.filter { Character.getType(it).let { t -> t != Character.CONTROL.toInt() && t != Character.FORMAT.toInt() } }
         .trim()
-    if (clean.isEmpty()) return "(no name)"
+    if (clean.isEmpty()) return noName
     if (clean.length <= max) return clean
     val cut = clean.take(max).let { if (it.last().isHighSurrogate()) it.dropLast(1) else it }
     return "$cut…"

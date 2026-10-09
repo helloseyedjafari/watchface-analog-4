@@ -21,7 +21,7 @@ fun LoadSharedDesignDialog(design: DesignSettings, onLoad: () -> Unit, onKeep: (
     AlertDialog(
         onDismissRequest = onKeep,
         title = { Text(stringResource(R.string.load_shared_title)) },
-        text = { Text(stringResource(R.string.load_shared_message, dialogName(design.name))) },
+        text = { Text(stringResource(R.string.load_shared_message, dialogName(design.name, noName = stringResource(R.string.common_no_name)))) },
         confirmButton = { PrimaryButton(stringResource(R.string.load_shared_button_load), onLoad, Modifier.testTag(Tags.field("qr_load"))) },
         dismissButton = { SecondaryButton(stringResource(R.string.load_shared_button_keep), onKeep, Modifier.testTag(Tags.field("qr_keep"))) },
         modifier = Modifier.testTag(Tags.field("link_dialog")),

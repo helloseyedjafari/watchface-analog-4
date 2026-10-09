@@ -14,14 +14,20 @@ internal fun ringColoursFor(old: List<String>, layout: RingLayout, fallback: Str
     return List(want) { base[it % base.size] }
 }
 
-/** The sentence for the layout choices that would break the 8 complication cap with [slotCount] slots, or null if none do. */
+/**
+ * The English sentence for the layout choices that would break the 8 complication cap with [slotCount] slots, or null if none do.
+ * The Design screen shows `ringLimitHintText` (string resources); this stays as the JVM-visible English source.
+ */
 internal fun ringLayoutLimitHint(slotCount: Int): String? {
-    val blocked = RingLayout.entries.filter { layoutBlocked(slotCount, it) }
+    val blocked = blockedRingLayouts(slotCount)
     if (blocked.isEmpty()) return null
     val names = blocked.map { layoutNoun(it) }
     val list = if (names.size == 1) names[0] else names.dropLast(1).joinToString(", ") + " or " + names.last()
     return "Remove a slot to use $list"
 }
+
+/** The layouts that would break the 8 complication cap with [slotCount] slots, in declaration order. */
+internal fun blockedRingLayouts(slotCount: Int): List<RingLayout> = RingLayout.entries.filter { layoutBlocked(slotCount, it) }
 
 /** True when [layout] would put the total above the cap with [slotCount] slots; "None" is never blocked (the way out). */
 internal fun layoutBlocked(slotCount: Int, layout: RingLayout): Boolean =

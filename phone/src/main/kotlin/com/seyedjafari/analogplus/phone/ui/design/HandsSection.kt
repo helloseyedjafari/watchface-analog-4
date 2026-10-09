@@ -16,7 +16,7 @@ fun HandsSection(state: EditorState) {
     TabColumn {
         HandColourFields(state, prefix = "hands_")
         ChoiceRow(stringResource(R.string.hands_second_hand), SecondHandStyle.entries, state.design.secondHand,
-            { s -> state.update { it.copy(secondHand = s) } }, "hands_secondHand")
+            { s -> state.update { it.copy(secondHand = s) } }, "hands_secondHand") { stringResource(secondHandStyleLabelRes(it)) }
         SecondHandColourFields(state, prefix = "hands_")
     }
 }

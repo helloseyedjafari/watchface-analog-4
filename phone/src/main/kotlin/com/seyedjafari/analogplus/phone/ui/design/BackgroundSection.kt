@@ -1,5 +1,6 @@
 package com.seyedjafari.analogplus.phone.ui.design
 
+import com.seyedjafari.analogplus.phone.rememberFieldTexts
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -88,6 +89,7 @@ internal fun PhotoThumb(bytes: ByteArray, decode: (ByteArray) -> android.graphic
 /** Solid colour, gradient or photo background. The photo bytes are stored as picked (the renderer shrinks them). */
 @Composable
 internal fun BackgroundSection(state: EditorState, readPhoto: (Context, Uri) -> PhotoRead? = ::readPhotoFromUri) {
+    val texts = rememberFieldTexts()
     val bg = state.design.background
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -117,7 +119,7 @@ internal fun BackgroundSection(state: EditorState, readPhoto: (Context, Uri) -> 
     }
 
     TabColumn {
-        ChoiceRow(stringResource(R.string.background_kind), BackgroundKind.entries, bg.kind, { k -> setBackground { it.copy(kind = k) } }, "background_kind")
+        ChoiceRow(stringResource(R.string.background_kind), BackgroundKind.entries, bg.kind, { k -> setBackground { it.copy(kind = k) } }, "background_kind") { stringResource(backgroundKindLabelRes(it)) }
         // a colour that is invalid stays visible in every mode so Send is never blocked by a hidden field
         ColourField(
             when (bg.kind) {
@@ -126,11 +128,11 @@ internal fun BackgroundSection(state: EditorState, readPhoto: (Context, Uri) -> 
                 BackgroundKind.PHOTO -> stringResource(R.string.background_colour_photo)
             },
             bg.color, { v -> setBackground { it.copy(color = v) } },
-            state.firstError("background.color"), Tags.field("background_color"),
+            state.firstError("background.color", texts), Tags.field("background_color"),
         )
         if (bg.kind == BackgroundKind.GRADIENT || state.errorsFor("background.color2").isNotEmpty()) {
             ColourField(stringResource(R.string.background_colour_bottom), bg.color2, { v -> setBackground { it.copy(color2 = v) } },
-                state.firstError("background.color2"), Tags.field("background_color2"))
+                state.firstError("background.color2", texts), Tags.field("background_color2"))
         }
         if (bg.kind == BackgroundKind.PHOTO) {
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
@@ -147,7 +149,7 @@ internal fun BackgroundSection(state: EditorState, readPhoto: (Context, Uri) -> 
                     )
                 }
             }
-            val photoError = state.firstError("background.photoJpeg")
+            val photoError = state.firstError("background.photoJpeg", texts)
             if (photoError != null) {
                 Text(photoError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag(Tags.error(Tags.field("background_photo"))))
@@ -170,7 +172,7 @@ internal fun BackgroundSection(state: EditorState, readPhoto: (Context, Uri) -> 
         if (bg.kind == BackgroundKind.PHOTO || state.errorsFor("background.dimPercent").isNotEmpty()) {
             IntField(stringResource(R.string.background_dim), bg.dimPercent, 0..80,
                 { v -> setBackground { it.copy(dimPercent = v) } },
-                Tags.field("background_dim"), state.firstError("background.dimPercent"))
+                Tags.field("background_dim"), state.firstError("background.dimPercent", texts))
         }
     }
 }

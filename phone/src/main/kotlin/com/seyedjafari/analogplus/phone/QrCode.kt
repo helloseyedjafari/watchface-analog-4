@@ -98,5 +98,5 @@ object QrCode {
     }
 
     /** The design name as shown in the confirm dialog (same cleaning as for a tapped link: see [dialogName]). */
-    fun dialogName(name: String): String = com.seyedjafari.analogplus.phone.dialogName(name)
+    fun dialogName(name: String, noName: String = NO_NAME): String = com.seyedjafari.analogplus.phone.dialogName(name, noName = noName)
 }

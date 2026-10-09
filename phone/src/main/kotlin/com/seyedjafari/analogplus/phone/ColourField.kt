@@ -25,6 +25,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -89,12 +90,13 @@ fun ColourField(
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             COLOUR_PRESETS.forEach { hex ->
                 val argb = parseArgb(hex)!!
+                val presetDescription = stringResource(R.string.colour_preset_description, hex)
                 Box(
                     Modifier
                         .size(Spacing.minTouch)
                         .clip(CircleShape)
                         .clickable(role = Role.Button) { onChange(hex) }
-                        .semantics { contentDescription = "Preset $hex" }
+                        .semantics { contentDescription = presetDescription }
                         .then(if (fieldTag.isNotBlank()) Modifier.testTag(presetTag(fieldTag, hex)) else Modifier),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -115,12 +117,13 @@ fun ColourField(
 private fun Swatch(argb: Int?) {
     val outline = MaterialTheme.colorScheme.outline
     val shape = MaterialTheme.shapes.extraSmall
+    val description = stringResource(if (argb != null) R.string.colour_swatch_valid else R.string.colour_swatch_invalid)
     Canvas(
         Modifier
             .size(Spacing.xxl + Spacing.sm)
             .clip(shape)
             .border(BorderStroke(Spacing.hairline, outline), shape)
-            .semantics { contentDescription = if (argb != null) "Colour preview" else "Not a colour yet" },
+            .semantics { contentDescription = description },
     ) {
         if (argb != null) {
             drawRect(Color(argb))

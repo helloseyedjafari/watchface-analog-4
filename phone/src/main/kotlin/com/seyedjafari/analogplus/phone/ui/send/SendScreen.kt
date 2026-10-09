@@ -1,5 +1,6 @@
 package com.seyedjafari.analogplus.phone.ui.send
 
+import com.seyedjafari.analogplus.phone.rememberFieldTexts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -128,7 +129,7 @@ private fun SendCard(state: EditorState, send: SendController) {
         val shownErrors = state.shownErrors
         if (shownErrors.isNotEmpty()) {
             Text(
-                state.design.fixFirstText(shownErrors),
+                state.design.fixFirstText(shownErrors, rememberFieldTexts()),
                 color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag(Tags.SEND_VALIDATION),
             )

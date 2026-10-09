@@ -34,6 +34,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -87,6 +88,7 @@ fun SlotDragEditor(
     val density = LocalDensity.current
     val selectedColour = MaterialTheme.colorScheme.primary
     val rimColour = MaterialTheme.colorScheme.outline
+    val unnamedSlot = stringResource(R.string.slot_editor_unnamed)
 
     LaunchedEffect(flashStamp) {
         if (flashId != null) {
@@ -139,18 +141,19 @@ fun SlotDragEditor(
             },
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            drawDial(state.design, selectedId, flashId, selectedColour, rimColour, measurer)
+            drawDial(state.design, selectedId, flashId, selectedColour, rimColour, measurer, unnamedSlot)
         }
         // one semantics-only node per slot so tests (and screen readers) can find each slot and its position
         val scale = sizePx / SlotGeometry.CANVAS
         state.design.slots.take(SlotGeometry.MAX_SHOWN).forEach { s ->
+            val slotDescription = stringResource(R.string.slot_editor_description, s.id, s.x, s.y)
             Box(
                 Modifier
                     .offset { IntOffset((s.x * scale).roundToInt(), (s.y * scale).roundToInt()) }
                     .size(with(density) { (s.w * scale).toDp() }, with(density) { (s.h * scale).toDp() })
                     .testTag(Tags.slot(s.id))
                     .semantics {
-                        contentDescription = "slot ${s.id} at ${s.x},${s.y}"
+                        contentDescription = slotDescription
                         selected = s.id == selectedId
                     },
             )
@@ -165,6 +168,7 @@ private fun DrawScope.drawDial(
     selectedColour: Color,
     rimColour: Color,
     measurer: TextMeasurer,
+    unnamedSlot: String,
 ) {
     val k = size.width / SlotGeometry.CANVAS
     fun p(v: Int) = v * k
@@ -221,7 +225,7 @@ private fun DrawScope.drawDial(
         if (bg != null) fill(bg)
         outline(Color.White.copy(alpha = 0.45f), 1.5f)
         val label = measurer.measure(
-            s.name.ifBlank { "?" }.take(40),
+            s.name.ifBlank { unnamedSlot }.take(40),
             TextStyle(color = argbOrNull(s.textColor) ?: Color.White, fontSize = (box.height / 4f).coerceIn(10f, 60f).toSp()),
             maxLines = 1,
             constraints = Constraints(maxWidth = box.width.roundToInt().coerceAtLeast(0)),

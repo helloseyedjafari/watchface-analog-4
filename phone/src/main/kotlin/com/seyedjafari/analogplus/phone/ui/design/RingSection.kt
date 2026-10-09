@@ -1,5 +1,6 @@
 package com.seyedjafari.analogplus.phone.ui.design
 
+import com.seyedjafari.analogplus.phone.rememberFieldTexts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -36,7 +37,7 @@ import com.seyedjafari.analogplus.phone.describe
 import com.seyedjafari.analogplus.phone.firstError
 import com.seyedjafari.analogplus.phone.layoutBlocked
 import com.seyedjafari.analogplus.phone.ringColoursFor
-import com.seyedjafari.analogplus.phone.ringLayoutLimitHint
+import com.seyedjafari.analogplus.phone.currentResources
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import kotlin.math.roundToInt
@@ -55,11 +56,12 @@ private const val MAX_RING_ERROR_LINES = 4
  */
 @Composable
 fun RingSection(state: EditorState) {
+    val texts = rememberFieldTexts()
     val ring = state.design.ring
     fun edit(f: (RingDesign) -> RingDesign) = state.update { it.copy(ring = f(it.ring)) }
     val ringErrors = state.errors.filter { it.field.startsWith("ring.") }
     val showFields = ring.layout != RingLayout.NONE || ringErrors.isNotEmpty()
-    val limitHint = ringLayoutLimitHint(state.design.slots.size)
+    val limitHint = ringLimitHintText(currentResources(), state.design.slots.size)
 
     Column(Modifier.fillMaxWidth().padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -67,12 +69,12 @@ fun RingSection(state: EditorState) {
             CapIndicator(state)
         }
         state.errorsFor("slots").filter { it.message.startsWith("at most") }.forEach {
-            Text(state.design.describe(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+            Text(state.design.describe(it, texts), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag(Tags.field("ring_cap_error")))
         }
         if (ringErrors.isNotEmpty()) {
             ringErrors.take(MAX_RING_ERROR_LINES).forEach {
-                Text(stringResource(R.string.ring_error_line, it.field, state.design.describe(it)), color = MaterialTheme.colorScheme.error,
+                Text(stringResource(R.string.ring_error_line, it.field, state.design.describe(it, texts)), color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.testTag(Tags.field("ring_error")))
             }
@@ -109,7 +111,7 @@ fun RingSection(state: EditorState) {
         if (showFields) {
             ring.colors.take(SlotGeometry.MAX_SHOWN).forEachIndexed { i, colour ->
                 val error = state.errorsFor("ring.colors").firstOrNull { it.message.startsWith("'$colour'") }
-                    ?.let { state.design.describe(it) }
+                    ?.let { state.design.describe(it, texts) }
                 ColourField(
                     label = if (ring.colors.size == 1) stringResource(R.string.ring_colour_single) else stringResource(R.string.ring_colour_segment, i + 1),
                     value = colour,
@@ -135,17 +137,17 @@ fun RingSection(state: EditorState) {
                 label = stringResource(R.string.ring_track_colour),
                 value = ring.trackColor,
                 onChange = { c -> edit { it.copy(trackColor = c) } },
-                errorText = state.firstError("ring.trackColor"),
+                errorText = state.firstError("ring.trackColor", texts),
                 fieldTag = Tags.field("ring_track"),
                 modifier = Modifier.fillMaxWidth(),
             )
-            RingNumberRow(stringResource(R.string.ring_thickness), ring.thicknessPx, 4..40, "ring_thickness", state.firstError("ring.thicknessPx")) { v ->
+            RingNumberRow(stringResource(R.string.ring_thickness), ring.thicknessPx, 4..40, "ring_thickness", state.firstError("ring.thicknessPx", texts)) { v ->
                 edit { it.copy(thicknessPx = v) }
             }
-            RingNumberRow(stringResource(R.string.ring_gap), ring.gapDegrees, 0..30, "ring_gap", state.firstError("ring.gapDegrees")) { v ->
+            RingNumberRow(stringResource(R.string.ring_gap), ring.gapDegrees, 0..30, "ring_gap", state.firstError("ring.gapDegrees", texts)) { v ->
                 edit { it.copy(gapDegrees = v) }
             }
-            RingNumberRow(stringResource(R.string.ring_start_angle), ring.startAngle, -360..360, "ring_start", state.firstError("ring.startAngle"), allowNegative = true) { v ->
+            RingNumberRow(stringResource(R.string.ring_start_angle), ring.startAngle, -360..360, "ring_start", state.firstError("ring.startAngle", texts), allowNegative = true) { v ->
                 edit { it.copy(startAngle = v) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {

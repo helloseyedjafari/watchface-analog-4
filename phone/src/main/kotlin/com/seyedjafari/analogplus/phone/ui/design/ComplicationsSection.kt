@@ -1,5 +1,6 @@
 package com.seyedjafari.analogplus.phone.ui.design
 
+import com.seyedjafari.analogplus.phone.rememberFieldTexts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -79,6 +80,7 @@ fun CapIndicator(state: EditorState, modifier: Modifier = Modifier) {
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ComplicationsSection(state: EditorState) {
+    val texts = rememberFieldTexts()
     var selectedId by rememberSaveable { mutableStateOf<Int?>(null) }
     var message by remember { mutableStateOf<SlotRefusal?>(null) }
     val design = state.design
@@ -102,17 +104,17 @@ fun ComplicationsSection(state: EditorState) {
             modifier = Modifier.fillMaxWidth().widthIn(max = Dimens.SlotEditorMaxWidth).align(Alignment.CenterHorizontally),
         )
         message?.let {
-            Text(it.message, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(Tags.field("slot_message")))
+            Text(stringResource(slotRefusalRes(it)), color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(Tags.field("slot_message")))
         }
         state.errorsFor("slots").take(MAX_ERROR_LINES).forEach {
-            Text(design.describe(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+            Text(design.describe(it, texts), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                 maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag(Tags.field("slots_error")))
         }
         // colour errors of slots that are not selected have no field on screen: name the slot so its chip can be tapped
         val selectedIndex = design.slots.indexOfFirst { it.id == selected?.id }
         state.errors.filter { it.field.startsWith("slots[") && (selectedIndex < 0 || !it.field.startsWith("slots[$selectedIndex]")) }
             .take(MAX_ERROR_LINES).forEach {
-            Text(stringResource(R.string.complications_slot_field_error, design.describeField(it.field), design.describe(it)), color = MaterialTheme.colorScheme.error,
+            Text(stringResource(R.string.complications_slot_field_error, design.describeField(it.field, texts), design.describe(it, texts)), color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.testTag(Tags.field("slots_field_error")))
         }
@@ -202,11 +204,12 @@ fun ComplicationsSection(state: EditorState) {
 
 @Composable
 private fun SelectedSlotControls(state: EditorState, s: SlotDesign, onResult: (SlotResult) -> Unit) {
+    val texts = rememberFieldTexts()
     val index = state.design.slots.indexOfFirst { it.id == s.id }
     fun edit(f: (SlotDesign) -> SlotDesign) {
         state.update { d -> d.copy(slots = d.slots.map { if (it.id == s.id) f(it) else it }) }
     }
-    fun errorOf(field: String) = state.firstError("slots[$index].$field")
+    fun errorOf(field: String) = state.firstError("slots[$index].$field", texts)
 
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         OutlinedTextField(

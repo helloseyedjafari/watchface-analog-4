@@ -20,6 +20,58 @@
     <string name="load_shared_message">\"%1$s\" will replace the design you are editing.</string>
     <string name="load_shared_button_load">Load</string>
     <string name="load_shared_button_keep">Keep mine</string>
+    <string name="common_no_name">(no name)</string>
+    <string name="common_list_separator">", "</string>
+
+    <!-- Words inside validation lines (FieldTexts; the validation messages themselves are written by the face generator) -->
+    <string name="field_slot">slot %1$d</string>
+    <string name="field_slot_named">slot %1$d (%2$s)</string>
+    <string name="field_fix_first">Fix first: %1$s: %2$s</string>
+    <string name="field_and_more">(and %1$d more)</string>
+
+    <!-- Colour fields -->
+    <string name="colours_hand">Hand colour</string>
+    <string name="colours_inlay">Inlay colour</string>
+    <string name="hands_second_hand_use_accent">Use accent colour for the second hand</string>
+    <string name="hands_second_hand_colour">Second hand colour</string>
+    <string name="colour_preset_description">Preset %1$s</string>
+    <string name="colour_swatch_valid">Colour preview</string>
+    <string name="colour_swatch_invalid">Not a colour yet</string>
+
+    <!-- Preview and slot editor -->
+    <string name="preview_description">Watch face preview</string>
+    <string name="slot_editor_description">slot %1$d at %2$d,%3$d</string>
+    <string name="slot_editor_unnamed" translatable="false">?</string>
+
+    <!-- Option chips (DesignTexts.kt; kept equal to the old name-derived labels by DesignTextsTest) -->
+    <string name="hands_style_sweep">Sweep</string>
+    <string name="hands_style_tick">Tick</string>
+    <string name="hands_style_hidden">Hidden</string>
+    <string name="background_kind_solid">Solid</string>
+    <string name="background_kind_gradient">Gradient</string>
+    <string name="background_kind_photo">Photo</string>
+    <string name="dial_numerals_all">All</string>
+    <string name="dial_numerals_quarters">Quarters</string>
+    <string name="dial_numerals_off">Off</string>
+
+    <!-- Slot refusals (SlotRefusal.message is the English wording) -->
+    <string name="slot_refusal_outside_dial">Keep slots inside the dial</string>
+    <string name="slot_refusal_overlap">Slots may not overlap</string>
+    <string name="slot_refusal_on_centre">Too close to the hands\' centre</string>
+    <string name="slot_refusal_too_small">Slots must be at least 40 x 40</string>
+    <string name="slot_refusal_cap">At most 8 complications in total</string>
+    <string name="slot_refusal_no_free_id">At most 6 movable slots</string>
+    <string name="slot_refusal_no_space">No free space for another slot</string>
+    <string name="slot_refusal_unknown_slot">No such slot</string>
+
+    <!-- Ring layout limit hint -->
+    <string name="ring_limit_hint">Remove a slot to use %1$s</string>
+    <string name="ring_limit_or">%1$s or %2$s</string>
+    <string name="ring_noun_none">no ring</string>
+    <string name="ring_noun_full">a full ring</string>
+    <string name="ring_noun_halves">halves</string>
+    <string name="ring_noun_thirds">thirds</string>
+    <string name="ring_noun_quarters">quarter rings</string>
 
     <!-- Design: sections -->
     <string name="design_section_colours">Colours</string>

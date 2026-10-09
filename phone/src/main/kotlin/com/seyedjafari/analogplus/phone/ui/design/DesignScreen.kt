@@ -1,5 +1,6 @@
 package com.seyedjafari.analogplus.phone.ui.design
 
+import com.seyedjafari.analogplus.phone.rememberFieldTexts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Column
@@ -86,7 +87,7 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
         val shownErrors = state.shownErrors
         if (shownErrors.isNotEmpty()) {
             ErrorBanner(
-                state.design.fixFirstText(shownErrors),
+                state.design.fixFirstText(shownErrors, rememberFieldTexts()),
                 Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.xs).testTag(Tags.field("design_validation")),
                 maxLines = 2,
             )

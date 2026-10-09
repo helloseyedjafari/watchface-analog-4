@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import com.seyedjafari.analogplus.facegen.render.PreviewRenderer
 import com.seyedjafari.analogplus.phone.ui.theme.Motion
 import com.seyedjafari.analogplus.phone.ui.theme.motionSpec
@@ -38,6 +39,7 @@ fun PreviewPane(state: EditorState, modifier: Modifier = Modifier) {
     var sizePx by remember { mutableIntStateOf(0) }
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     val design = state.design
+    val previewDescription = stringResource(R.string.preview_description)
     LaunchedEffect(design, sizePx) {
         if (sizePx > 0) {
             val bmp = withContext(Dispatchers.Default) { PreviewRenderer.render(design, context, sizePx) }
@@ -53,7 +55,7 @@ fun PreviewPane(state: EditorState, modifier: Modifier = Modifier) {
     ) {
         // the new render fades in over the old one (a snap when animations are off)
         Crossfade(targetState = bitmap, modifier = Modifier.matchParentSize(), animationSpec = motionSpec(Motion.MEDIUM), label = "preview") { shown ->
-            shown?.let { Image(it.asImageBitmap(), contentDescription = "Watch face preview", modifier = Modifier.fillMaxSize().testTag(Tags.PREVIEW_IMAGE)) }
+            shown?.let { Image(it.asImageBitmap(), contentDescription = previewDescription, modifier = Modifier.fillMaxSize().testTag(Tags.PREVIEW_IMAGE)) }
         }
     }
 }
