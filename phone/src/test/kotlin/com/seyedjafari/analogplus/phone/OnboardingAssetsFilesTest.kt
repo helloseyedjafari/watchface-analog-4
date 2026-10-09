@@ -13,7 +13,10 @@ import org.junit.Test
 
 /** The raw files the app references exist, are valid JSON compositions and stay under the size cap. */
 class OnboardingAssetsFilesTest {
-    private val raw = File("src/main/res/raw")
+    /** Gradle runs unit tests from the module directory; fall back to the repo root and to walking up, so an IDE works too. */
+    private val raw: File = generateSequence(File("").absoluteFile) { it.parentFile }.take(6)
+        .flatMap { sequenceOf(File(it, "src/main/res/raw"), File(it, "phone/src/main/res/raw")) }
+        .firstOrNull { it.isDirectory } ?: File("src/main/res/raw")
     private val names = listOf("onboarding_welcome", "onboarding_searching", "onboarding_found", "onboarding_permission")
 
     @Test fun allFourFilesExistAndStayUnder100Kb() {

@@ -7,6 +7,11 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * Owns first-run setup: what state it is in, how it moves between pages, and the one-time "open Send" tip.
  * Lives in `AppModel`, so rotation keeps it; every transition is stored first, so process death resumes at the page.
+ *
+ * Meant for the main thread; the mutators are also `@Synchronized` (a read-decide-write each, with the store write
+ * inside the lock), so a stray background caller cannot interleave two transitions or see a half-set tip.
+ * Transitions out of an inactive state (Completed, Skipped) are ignored except [restart]: a double tap on Finish must
+ * not bring setup back, and a late Skip must not re-arm the tip.
  */
 class OnboardingController(
     private val store: Store,
@@ -22,7 +27,7 @@ class OnboardingController(
     /** True after finishing (or skipping) when the pairing page had positively confirmed a watch with the app. */
     val sendTipVisible: StateFlow<Boolean> = _sendTip.asStateFlow()
 
-    /** Two genuine states: positively confirmed ready, or not (unknown counts as not confirmed). */
+    /** Two genuine states: positively confirmed ready, or not (unknown counts as not confirmed). Guarded by `this`. */
     private var watchReady = false
 
     /** The page to show for [s]: the stored page when it exists in [pages], else the last page; the first page otherwise. */
@@ -33,22 +38,27 @@ class OnboardingController(
 
     fun currentPage(): OnboardingPage = pageFor(_state.value)
 
-    fun reportWatchReady(ready: Boolean) { watchReady = ready }
+    @Synchronized fun reportWatchReady(ready: Boolean) { watchReady = ready }
 
-    fun advance() {
+    @Synchronized fun advance() {
+        if (!_state.value.isActive) return
         val i = pages.indexOf(currentPage())
         if (i >= pages.lastIndex) finish(OnboardingState.Completed) else set(OnboardingState.InProgress(pages[i + 1]))
     }
 
-    fun back() {
+    @Synchronized fun back() {
+        if (!_state.value.isActive) return
         val i = pages.indexOf(currentPage())
         if (i > 0) set(OnboardingState.InProgress(pages[i - 1]))
     }
 
-    fun skip() = finish(OnboardingState.Skipped)
+    @Synchronized fun skip() {
+        if (!_state.value.isActive) return
+        finish(OnboardingState.Skipped)
+    }
 
     /** "Run setup again" from Account: from Completed or Skipped (or mid-run) back to the first page. */
-    fun restart() {
+    @Synchronized fun restart() {
         _sendTip.value = false
         watchReady = false
         set(OnboardingState.InProgress(pages.first()))

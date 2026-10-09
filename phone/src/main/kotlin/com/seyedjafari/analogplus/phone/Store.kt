@@ -214,12 +214,12 @@ class Store(
     fun saveOnboardingState(s: OnboardingState) = synchronized(LOCK) { kv.putString(KEY_ONBOARDING, s.encode()) }
 
     /**
-     * True when this install was used before onboarding existed: a current design, saved designs, a face version or a
+     * True when this install was used before onboarding existed: a current design, a saved-designs entry (even a corrupt one), a face version or a
      * sent-key fingerprint is on disk. Only meaningful BEFORE the first autosave of a new install, which is why
      * [resolveOnboardingState] stores its decision at once.
      */
     fun hasPriorUse(): Boolean = synchronized(LOCK) {
-        kv.getString(KEY_CURRENT) != null || readSaved().isNotEmpty() ||
+        kv.getString(KEY_CURRENT) != null || kv.getString(KEY_SAVED) != null ||
             kv.getLong(KEY_VERSION, 0L) > 0L || kv.getString(KEY_SENT_FINGERPRINT) != null
     }
 

@@ -7,16 +7,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OnboardingStateTest {
-    private val all = listOf(
-        OnboardingState.NotStarted,
-        OnboardingState.InProgress(OnboardingPage.WELCOME),
-        OnboardingState.InProgress(OnboardingPage.PAIR),
-        OnboardingState.InProgress(OnboardingPage.PERMISSION),
-        OnboardingState.InProgress(OnboardingPage.TEMPLATE),
-        OnboardingState.InProgress(OnboardingPage.BACKUP),
-        OnboardingState.Completed,
-        OnboardingState.Skipped,
-    )
+    private val all: List<OnboardingState> =
+        listOf(OnboardingState.NotStarted) + OnboardingPage.entries.map { OnboardingState.InProgress(it) } +
+            listOf(OnboardingState.Completed, OnboardingState.Skipped)
 
     @Test fun everyStateRoundTripsThroughItsEncoding() {
         all.forEach { assertEquals(it, decodeOnboardingState(it.encode())) }

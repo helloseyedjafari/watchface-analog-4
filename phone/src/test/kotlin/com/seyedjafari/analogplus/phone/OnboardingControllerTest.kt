@@ -17,6 +17,9 @@ class OnboardingControllerTest {
     private val four = onboardingPages(accountsAvailable = false)
     private val five = onboardingPages(accountsAvailable = true)
     private fun controller(pages: List<OnboardingPage> = four) = OnboardingController(store(), pages)
+    /** A controller over its own empty store (tests that need several independent runs). */
+    private var fresh = 0
+    private fun freshController() = OnboardingController(Store(FakeKeyValueStore(), File(tmp.root, "fresh-${fresh++}.jpg")), four)
     private fun inProgress(p: OnboardingPage) = OnboardingState.InProgress(p)
 
     @Test fun aNewUserStartsAtTheWelcomePage() {
@@ -71,10 +74,55 @@ class OnboardingControllerTest {
     }
 
     @Test fun completedAndSkippedAreNotActiveAndStayThatWay() {
-        val c = controller()
-        c.skip()
-        assertFalse(c.state.value.isActive)
+        val skipped = controller()
+        skipped.skip()
+        assertFalse(skipped.state.value.isActive)
         assertFalse(controller().state.value.isActive)
+
+        val completed = FakeKeyValueStore()
+        val c = OnboardingController(Store(completed, File(tmp.root, "bg-completed.jpg")), four)
+        repeat(4) { c.advance() }
+        assertEquals(OnboardingState.Completed, c.state.value)
+        assertFalse(c.state.value.isActive)
+        assertEquals(OnboardingState.Completed, OnboardingController(Store(completed, File(tmp.root, "bg-completed.jpg")), four).state.value)
+    }
+
+    @Test fun aSecondTapOnFinishDoesNotBringOnboardingBack() {
+        val c = controller(); repeat(4) { c.advance() }
+        c.advance()                                         // double tap on Finish
+        assertEquals(OnboardingState.Completed, c.state.value)
+        assertEquals(OnboardingState.Completed, controller().state.value)
+    }
+
+    @Test fun advanceAndBackDoNothingOnceSkipped() {
+        val c = controller(); c.skip()
+        c.advance(); assertEquals(OnboardingState.Skipped, c.state.value)
+        c.back(); assertEquals(OnboardingState.Skipped, c.state.value)
+        assertEquals(OnboardingState.Skipped, controller().state.value)
+    }
+
+    @Test fun backDoesNothingOnceCompleted() {
+        val c = controller(); repeat(4) { c.advance() }
+        c.back()
+        assertEquals(OnboardingState.Completed, c.state.value)
+        assertEquals(OnboardingState.Completed, controller().state.value)
+    }
+
+    @Test fun skipAfterCompletedChangesNothingAndDoesNotRearmTheTip() {
+        val c = controller(); c.reportWatchReady(true); repeat(4) { c.advance() }
+        c.dismissTip()
+        c.skip()
+        assertEquals(OnboardingState.Completed, c.state.value)
+        assertFalse(c.sendTipVisible.value)
+        assertEquals(OnboardingState.Completed, controller().state.value)
+    }
+
+    @Test fun skipAfterSkipKeepsTheTipDismissed() {
+        val c = controller(); c.reportWatchReady(true); c.skip()
+        assertTrue(c.sendTipVisible.value)
+        c.dismissTip()
+        c.skip()
+        assertFalse(c.sendTipVisible.value)
     }
 
     @Test fun restartGoesBackToTheFirstPageFromCompletedAndFromSkipped() {
@@ -103,16 +151,16 @@ class OnboardingControllerTest {
     }
 
     @Test fun theSendTipAppearsOnlyWhenTheWatchWasConfirmedReady() {
-        val ready = controller()
+        val ready = freshController()
         ready.reportWatchReady(true); repeat(4) { ready.advance() }
         assertTrue(ready.sendTipVisible.value)
         ready.dismissTip()
         assertFalse(ready.sendTipVisible.value)
 
-        val noWatch = controller(); repeat(4) { noWatch.advance() }
+        val noWatch = freshController(); repeat(4) { noWatch.advance() }
         assertFalse(noWatch.sendTipVisible.value)
 
-        val skipped = controller(); skipped.reportWatchReady(true); skipped.skip()
+        val skipped = freshController(); skipped.reportWatchReady(true); skipped.skip()
         assertTrue("skipping after the watch was found still gets the tip", skipped.sendTipVisible.value)
     }
 

@@ -41,6 +41,12 @@ class StoreOnboardingTest {
         assertEquals(OnboardingState.Skipped, store(kv).onboardingState())
     }
 
+    @Test fun aSavedDesignsEntryThatCannotBeReadStillMeansAnExistingUser() {
+        val kv = FakeKeyValueStore()
+        kv.putString("saved_designs", "not json at all")
+        assertEquals(OnboardingState.Skipped, store(kv).resolveOnboardingState())
+    }
+
     @Test fun aCurrentDesignFromThePocMeansAnExistingUser() {
         val kv = FakeKeyValueStore()
         store(kv).saveCurrent(Templates.all[2])

@@ -28,10 +28,15 @@ sealed interface OnboardingState {
 
 /** True while the onboarding screen should be showing. */
 val OnboardingState.isActive: Boolean
-    get() = this is OnboardingState.NotStarted || this is OnboardingState.InProgress
+    get() = when (this) {
+        OnboardingState.NotStarted, is OnboardingState.InProgress -> true
+        OnboardingState.Completed, OnboardingState.Skipped -> false
+    }
 
 private const val IN_PROGRESS_PREFIX = "IN_PROGRESS:"
 
+// The page is persisted as its enum `name`: renaming an OnboardingPage constant makes stored progress unreadable, and
+// decode then resumes at WELCOME (safe, but the user starts the run over). Add pages freely; rename them with care.
 fun OnboardingState.encode(): String = when (this) {
     OnboardingState.NotStarted -> "NOT_STARTED"
     is OnboardingState.InProgress -> IN_PROGRESS_PREFIX + page.name
