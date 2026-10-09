@@ -62,18 +62,32 @@ class RotationTest {
         // this test edits the design the app really stores: remember the value it started with and put that back, whatever happens
         rule.onNodeWithTag(Tags.tab("dial")).performScrollTo().performClick()
         val original = fieldText()
+        var failure: Throwable? = null
         try {
-            rotateAndCheck(original)
+            rotateAndCheck()
+        } catch (t: Throwable) {
+            failure = t
+            throw t
         } finally {
-            // the app may be in either orientation, on any destination, with the tab bar scrolled: go back to the field and restore it
-            rule.onNodeWithTag(Destination.DESIGN.tag).performClick()
-            rule.onNodeWithTag(Tags.tab("dial")).performScrollTo().performClick()
-            rule.onNodeWithTag(field).performScrollTo().performTextReplacement(original)
-            rule.onNodeWithTag(field).assertTextEquals(original, includeEditableText = true)
+            // the restore must not hide why the test failed: if both fail, the test's own failure is the one reported
+            try {
+                restore(original)
+            } catch (t: Throwable) {
+                if (failure == null) throw t
+                failure.addSuppressed(t)
+            }
         }
     }
 
-    private fun rotateAndCheck(original: String) {
+    /** The app may be in either orientation, on any destination, with the tab bar scrolled: go back to the field and restore it. */
+    private fun restore(original: String) {
+        rule.onNodeWithTag(Destination.DESIGN.tag).performClick()
+        rule.onNodeWithTag(Tags.tab("dial")).performScrollTo().performClick()
+        rule.onNodeWithTag(field).performScrollTo().performTextReplacement(original)
+        rule.onNodeWithTag(field).assertTextEquals(original, includeEditableText = true)
+    }
+
+    private fun rotateAndCheck() {
         val portraitBar = dpOfBar()
         rule.onNodeWithTag(Tags.tab("dial")).performScrollTo().performClick()
         rule.onNodeWithTag(field).performScrollTo().performTextReplacement("7")
