@@ -2,6 +2,7 @@ package com.seyedjafari.analogplus.phone
 
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -13,6 +14,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.seyedjafari.analogplus.phone.ui.nav.AppNav
 import com.seyedjafari.analogplus.phone.ui.nav.Destination
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
+import com.seyedjafari.analogplus.phone.ui.theme.LocalAnimationScale
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,7 +23,10 @@ import org.junit.runner.RunWith
 class NavigationTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
-    private fun show() = rule.setContent { AnalogTheme { AppNav(content = { d, _ -> Text("screen ${d.name}") }) } }
+    // the slide tests read mid-transition positions on the manual clock, so the device's animation setting must not change them
+    private fun show() = rule.setContent {
+        CompositionLocalProvider(LocalAnimationScale provides 1f) { AnalogTheme { AppNav(content = { d, _ -> Text("screen ${d.name}") }) } }
+    }
 
     @Test fun startsOnDesignAndEveryDestinationIsReachable() {
         show()

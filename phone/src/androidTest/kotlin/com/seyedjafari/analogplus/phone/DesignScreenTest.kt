@@ -2,6 +2,7 @@ package com.seyedjafari.analogplus.phone
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -21,6 +22,7 @@ import com.seyedjafari.analogplus.facegen.design.BackgroundDesign
 import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.ui.design.DesignScreen
+import com.seyedjafari.analogplus.phone.ui.theme.LocalAnimationScale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -35,8 +37,11 @@ class DesignScreenTest {
         rule.onNode(verticalScroller).fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
 
     // a short host, so the Complications section is certainly taller than the scrolling area
+    // the slide tests read mid-transition positions on the manual clock, so the device's animation setting must not change them
     private fun show(state: EditorState, busy: Boolean = false) = rule.setContent {
-        Box(Modifier.height(560.dp)) { DesignScreen(state, onSend = {}, sendBusy = busy) }
+        CompositionLocalProvider(LocalAnimationScale provides 1f) {
+            Box(Modifier.height(560.dp)) { DesignScreen(state, onSend = {}, sendBusy = busy) }
+        }
     }
 
     private fun scrollSectionToTheBottom() {
