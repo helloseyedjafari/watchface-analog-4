@@ -1,4 +1,4 @@
-package com.seyedjafari.analogplus.phone
+package com.seyedjafari.analogplus.phone.ui.design
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -29,6 +29,12 @@ import com.seyedjafari.analogplus.facegen.design.RingCaps
 import com.seyedjafari.analogplus.facegen.design.RingDesign
 import com.seyedjafari.analogplus.facegen.design.RingLayout
 import com.seyedjafari.analogplus.facegen.design.parseArgb
+import com.seyedjafari.analogplus.phone.ColourField
+import com.seyedjafari.analogplus.phone.EditorState
+import com.seyedjafari.analogplus.phone.SlotGeometry
+import com.seyedjafari.analogplus.phone.Tags
+import com.seyedjafari.analogplus.phone.describe
+import com.seyedjafari.analogplus.phone.firstError
 import kotlin.math.roundToInt
 
 /**
@@ -72,7 +78,7 @@ private const val MAX_RING_ERROR_LINES = 4
  * always be fixed here, also with layout "None". At most 8 colour fields are drawn, however long an imported list is.
  */
 @Composable
-fun RingTab(state: EditorState) {
+fun RingSection(state: EditorState) {
     val ring = state.design.ring
     fun edit(f: (RingDesign) -> RingDesign) = state.update { it.copy(ring = f(it.ring)) }
     val ringErrors = state.errors.filter { it.field.startsWith("ring.") }

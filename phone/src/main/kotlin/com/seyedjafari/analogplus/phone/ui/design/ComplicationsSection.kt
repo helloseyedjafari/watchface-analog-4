@@ -1,4 +1,4 @@
-package com.seyedjafari.analogplus.phone
+package com.seyedjafari.analogplus.phone.ui.design
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +32,17 @@ import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.SlotDesign
 import com.seyedjafari.analogplus.facegen.design.SlotShape
 import com.seyedjafari.analogplus.facegen.design.defaultSlots
+import com.seyedjafari.analogplus.phone.ColourField
+import com.seyedjafari.analogplus.phone.EditorState
+import com.seyedjafari.analogplus.phone.SlotDragEditor
+import com.seyedjafari.analogplus.phone.SlotGeometry
+import com.seyedjafari.analogplus.phone.SlotRefusal
+import com.seyedjafari.analogplus.phone.SlotResult
+import com.seyedjafari.analogplus.phone.Tags
+import com.seyedjafari.analogplus.phone.describe
+import com.seyedjafari.analogplus.phone.describeField
+import com.seyedjafari.analogplus.phone.firstError
+import com.seyedjafari.analogplus.phone.shortForDisplay
 
 private const val NEW_SLOT_BACKGROUND = "#FF1E1E1E"
 private const val OVER_LIMIT = "over limit"
@@ -58,7 +69,7 @@ fun CapIndicator(state: EditorState, modifier: Modifier = Modifier) {
  * Lays its content out in a plain Column: the tab host must scroll it.
  */
 @Composable
-fun ComplicationsTab(state: EditorState) {
+fun ComplicationsSection(state: EditorState) {
     var selectedId by rememberSaveable { mutableStateOf<Int?>(null) }
     var message by remember { mutableStateOf<SlotRefusal?>(null) }
     val design = state.design

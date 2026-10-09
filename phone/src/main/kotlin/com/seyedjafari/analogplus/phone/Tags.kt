@@ -11,6 +11,7 @@ object Tags {
     const val SHARE_LOAD_BUTTON = "share_load_button"
     const val SLOT_CANVAS = "slot_canvas"
     fun tab(name: String) = "tab_$name"
+    fun section(name: String) = "section_$name"
     fun error(field: String) = "error_$field"
     fun template(name: String) = "template_$name"
     fun slot(id: Int) = "slot_$id"

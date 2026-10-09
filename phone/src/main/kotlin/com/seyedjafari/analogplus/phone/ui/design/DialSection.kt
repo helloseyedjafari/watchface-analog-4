@@ -1,11 +1,19 @@
-package com.seyedjafari.analogplus.phone
+package com.seyedjafari.analogplus.phone.ui.design
 
 import androidx.compose.runtime.Composable
 import com.seyedjafari.analogplus.facegen.design.NumeralMode
+import com.seyedjafari.analogplus.phone.ChoiceRow
+import com.seyedjafari.analogplus.phone.EditorState
+import com.seyedjafari.analogplus.phone.IntField
+import com.seyedjafari.analogplus.phone.SectionTitle
+import com.seyedjafari.analogplus.phone.SwitchRow
+import com.seyedjafari.analogplus.phone.TabColumn
+import com.seyedjafari.analogplus.phone.Tags
+import com.seyedjafari.analogplus.phone.firstError
 
 /** Tick size, ticks, dots, numerals and complication text. */
 @Composable
-fun DialTab(state: EditorState) {
+fun DialSection(state: EditorState) {
     val d = state.design
     TabColumn {
         SectionTitle("Ticks")

@@ -35,6 +35,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.seyedjafari.analogplus.facegen.FacePackager
 import com.seyedjafari.analogplus.facegen.design.designHints
+import com.seyedjafari.analogplus.phone.ui.design.BackgroundSection
+import com.seyedjafari.analogplus.phone.ui.design.ColoursSection
+import com.seyedjafari.analogplus.phone.ui.design.ComplicationsSection
+import com.seyedjafari.analogplus.phone.ui.design.DialSection
+import com.seyedjafari.analogplus.phone.ui.design.HandsSection
+import com.seyedjafari.analogplus.phone.ui.design.RingSection
 
 /** The tabs in order; the tab tag is `Tags.tab(name.lowercase())`. */
 private val TABS = listOf("Colours", "Dial", "Hands", "Background", "Complications", "Rings", "Templates", "Share")
@@ -82,12 +88,12 @@ fun EditorScreen(
             }
             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
                 when (TABS[selected]) {
-                    "Colours" -> ColoursTab(state)
-                    "Dial" -> DialTab(state)
-                    "Hands" -> HandsTab(state)
-                    "Background" -> BackgroundTab(state)
-                    "Complications" -> ComplicationsTab(state)
-                    "Rings" -> RingTab(state)
+                    "Colours" -> ColoursSection(state)
+                    "Dial" -> DialSection(state)
+                    "Hands" -> HandsSection(state)
+                    "Background" -> BackgroundSection(state)
+                    "Complications" -> ComplicationsSection(state)
+                    "Rings" -> RingSection(state)
                     "Templates" -> TemplatesTab(state, store)
                     else -> ShareTab(state)
                 }

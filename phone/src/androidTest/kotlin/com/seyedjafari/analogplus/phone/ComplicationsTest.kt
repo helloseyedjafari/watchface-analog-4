@@ -30,6 +30,8 @@ import com.seyedjafari.analogplus.facegen.design.RingDesign
 import com.seyedjafari.analogplus.facegen.design.RingLayout
 import com.seyedjafari.analogplus.facegen.design.SlotDesign
 import com.seyedjafari.analogplus.facegen.design.defaultSlots
+import com.seyedjafari.analogplus.phone.ui.design.ComplicationsSection
+import com.seyedjafari.analogplus.phone.ui.design.RingSection
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -45,7 +47,7 @@ class ComplicationsTest {
         SlotDesign(0, "a", 100, 100, 80, 60), SlotDesign(1, "b", 190, 100, 80, 60),
     ))
 
-    private fun show(state: EditorState, content: @Composable (EditorState) -> Unit = { ComplicationsTab(it) }) {
+    private fun show(state: EditorState, content: @Composable (EditorState) -> Unit = { ComplicationsSection(it) }) {
         rule.setContent {
             MaterialTheme {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { content(state) }
@@ -289,7 +291,7 @@ class ComplicationsTest {
 
     @Test fun choosingARingLayoutKeepsTheColourListAtTheSegmentCount() {
         val state = EditorState(DesignSettings(ring = RingDesign(colors = listOf("#FFAA0000", "#FF00AA00"))))
-        show(state) { RingTab(it) }
+        show(state) { RingSection(it) }
         click(Tags.field("ring_layout_QUARTERS"))
         assertEquals(RingLayout.QUARTERS, state.design.ring.layout)
         assertEquals(listOf("#FFAA0000", "#FF00AA00", "#FFAA0000", "#FF00AA00"), state.design.ring.colors) // repeated
@@ -308,7 +310,7 @@ class ComplicationsTest {
 
     @Test fun ringLayoutsOverTheCapAreDisabledAndExplained() {
         val state = EditorState(DesignSettings(slots = SlotGeometry.addUpTo(DesignSettings(), 5).design.slots))
-        show(state) { RingTab(it) }
+        show(state) { RingSection(it) }
         rule.onNodeWithTag(Tags.CAP_INDICATOR).assertTextEquals("5 of 8")
         rule.onNodeWithTag(Tags.field("ring_layout_QUARTERS")).performScrollTo().assertIsNotEnabled().performClick()
         assertEquals(RingLayout.NONE, state.design.ring.layout) // refused
@@ -328,7 +330,7 @@ class ComplicationsTest {
     @Test fun anImportedDesignOverTheCapStillShowsTheRedIndicatorAndTheError() {
         val six = SlotGeometry.addUpTo(DesignSettings(), 6).design
         val state = EditorState(six.copy(ring = RingDesign(layout = RingLayout.QUARTERS, colors = List(4) { "#FFFF0000" })))
-        show(state) { RingTab(it) }
+        show(state) { RingSection(it) }
         rule.onNodeWithTag(Tags.CAP_INDICATOR).assertTextEquals("10 of 8").assert(hasStateDescription("over limit"))
         rule.onNodeWithTag(Tags.field("ring_cap_error")).assertTextContains("at most 8", substring = true)
         // the chosen layout stays selectable, a smaller one that fits is open, "None" is the way out
@@ -343,7 +345,7 @@ class ComplicationsTest {
 
     @Test fun aRingErrorWithLayoutNoneStillShowsItsFieldAndAResetButton() {
         val state = EditorState(DesignSettings(ring = RingDesign(layout = RingLayout.NONE, trackColor = "nope")))
-        show(state) { RingTab(it) }
+        show(state) { RingSection(it) }
         rule.onNodeWithTag(Tags.field("ring_error")).assertTextContains("ring.trackColor", substring = true)
         rule.onNodeWithTag(Tags.field("ring_track")).performScrollTo().assertExists() // the hidden field is shown
         rule.onNodeWithTag(Tags.error(Tags.field("ring_track"))).assertExists()
@@ -358,7 +360,7 @@ class ComplicationsTest {
         val state = EditorState(DesignSettings(ring = RingDesign(
             layout = RingLayout.HALVES, colors = emptyList(), trackColor = "x", thicknessPx = 0, gapDegrees = 99, startAngle = 5000,
         )))
-        show(state) { RingTab(it) }
+        show(state) { RingSection(it) }
         val lines = rule.onAllNodesWithTag(Tags.field("ring_error")).fetchSemanticsNodes().size
         assertTrue("$lines ring error lines", lines >= 4)
         click(Tags.field("ring_reset"))
@@ -370,7 +372,7 @@ class ComplicationsTest {
 
     @Test fun ringColourCountErrorsAreShown() {
         val state = EditorState(DesignSettings(ring = RingDesign(layout = RingLayout.FULL, colors = emptyList())))
-        show(state) { RingTab(it) }
+        show(state) { RingSection(it) }
         rule.onNodeWithTag(Tags.field("ring_error")).assertTextContains("needs at least one colour", substring = true)
         click(Tags.field("ring_reset"))
         assertEquals(1, state.design.ring.colors.size)
@@ -380,7 +382,7 @@ class ComplicationsTest {
 
     @Test fun aRingWithTwentyThousandColoursShowsEightFieldsAndAResetButton() {
         val state = EditorState(DesignSettings(ring = RingDesign(layout = RingLayout.HALVES, colors = List(20_000) { "#FF%06X".format(it) })))
-        show(state) { RingTab(it) }
+        show(state) { RingSection(it) }
         rule.onNodeWithTag(Tags.field("ring_colour_7")).performScrollTo().assertExists()
         rule.onNodeWithTag(Tags.field("ring_colour_8")).assertDoesNotExist()
         rule.onNodeWithTag(Tags.field("ring_colours_more")).performScrollTo().assertTextContains("+19992 more", substring = true)
@@ -503,7 +505,7 @@ class ComplicationsTest {
 
     @Test fun ringNumbersAreWrittenAsTypedAndOutOfRangeShowsTheError() {
         val state = EditorState(DesignSettings(ring = RingDesign(layout = RingLayout.FULL)))
-        show(state) { RingTab(it) }
+        show(state) { RingSection(it) }
         type(Tags.field("ring_thickness"), "20")
         assertEquals(20, state.design.ring.thicknessPx)
         rule.onNodeWithTag(Tags.error(Tags.field("ring_thickness"))).assertDoesNotExist()
@@ -534,7 +536,7 @@ class ComplicationsTest {
 
     @Test fun capsAndDirectionControlsEditTheRing() {
         val state = EditorState(DesignSettings(ring = RingDesign(layout = RingLayout.HALVES, colors = listOf("#FFAA0000", "#FF00AA00"))))
-        show(state) { RingTab(it) }
+        show(state) { RingSection(it) }
         click(Tags.field("ring_caps_FLAT"))
         assertEquals(com.seyedjafari.analogplus.facegen.design.RingCaps.FLAT, state.design.ring.caps)
         click(Tags.field("ring_clockwise"))

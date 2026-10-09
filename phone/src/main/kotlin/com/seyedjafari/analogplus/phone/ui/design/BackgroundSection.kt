@@ -1,4 +1,4 @@
-package com.seyedjafari.analogplus.phone
+package com.seyedjafari.analogplus.phone.ui.design
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -26,6 +26,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.BackgroundKind
+import com.seyedjafari.analogplus.phone.ChoiceRow
+import com.seyedjafari.analogplus.phone.ColourField
+import com.seyedjafari.analogplus.phone.EditorState
+import com.seyedjafari.analogplus.phone.IntField
+import com.seyedjafari.analogplus.phone.MAX_PHOTO_BYTES
+import com.seyedjafari.analogplus.phone.PhotoRead
+import com.seyedjafari.analogplus.phone.TabColumn
+import com.seyedjafari.analogplus.phone.Tags
+import com.seyedjafari.analogplus.phone.decodeThumbnail
+import com.seyedjafari.analogplus.phone.firstError
+import com.seyedjafari.analogplus.phone.readLimited
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -39,7 +50,7 @@ private sealed interface Thumb {
 
 /** Solid colour, gradient or photo background. The photo bytes are stored as picked (the renderer shrinks them). */
 @Composable
-fun BackgroundTab(state: EditorState) {
+fun BackgroundSection(state: EditorState) {
     val bg = state.design.background
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
