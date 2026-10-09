@@ -20,7 +20,7 @@ import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 /** A horizontally scrolling single-choice chip row; each chip carries the tag [tagFor] gives it. The selected chip is scrolled into view. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun <T> SectionChips(items: List<T>, selected: T, onSelect: (T) -> Unit, label: (T) -> String, tagFor: (T) -> String, modifier: Modifier = Modifier) {
+fun <T> SectionChips(items: List<T>, selected: T, onSelect: (T) -> Unit, label: @Composable (T) -> String, tagFor: (T) -> String, modifier: Modifier = Modifier) {
     Row(
         modifier.horizontalScroll(rememberScrollState()).padding(horizontal = Spacing.lg),
         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),

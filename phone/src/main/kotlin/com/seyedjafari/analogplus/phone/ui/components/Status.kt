@@ -13,9 +13,14 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
+import androidx.annotation.StringRes
 
-enum class StatusKind(val prefix: String) {
-    OK("OK: "), WARNING("Check: "), ERROR("Problem: "), NEUTRAL(""), BUSY("Working: ")
+/** [formatRes] is the string that puts the kind's prefix ("OK: ", "Check: " ...) before the pill text (one `%1$s` argument). */
+enum class StatusKind(@StringRes val formatRes: Int) {
+    OK(R.string.status_format_ok), WARNING(R.string.status_format_warning), ERROR(R.string.status_format_error),
+    NEUTRAL(R.string.status_format_neutral), BUSY(R.string.status_format_busy),
 }
 
 /** A small label whose meaning is in its words as well as its colour. */
@@ -31,7 +36,7 @@ fun StatusPill(text: String, kind: StatusKind, modifier: Modifier = Modifier) {
     // the muted kinds share the card colour: an outline keeps the pill visible on a card as well as on the page
     val outline = if (bg == scheme.surfaceVariant) Modifier.border(Spacing.hairline, scheme.outline, MaterialTheme.shapes.large) else Modifier
     Text(
-        kind.prefix + text, color = fg, style = MaterialTheme.typography.labelMedium,
+        stringResource(kind.formatRes, text), color = fg, style = MaterialTheme.typography.labelMedium,
         modifier = modifier.clip(MaterialTheme.shapes.large).background(bg).then(outline)
             .padding(horizontal = Spacing.md, vertical = Spacing.xs),
     )

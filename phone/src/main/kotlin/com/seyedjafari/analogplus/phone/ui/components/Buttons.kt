@@ -17,15 +17,18 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
 
 /** Test tag on the progress indicator shown while a [PrimaryButton] is loading. */
 internal const val LOADING_INDICATOR_TAG = "primary_button_loading"
 
 @Composable
 fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, loading: Boolean = false) {
+    val working = stringResource(R.string.common_working)
     Button(
         onClick = onClick, enabled = enabled && !loading,
-        modifier = modifier.heightIn(min = Spacing.minTouch).then(if (loading) Modifier.semantics { stateDescription = "Working" } else Modifier),
+        modifier = modifier.heightIn(min = Spacing.minTouch).then(if (loading) Modifier.semantics { stateDescription = working } else Modifier),
         shape = MaterialTheme.shapes.large,
     ) {
         if (loading) {

@@ -24,6 +24,7 @@ import androidx.compose.ui.semantics.contentDescription
 import com.seyedjafari.analogplus.phone.ui.components.keyboardIsOpen
 import com.seyedjafari.analogplus.phone.ui.theme.rememberSharedAxis
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.res.stringResource
 
 private const val NAV_MAX_FONT_SCALE = 1.3f
 
@@ -49,12 +50,13 @@ fun AppNav(
                 CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = minOf(density.fontScale, NAV_MAX_FONT_SCALE))) {
                     NavigationBar {
                         Destination.entries.forEach { d ->
+                            val labelText = stringResource(d.labelRes)
                             NavigationBarItem(
                                 selected = d == selected, onClick = { selected = d },
                                 icon = { Icon(painterResource(d.iconRes), contentDescription = null) },
-                                label = { Text(d.label, maxLines = 1) },
+                                label = { Text(labelText, maxLines = 1) },
                                 alwaysShowLabel = true,
-                                modifier = Modifier.testTag(d.tag).semantics { contentDescription = d.label },
+                                modifier = Modifier.testTag(d.tag).semantics { contentDescription = labelText },
                             )
                         }
                     }

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Naming: <screen>_<purpose>. Product text only; test tags, intent actions and URL schemes stay in code. -->
+
+    <!-- Navigation: Destination.labelRes (the English default is also kept in Destination.label for tags and tests) -->
+    <string name="nav_design">Design</string>
+    <string name="nav_library">Library</string>
+    <string name="nav_send">Send</string>
+    <string name="nav_account">Account</string>
+
+    <!-- Components -->
+    <string name="common_working">Working</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="status_format_ok">OK: %1$s</string>
+    <string name="status_format_warning">Check: %1$s</string>
+    <string name="status_format_error">Problem: %1$s</string>
+    <string name="status_format_neutral">%1$s</string>
+    <string name="status_format_busy">Working: %1$s</string>
+    <string name="load_shared_title">Load shared design?</string>
+    <string name="load_shared_message">\"%1$s\" will replace the design you are editing.</string>
+    <string name="load_shared_button_load">Load</string>
+    <string name="load_shared_button_keep">Keep mine</string>
+</resources>

@@ -8,6 +8,8 @@ import androidx.compose.ui.platform.testTag
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.dialogName
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
 
 /**
  * "Load shared design?": the one dialog for a design that arrives from outside, whether it came in as a tapped link or
@@ -18,10 +20,10 @@ import com.seyedjafari.analogplus.phone.dialogName
 fun LoadSharedDesignDialog(design: DesignSettings, onLoad: () -> Unit, onKeep: () -> Unit) {
     AlertDialog(
         onDismissRequest = onKeep,
-        title = { Text("Load shared design?") },
-        text = { Text("\"${dialogName(design.name)}\" will replace the design you are editing.") },
-        confirmButton = { PrimaryButton("Load", onLoad, Modifier.testTag(Tags.field("qr_load"))) },
-        dismissButton = { SecondaryButton("Keep mine", onKeep, Modifier.testTag(Tags.field("qr_keep"))) },
+        title = { Text(stringResource(R.string.load_shared_title)) },
+        text = { Text(stringResource(R.string.load_shared_message, dialogName(design.name))) },
+        confirmButton = { PrimaryButton(stringResource(R.string.load_shared_button_load), onLoad, Modifier.testTag(Tags.field("qr_load"))) },
+        dismissButton = { SecondaryButton(stringResource(R.string.load_shared_button_keep), onKeep, Modifier.testTag(Tags.field("qr_keep"))) },
         modifier = Modifier.testTag(Tags.field("link_dialog")),
     )
 }
