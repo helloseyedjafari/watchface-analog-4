@@ -15,9 +15,15 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.seyedjafari.analogplus.phone.ui.send.CheckStatus
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatus
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
+import com.seyedjafari.analogplus.protocol.ApplyMessage
+import com.seyedjafari.analogplus.protocol.Protocol
+import com.seyedjafari.analogplus.protocol.ResultMessage
 import java.io.File
+import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.emptyFlow
 
 /** In-memory preferences for instrumented tests. */
@@ -75,5 +81,71 @@ internal fun PinnedWindow(window: WindowDp = PHONE_PORTRAIT, onDensity: (Density
         CompositionLocalProvider(LocalDensity provides scaled, LocalConfiguration provides configuration) {
             Box(Modifier.size(window.width.dp, window.height.dp)) { content() }
         }
+    }
+}
+
+/** A pause point inside [FakeWatchTransport]: while it is closed, a step that reaches it waits until the test opens it. */
+internal class Gate {
+    @Volatile private var door = CompletableDeferred<Unit>().apply { complete(Unit) }
+    fun close() { if (door.isCompleted) door = CompletableDeferred() }
+    fun open() { door.complete(Unit) }
+    suspend fun pass() = door.await()
+}
+
+/**
+ * The Wear Data Layer as far as these tests can reach it (the emulators cannot be paired: no Google sign-in). The project's
+ * convention for that boundary: the real [DataLayerSender] and [com.seyedjafari.analogplus.phone.ui.send.TransportWatchStatusChecker]
+ * run on top of this fake [WatchTransport], so their ordering, timeouts and messages are the real ones. By default one nearby watch
+ * with the app is there and answers every APPLY with success; each field changes one thing, and the gates stop a step so a test can
+ * look at the screen in between.
+ */
+internal class FakeWatchTransport : WatchTransport {
+    @Volatile var withApp: List<WatchNode> = listOf(WatchNode("watch-1", true))
+    /** Ids of all connected nodes; null means "the ones with the app". */
+    @Volatile var connected: List<String>? = null
+    /** Thrown by both node lookups (the Data Layer is not available, Bluetooth is off ...). */
+    @Volatile var lookupFailure: Exception? = null
+    @Volatile var fileFailure: Exception? = null
+    /** The file never finishes arriving. */
+    @Volatile var fileHangs = false
+    /** The watch's answer to an APPLY; null means it never answers. */
+    @Volatile var answer: ((ApplyMessage) -> ResultMessage)? = { ResultMessage(true, it.versionCode, null) }
+    val lookupGate = Gate()
+    val fileGate = Gate()
+    val answerGate = Gate()
+    val appliedVersions = CopyOnWriteArrayList<Int>()
+    @Volatile private var listener: ((String, String, ByteArray) -> Unit)? = null
+
+    fun openAllGates() { lookupGate.open(); fileGate.open(); answerGate.open() }
+
+    override suspend fun nodesWithApp(): List<WatchNode> {
+        lookupGate.pass()
+        lookupFailure?.let { throw it }
+        return withApp
+    }
+
+    override suspend fun connectedNodeIds(): List<String> {
+        lookupGate.pass()
+        lookupFailure?.let { throw it }
+        return connected ?: withApp.map { it.id }
+    }
+
+    override suspend fun sendFile(nodeId: String, path: String, file: File) {
+        fileGate.pass()
+        fileFailure?.let { throw it }
+        if (fileHangs) awaitCancellation()
+    }
+
+    override suspend fun sendMessage(nodeId: String, path: String, data: ByteArray) {
+        if (path != Protocol.APPLY) return
+        val apply = ApplyMessage.fromJson(String(data, Charsets.UTF_8))
+        appliedVersions += apply.versionCode
+        answerGate.pass()
+        answer?.invoke(apply)?.let { listener?.invoke(nodeId, Protocol.RESULT, it.toJson().toByteArray(Charsets.UTF_8)) }
+    }
+
+    override suspend fun addMessageListener(onMessage: (nodeId: String, path: String, data: ByteArray) -> Unit): WatchTransport.Subscription {
+        listener = onMessage
+        return object : WatchTransport.Subscription { override suspend fun remove() { listener = null } }
     }
 }

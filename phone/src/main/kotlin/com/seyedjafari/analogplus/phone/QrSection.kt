@@ -39,9 +39,20 @@ import com.seyedjafari.analogplus.phone.ui.components.SectionCard
 import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import kotlinx.coroutines.delay
 
+/**
+ * Runs one QR scan and calls exactly one of the callbacks; nothing here throws. The real one is Google's code scanner, which
+ * needs a camera and Play services; a test hands in its own to drive what happens after a scan.
+ */
+internal fun interface QrScanner {
+    fun scan(context: android.content.Context, onText: (String?) -> Unit, onCancelled: () -> Unit, onError: (ShareProblem) -> Unit)
+}
+
+/** Google's code scanner. */
+internal val GoogleQrScanner = QrScanner { context, onText, onCancelled, onError -> startScan(context, onText, onCancelled, onError) }
+
 /** Shows the design as a QR code and scans another one, in a card of its own. Call it from the Share section; it owns its dialog. */
 @Composable
-fun QrSection(state: EditorState, modifier: Modifier = Modifier) {
+internal fun QrSection(state: EditorState, modifier: Modifier = Modifier, scanner: QrScanner = GoogleQrScanner) {
     val context = LocalContext.current
     val link = remember(state.design) { DesignJson.shareLink(state.design) }
     val encoded = remember(link) { QrCode.encode(link) }
@@ -97,7 +108,7 @@ fun QrSection(state: EditorState, modifier: Modifier = Modifier) {
             {
                 scanMessage = null
                 scanning = true
-                startScan(
+                scanner.scan(
                     context,
                     onText = { raw ->
                         scanning = false
