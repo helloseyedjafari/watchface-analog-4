@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.semantics.contentDescription
 import com.seyedjafari.analogplus.phone.ui.components.keyboardIsOpen
@@ -50,7 +51,7 @@ fun AppNav(
                         Destination.entries.forEach { d ->
                             NavigationBarItem(
                                 selected = d == selected, onClick = { selected = d },
-                                icon = { Icon(d.icon(), contentDescription = null) },
+                                icon = { Icon(painterResource(d.iconRes), contentDescription = null) },
                                 label = { Text(d.label, maxLines = 1) },
                                 alwaysShowLabel = true,
                                 modifier = Modifier.testTag(d.tag).semantics { contentDescription = d.label },
