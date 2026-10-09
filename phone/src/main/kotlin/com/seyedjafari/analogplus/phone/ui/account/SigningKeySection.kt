@@ -5,9 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +15,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
+import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import com.seyedjafari.analogplus.facegen.KeyStore
 import com.seyedjafari.analogplus.phone.Tags
@@ -43,7 +43,7 @@ internal fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier:
                 "rejects updates after a reinstall, you can make a new key here.",
             style = MaterialTheme.typography.bodySmall,
         )
-        OutlinedButton(onClick = { confirming = true }, enabled = !busy, modifier = Modifier.testTag(Tags.RESET_KEY_BUTTON)) { Text("Reset signing key") }
+        SecondaryButton("Reset signing key", { confirming = true }, Modifier.testTag(Tags.RESET_KEY_BUTTON), enabled = !busy)
         done?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag(Tags.RESET_KEY_NOTICE)) }
     }
     if (confirming) {
@@ -58,8 +58,9 @@ internal fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier:
                 )
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
+                PrimaryButton(
+                    "Reset",
+                    {
                         confirming = false
                         busy = true
                         done = null
@@ -72,10 +73,10 @@ internal fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier:
                             done = problem ?: "Signing key reset. A new key is made on the next send."
                         }
                     },
-                    modifier = Modifier.testTag(Tags.RESET_KEY_CONFIRM),
-                ) { Text("Reset") }
+                    Modifier.testTag(Tags.RESET_KEY_CONFIRM),
+                )
             },
-            dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } },
+            dismissButton = { SecondaryButton("Cancel", { confirming = false }) },
         )
     }
 }
