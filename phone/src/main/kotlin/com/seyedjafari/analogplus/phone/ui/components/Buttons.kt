@@ -12,6 +12,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
@@ -35,10 +37,20 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
 }
 
 @Composable
-fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+fun SecondaryButton(
+    text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
+    /** For a button whose [text] is only a symbol (an arrow): what a screen reader says instead of the symbol. */
+    contentDescription: String? = null,
+) {
     OutlinedButton(
         onClick = onClick, enabled = enabled,
-        modifier = modifier.heightIn(min = Spacing.minTouch),
+        modifier = modifier.heightIn(min = Spacing.minTouch)
+            .then(if (contentDescription != null) Modifier.semantics { this.contentDescription = contentDescription } else Modifier),
         shape = MaterialTheme.shapes.large,
-    ) { Text(text, style = MaterialTheme.typography.labelLarge) }
+    ) {
+        Text(
+            text, style = MaterialTheme.typography.labelLarge,
+            modifier = if (contentDescription != null) Modifier.clearAndSetSemantics {} else Modifier,
+        )
+    }
 }

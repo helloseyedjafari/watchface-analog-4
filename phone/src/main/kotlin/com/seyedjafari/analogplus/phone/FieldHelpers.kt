@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
@@ -35,6 +36,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import com.seyedjafari.analogplus.facegen.design.DesignError
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.ui.components.ErrorBanner
+import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import com.seyedjafari.analogplus.phone.ui.theme.TabularNumbers
 import kotlin.math.roundToInt
@@ -168,6 +170,8 @@ fun IntField(
     modifier: Modifier = Modifier,
 ) {
     var text by remember { mutableStateOf(value.toString()) }
+    // four digits must fit at any font scale: the field grows with the text
+    val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
     // follow changes that did not come from typing (slider, template, share link); an empty or half typed text stays
     LaunchedEffect(value) { if (text.toIntOrNull() != value) text = value.toString() }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.xs / 2)) {
@@ -184,7 +188,7 @@ fun IntField(
                 isError = errorText != null,
                 textStyle = TabularNumbers.merge(MaterialTheme.typography.bodyLarge),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.width(Spacing.xxl * 3).testTag(fieldTag),
+                modifier = Modifier.width(Dimens.IntFieldWidth * fontScale).testTag(fieldTag),
             )
             Slider(
                 value = value.coerceIn(range).toFloat(),

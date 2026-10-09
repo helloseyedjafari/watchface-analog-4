@@ -44,6 +44,7 @@ import com.seyedjafari.analogplus.phone.describe
 import com.seyedjafari.analogplus.phone.describeField
 import com.seyedjafari.analogplus.phone.firstError
 import com.seyedjafari.analogplus.phone.shortForDisplay
+import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 
 private const val NEW_SLOT_BACKGROUND = "#FF1E1E1E"
@@ -202,12 +203,12 @@ private fun SelectedSlotControls(state: EditorState, s: SlotDesign, onResult: (S
             isError = s.name.isBlank(),
             modifier = Modifier.fillMaxWidth().testTag(Tags.field("slot_name")),
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             SlotShape.entries.forEach { shape ->
                 FilterChip(
                     selected = s.shape == shape,
                     onClick = { edit { it.copy(shape = shape) } },
-                    label = { Text(shape.name) },
+                    label = { Text(shapeLabel(shape)) },
                     modifier = Modifier.testTag(Tags.field("slot_shape_${shape.name}")),
                 )
             }
@@ -222,14 +223,16 @@ private fun SelectedSlotControls(state: EditorState, s: SlotDesign, onResult: (S
                     modifier = Modifier.testTag(Tags.field("nudge_step_$it")))
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             listOf("left" to ("←" to (-1 to 0)), "up" to ("↑" to (0 to -1)), "down" to ("↓" to (0 to 1)), "right" to ("→" to (1 to 0)))
                 .forEach { (name, arrow) ->
                     val (label, dir) = arrow
-                    OutlinedButton(
-                        onClick = { onResult(SlotGeometry.move(state.design, s.id, s.x + dir.first * step, s.y + dir.second * step)) },
-                        modifier = Modifier.testTag(Tags.field("nudge_$name")),
-                    ) { Text(label) }
+                    SecondaryButton(
+                        label,
+                        { onResult(SlotGeometry.move(state.design, s.id, s.x + dir.first * step, s.y + dir.second * step)) },
+                        Modifier.testTag(Tags.field("nudge_$name")),
+                        contentDescription = "Move $name",
+                    )
                 }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -264,6 +267,13 @@ private fun SelectedSlotControls(state: EditorState, s: SlotDesign, onResult: (S
                 Tags.field("slot_icon"), Modifier.fillMaxWidth())
         }
     }
+}
+
+/** What the shape chip says; the stored value is the enum name. */
+private fun shapeLabel(shape: SlotShape) = when (shape) {
+    SlotShape.BOX -> "Box"
+    SlotShape.OVAL -> "Oval"
+    SlotShape.ROUND_BOX -> "Rounded box"
 }
 
 /**
