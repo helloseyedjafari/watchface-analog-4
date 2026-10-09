@@ -10,6 +10,11 @@ class PaletteContrastTest {
         assertTrue("$name contrast $r < 4.5", r >= 4.5)
     }
 
+    private fun assertNonText(name: String, fg: Int, bg: Int) {
+        val r = contrastRatio(fg, bg)
+        assertTrue("$name contrast $r < 3.0", r >= 3.0)
+    }
+
     @Test fun contrastOfBlackOnWhiteIs21() {
         assertEquals(21.0, contrastRatio(0xFF000000.toInt(), 0xFFFFFFFF.toInt()), 0.01)
     }
@@ -21,6 +26,16 @@ class PaletteContrastTest {
         assertAa("primary/surface", Palette.lightPrimary, Palette.lightSurface)
         assertAa("error/surface", Palette.lightError, Palette.lightSurface)
         assertAa("onSurface/background", Palette.lightOnSurface, Palette.lightBackground)
+        assertAa("onPrimaryContainer/primaryContainer", Palette.lightOnPrimaryContainer, Palette.lightPrimaryContainer)
+        assertAa("onSurfaceVariant/surfaceVariant", Palette.lightOnSurfaceVariant, Palette.lightSurfaceVariant)
+        assertAa("onSecondaryContainer/secondaryContainer", Palette.lightOnSecondaryContainer, Palette.lightSecondaryContainer)
+        assertAa("onSecondary/secondary", Palette.lightOnSecondary, Palette.lightSecondary)
+        assertAa("onTertiaryContainer/tertiaryContainer", Palette.lightOnTertiaryContainer, Palette.lightTertiaryContainer)
+        assertAa("onTertiary/tertiary", Palette.lightOnTertiary, Palette.lightTertiary)
+        assertAa("onError/error", Palette.lightOnError, Palette.lightError)
+        assertAa("onErrorContainer/errorContainer", Palette.lightOnErrorContainer, Palette.lightErrorContainer)
+        assertAa("inverseOnSurface/inverseSurface", Palette.lightInverseOnSurface, Palette.lightInverseSurface)
+        assertAa("inversePrimary/inverseSurface", Palette.lightInversePrimary, Palette.lightInverseSurface)
     }
 
     @Test fun darkPairsMeetAa() {
@@ -30,5 +45,20 @@ class PaletteContrastTest {
         assertAa("primary/surface", Palette.darkPrimary, Palette.darkSurface)
         assertAa("error/surface", Palette.darkError, Palette.darkSurface)
         assertAa("onSurface/background", Palette.darkOnSurface, Palette.darkBackground)
+        assertAa("onPrimaryContainer/primaryContainer", Palette.darkOnPrimaryContainer, Palette.darkPrimaryContainer)
+        assertAa("onSurfaceVariant/surfaceVariant", Palette.darkOnSurfaceVariant, Palette.darkSurfaceVariant)
+        assertAa("onSecondaryContainer/secondaryContainer", Palette.darkOnSecondaryContainer, Palette.darkSecondaryContainer)
+        assertAa("onSecondary/secondary", Palette.darkOnSecondary, Palette.darkSecondary)
+        assertAa("onTertiaryContainer/tertiaryContainer", Palette.darkOnTertiaryContainer, Palette.darkTertiaryContainer)
+        assertAa("onTertiary/tertiary", Palette.darkOnTertiary, Palette.darkTertiary)
+        assertAa("onError/error", Palette.darkOnError, Palette.darkError)
+        assertAa("onErrorContainer/errorContainer", Palette.darkOnErrorContainer, Palette.darkErrorContainer)
+        assertAa("inverseOnSurface/inverseSurface", Palette.darkInverseOnSurface, Palette.darkInverseSurface)
+        assertAa("inversePrimary/inverseSurface", Palette.darkInversePrimary, Palette.darkInverseSurface)
+    }
+
+    @Test fun outlineMeetsNonTextContrastAgainstSurface() {
+        assertNonText("light outline/surface", Palette.lightOutline, Palette.lightSurface)
+        assertNonText("dark outline/surface", Palette.darkOutline, Palette.darkSurface)
     }
 }

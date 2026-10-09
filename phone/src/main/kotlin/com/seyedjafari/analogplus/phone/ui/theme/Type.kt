@@ -21,13 +21,21 @@ val InterFamily = FontFamily(inter(FontWeight.Normal), inter(FontWeight.Medium),
 private fun s(size: Int, line: Int, weight: FontWeight, spacing: Double = 0.0) =
     TextStyle(fontFamily = InterFamily, fontSize = size.sp, lineHeight = line.sp, fontWeight = weight, letterSpacing = spacing.sp)
 
-val AnalogTypography = Typography(
+private val BaseTypography = Typography()
+private fun TextStyle.inter() = copy(fontFamily = InterFamily)
+
+/** Every role uses Inter; the roles below the base block carry the app's own sizes. */
+val AnalogTypography = BaseTypography.copy(
+    displayLarge = BaseTypography.displayLarge.inter(),
+    displayMedium = BaseTypography.displayMedium.inter(),
+    headlineLarge = BaseTypography.headlineLarge.inter(),
+    headlineMedium = BaseTypography.headlineMedium.inter(),
+    titleLarge = s(20, 28, FontWeight.SemiBold),
+    bodyLarge = s(16, 24, FontWeight.Normal),
     displaySmall = s(32, 40, FontWeight.SemiBold, -0.5),
     headlineSmall = s(24, 32, FontWeight.SemiBold),
-    titleLarge = s(20, 28, FontWeight.SemiBold),
     titleMedium = s(16, 24, FontWeight.SemiBold, 0.1),
     titleSmall = s(14, 20, FontWeight.Medium, 0.1),
-    bodyLarge = s(16, 24, FontWeight.Normal),
     bodyMedium = s(14, 20, FontWeight.Normal),
     bodySmall = s(12, 16, FontWeight.Normal, 0.1),
     labelLarge = s(14, 20, FontWeight.Medium, 0.1),
