@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
 import com.seyedjafari.analogplus.phone.Tags
@@ -75,9 +76,10 @@ fun AppNav(
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = minOf(density.fontScale, NAV_MAX_FONT_SCALE))) {
                 if (rail) {
                     NavigationRail(Modifier.testTag(Tags.NAV_RAIL)) {
-                        // with the keyboard open the window is short (adjustResize), and the rail stays: its items keep their size and scroll
+                        // with the keyboard open the window is short (adjustResize), and the rail stays: its items keep their size and scroll.
+                        // This Column sits between M3's own selectableGroup() and the items, so it is the group too: TalkBack reads "1 of 4" from the node directly above the items
                         Column(
-                            Modifier.verticalScroll(rememberScrollState()),
+                            Modifier.verticalScroll(rememberScrollState()).selectableGroup(),
                             verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {

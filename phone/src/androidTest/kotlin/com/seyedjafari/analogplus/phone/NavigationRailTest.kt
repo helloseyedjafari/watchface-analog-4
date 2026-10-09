@@ -5,8 +5,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
@@ -19,6 +22,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onParent
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.Modifier
@@ -70,6 +74,17 @@ class NavigationRailTest {
                 val item = rule.onNodeWithTag(other.tag)
                 if (other == d) item.assertIsSelected() else item.assertIsNotSelected()
             }
+        }
+    }
+
+    /**
+     * TalkBack reads "1 of 4" from the selectable group the items sit directly under. The rail scrolls its items in a Column of
+     * its own, so that Column (the parent of every item) has to be the group.
+     */
+    @Test fun theRailItemsSitDirectlyUnderASelectableGroupSoTalkBackReadsTheirPosition() {
+        show()
+        Destination.entries.forEach { d ->
+            rule.onNodeWithTag(d.tag).onParent().assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup))
         }
     }
 
