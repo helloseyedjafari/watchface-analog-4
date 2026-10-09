@@ -29,7 +29,6 @@ import com.seyedjafari.analogplus.phone.EditorState
 import com.seyedjafari.analogplus.phone.PreviewPane
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.fixFirstText
-import com.seyedjafari.analogplus.phone.ui.components.ErrorBanner
 import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SectionChips
 import com.seyedjafari.analogplus.phone.ui.components.keyboardIsOpen
@@ -86,10 +85,12 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
         }
         val shownErrors = state.shownErrors
         if (shownErrors.isNotEmpty()) {
-            ErrorBanner(
+            // not an ErrorBanner: the field's own error is the live region, a second one would be announced twice per keystroke
+            Text(
                 state.design.fixFirstText(shownErrors, rememberFieldTexts()),
-                Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.xs).testTag(Tags.field("design_validation")),
-                maxLines = 2,
+                color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.xs).testTag(Tags.field("design_validation")),
             )
         }
         // with the keyboard open the send row would eat the little space left for the field being edited

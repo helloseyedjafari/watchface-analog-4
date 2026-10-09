@@ -6,6 +6,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertTextContains
@@ -105,6 +106,8 @@ class DesignScreenTest {
         rule.onNodeWithTag(Tags.field("design_send")).assertIsNotEnabled()
         rule.onNodeWithTag(Tags.field("design_validation")).assertIsDisplayed().assertTextContains("Fix first", substring = true)
         rule.onNodeWithTag(Tags.field("design_validation")).assertTextContains("accent", substring = true)
+        // the field's own error is the live region; a second one here would make TalkBack announce every keystroke twice
+        rule.onNodeWithTag(Tags.field("design_validation")).assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.LiveRegion))
         state.update { DesignSettings() }
         rule.onNodeWithTag(Tags.field("design_validation")).assertDoesNotExist()
         rule.onNodeWithTag(Tags.field("design_send")).assertIsEnabled()
