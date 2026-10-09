@@ -15,6 +15,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
@@ -30,13 +31,21 @@ object Motion {
 fun motionDuration(baseMs: Int, animatorScale: Float): Int =
     if (animatorScale.isNaN() || animatorScale <= 0f) 0 else baseMs
 
-/** The system "animator duration scale" (Developer options / Remove animations). 1f when it cannot be read. */
+/**
+ * Overrides the animator duration scale that [rememberAnimationScale] reads from the system; null (the default) means "read
+ * the system setting". Tests provide 0f to check that everything snaps, since an instrumented test cannot change the setting.
+ */
+val LocalAnimationScale = compositionLocalOf<Float?> { null }
+
+/** The system "animator duration scale" (Developer options / Remove animations), or [LocalAnimationScale] when provided. 1f when it cannot be read. */
 @Composable
 fun rememberAnimationScale(): Float {
+    val override = LocalAnimationScale.current
     val resolver = LocalContext.current.contentResolver
-    return remember {
+    val system = remember {
         try { Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) } catch (e: Exception) { 1f }
     }
+    return override ?: system
 }
 
 /** A tween with the shared easing, or a snap when animations are off. */
