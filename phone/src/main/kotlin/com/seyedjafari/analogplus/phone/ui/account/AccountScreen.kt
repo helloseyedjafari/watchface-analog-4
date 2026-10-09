@@ -47,6 +47,6 @@ fun AccountScreen(modifier: Modifier = Modifier, keyStoreFactory: (Context) -> K
             StatusPill("Sign-in is coming", StatusKind.NEUTRAL)
             Text("Your designs are saved on this phone.", style = MaterialTheme.typography.bodyMedium)
         }
-        SectionCard(null) { SigningKeySection(keyStoreFactory) }
+        SectionCard("Signing key") { SigningKeySection(keyStoreFactory) }
     }
 }

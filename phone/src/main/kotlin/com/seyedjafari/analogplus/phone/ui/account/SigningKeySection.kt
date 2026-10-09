@@ -38,7 +38,6 @@ internal fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier:
     var busy by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf<String?>(null) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        Text("Signing key", style = MaterialTheme.typography.titleMedium)
         Text(
             "Every face is signed with a key stored in this app. If the app complains that the key is damaged, or the watch " +
                 "rejects updates after a reinstall, you can make a new key here.",

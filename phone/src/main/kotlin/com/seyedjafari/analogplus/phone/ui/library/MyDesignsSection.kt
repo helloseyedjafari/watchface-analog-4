@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -67,7 +69,11 @@ internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (S
     saved.forEach { s ->
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             DesignThumbnail(s.design, 48)
-            Text(s.name.shortForDisplay(32), Modifier.weight(1f).clickable { askToReplace(s.name, s.design) }.testTag(Tags.saved(s.name)))
+            Text(
+                s.name.shortForDisplay(32),
+                Modifier.weight(1f).clickable { askToReplace(s.name, s.design) }.heightIn(min = Spacing.minTouch)
+                    .wrapContentHeight(Alignment.CenterVertically).testTag(Tags.saved(s.name)),
+            )
             SecondaryButton("Load", { askToReplace(s.name, s.design) }, Modifier.testTag(Tags.field("saved_load_${s.name}")))
             SecondaryButton("Delete", { store.deleteNamed(s.name); refresh() }, Modifier.testTag(Tags.savedDelete(s.name)))
         }
