@@ -157,4 +157,48 @@
     <string name="send_state_applying">The watch is installing the face...</string>
     <string name="send_state_done">The watch answered.</string>
     <string name="send_state_success">Sent. The watch now has version %1$d.</string>
+
+    <!-- Library -->
+    <string name="library_section_templates">Templates</string>
+    <string name="library_section_my_designs">My designs</string>
+    <string name="library_section_share">Share</string>
+    <string name="library_replace_title">Replace your current design?</string>
+    <string name="library_replace_message">\"%1$s\" will replace what you are editing.</string>
+    <string name="library_replace_button_confirm">Replace</string>
+    <string name="mydesigns_save_title">Save this design</string>
+    <string name="mydesigns_name_label">Name for the current design</string>
+    <string name="mydesigns_button_save">Save current design</string>
+    <string name="mydesigns_photos_note">Photos are not saved with a design.</string>
+    <string name="mydesigns_empty_title">Nothing saved yet</string>
+    <string name="mydesigns_empty_body">Name your current design and save it to find it here.</string>
+    <string name="mydesigns_button_load">Load</string>
+    <string name="mydesigns_button_delete">Delete</string>
+    <string name="share_title">Share this design</string>
+    <string name="share_link_label">Link</string>
+    <string name="share_photo_note">Links do not carry the photo; the other person gets a plain background.</string>
+    <string name="share_button_copy">Copy</string>
+    <string name="share_button_share">Share</string>
+    <string name="share_link_copied">Link copied.</string>
+    <string name="share_subject">Analog Plus design: %1$s</string>
+    <string name="share_chooser_title">Share design</string>
+    <string name="share_load_title">Load a design from a link</string>
+    <string name="share_paste_label">Paste analogplus://design?d=... here</string>
+    <string name="share_button_load">Load design</string>
+    <string name="share_design_loaded">Design loaded.</string>
+
+    <!-- Account -->
+    <string name="account_app_title">Analog Plus</string>
+    <string name="account_version">Version %1$s</string>
+    <string name="account_version_unknown">unknown</string>
+    <string name="account_backup_title">Backup and sync</string>
+    <string name="account_signin_coming">Sign-in is coming</string>
+    <string name="account_saved_on_phone">Your designs are saved on this phone.</string>
+    <string name="account_signing_key_title">Signing key</string>
+    <string name="signing_key_explanation">Every face is signed with a key stored in this app. If the app complains that the key is damaged, or the watch rejects updates after a reinstall, you can make a new key here.</string>
+    <string name="signing_key_button_reset">Reset signing key</string>
+    <string name="signing_key_dialog_title">Reset the signing key?</string>
+    <string name="signing_key_dialog_message">The watch only accepts updates signed with the key it first saw. After a reset the watch will refuse new faces until the old Analog Plus face is removed from the watch (uninstalling the watch app does not remove it; with adb: pm uninstall com.seyedjafari.analogplus.watchfacepush.analog).</string>
+    <string name="signing_key_button_confirm">Reset</string>
+    <string name="signing_key_reset_failed">The key could not be reset.</string>
+    <string name="signing_key_reset_done">Signing key reset. A new key is made on the next send.</string>
 </resources>

@@ -28,6 +28,8 @@ import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SectionCard
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
 
 /** Share the design being edited as a link or QR code, and load a design from a pasted link. */
 @Composable
@@ -38,31 +40,35 @@ internal fun ShareSection(state: EditorState) {
     var pasted by rememberSaveable { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
+    val linkCopied = stringResource(R.string.share_link_copied)
+    val designLoaded = stringResource(R.string.share_design_loaded)
+    val subject = stringResource(R.string.share_subject, state.design.name)
+    val chooserTitle = stringResource(R.string.share_chooser_title)
 
-    SectionCard("Share this design") {
+    SectionCard(stringResource(R.string.share_title)) {
         OutlinedTextField(
             value = ownLink, onValueChange = {}, readOnly = true, maxLines = 3,
-            label = { Text("Link") },
+            label = { Text(stringResource(R.string.share_link_label)) },
             modifier = Modifier.fillMaxWidth().testTag(Tags.SHARE_OWN_LINK),
         )
         if (state.design.background.kind == BackgroundKind.PHOTO) {
-            Text("Links do not carry the photo; the other person gets a plain background.", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.share_photo_note), style = MaterialTheme.typography.bodySmall)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             SecondaryButton(
-                "Copy",
-                { clipboard.setText(AnnotatedString(ownLink)); notice = "Link copied." },
+                stringResource(R.string.share_button_copy),
+                { clipboard.setText(AnnotatedString(ownLink)); notice = linkCopied },
                 Modifier.testTag(Tags.SHARE_COPY_BUTTON),
             )
             SecondaryButton(
-                "Share",
+                stringResource(R.string.share_button_share),
                 {
                     val send = Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"
                         putExtra(Intent.EXTRA_TEXT, ownLink)
-                        putExtra(Intent.EXTRA_SUBJECT, "Analog Plus design: ${state.design.name}")
+                        putExtra(Intent.EXTRA_SUBJECT, subject)
                     }
-                    context.startActivity(Intent.createChooser(send, "Share design").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    context.startActivity(Intent.createChooser(send, chooserTitle).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 },
                 Modifier.testTag(Tags.SHARE_SHARE_BUTTON),
             )
@@ -70,10 +76,10 @@ internal fun ShareSection(state: EditorState) {
         notice?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     }
 
-    SectionCard("Load a design from a link") {
+    SectionCard(stringResource(R.string.share_load_title)) {
         OutlinedTextField(
             value = pasted, onValueChange = { pasted = it; error = null }, maxLines = 3,
-            label = { Text("Paste analogplus://design?d=... here") },
+            label = { Text(stringResource(R.string.share_paste_label)) },
             isError = error != null,
             modifier = Modifier.fillMaxWidth().testTag(Tags.SHARE_LINK_FIELD),
         )
@@ -81,11 +87,11 @@ internal fun ShareSection(state: EditorState) {
             Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(Tags.SHARE_ERROR))
         }
         PrimaryButton(
-            "Load design",
+            stringResource(R.string.share_button_load),
             {
                 val problem = loadShareLink(state, pasted)
                 error = problem
-                notice = if (problem == null) "Design loaded." else null
+                notice = if (problem == null) designLoaded else null
             },
             Modifier.testTag(Tags.SHARE_LOAD_BUTTON),
         )

@@ -19,6 +19,8 @@ import com.seyedjafari.analogplus.phone.ui.components.SectionCard
 import com.seyedjafari.analogplus.phone.ui.components.StatusKind
 import com.seyedjafari.analogplus.phone.ui.components.StatusPill
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
 
 /** The installed version name, or null when the package manager cannot say. */
 private fun versionName(context: Context): String? =
@@ -40,13 +42,13 @@ fun AccountScreen(modifier: Modifier = Modifier, keyStoreFactory: (Context) -> K
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.lg),
         verticalArrangement = Arrangement.spacedBy(Spacing.md),
     ) {
-        SectionCard("Analog Plus") {
-            Text("Version ${version ?: "unknown"}", style = MaterialTheme.typography.bodyMedium)
+        SectionCard(stringResource(R.string.account_app_title)) {
+            Text(stringResource(R.string.account_version, version ?: stringResource(R.string.account_version_unknown)), style = MaterialTheme.typography.bodyMedium)
         }
-        SectionCard("Backup and sync") {
-            StatusPill("Sign-in is coming", StatusKind.NEUTRAL)
-            Text("Your designs are saved on this phone.", style = MaterialTheme.typography.bodyMedium)
+        SectionCard(stringResource(R.string.account_backup_title)) {
+            StatusPill(stringResource(R.string.account_signin_coming), StatusKind.NEUTRAL)
+            Text(stringResource(R.string.account_saved_on_phone), style = MaterialTheme.typography.bodyMedium)
         }
-        SectionCard("Signing key") { SigningKeySection(keyStoreFactory) }
+        SectionCard(stringResource(R.string.account_signing_key_title)) { SigningKeySection(keyStoreFactory) }
     }
 }

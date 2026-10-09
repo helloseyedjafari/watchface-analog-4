@@ -23,6 +23,8 @@ import com.seyedjafari.analogplus.phone.Tags
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
 
 /**
  * Recovery for a lost or damaged signing key. A new key cannot update a face the watch already holds, and the app never
@@ -37,29 +39,23 @@ internal fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier:
     var confirming by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf<String?>(null) }
+    val resetFailed = stringResource(R.string.signing_key_reset_failed)
+    val resetDone = stringResource(R.string.signing_key_reset_done)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        Text(
-            "Every face is signed with a key stored in this app. If the app complains that the key is damaged, or the watch " +
-                "rejects updates after a reinstall, you can make a new key here.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        SecondaryButton("Reset signing key", { confirming = true }, Modifier.testTag(Tags.RESET_KEY_BUTTON), enabled = !busy)
+        Text(stringResource(R.string.signing_key_explanation), style = MaterialTheme.typography.bodySmall)
+        SecondaryButton(stringResource(R.string.signing_key_button_reset), { confirming = true }, Modifier.testTag(Tags.RESET_KEY_BUTTON), enabled = !busy)
         done?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag(Tags.RESET_KEY_NOTICE)) }
     }
     if (confirming) {
         AlertDialog(
             onDismissRequest = { confirming = false },
-            title = { Text("Reset the signing key?") },
+            title = { Text(stringResource(R.string.signing_key_dialog_title)) },
             text = {
-                Text(
-                    "The watch only accepts updates signed with the key it first saw. After a reset the watch will refuse new " +
-                        "faces until the old Analog Plus face is removed from the watch (uninstalling the watch app does not remove " +
-                        "it; with adb: pm uninstall com.seyedjafari.analogplus.watchfacepush.analog).",
-                )
+                Text(stringResource(R.string.signing_key_dialog_message))
             },
             confirmButton = {
                 PrimaryButton(
-                    "Reset",
+                    stringResource(R.string.signing_key_button_confirm),
                     {
                         confirming = false
                         busy = true
@@ -67,16 +63,16 @@ internal fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier:
                         scope.launch {
                             // the key lock can be held for about a second while a key is generated
                             val problem = withContext(Dispatchers.IO) {
-                                try { keyStoreFactory(context).resetKey(); null } catch (e: Exception) { e.message ?: "The key could not be reset." }
+                                try { keyStoreFactory(context).resetKey(); null } catch (e: Exception) { e.message ?: resetFailed }
                             }
                             busy = false
-                            done = problem ?: "Signing key reset. A new key is made on the next send."
+                            done = problem ?: resetDone
                         }
                     },
                     Modifier.testTag(Tags.RESET_KEY_CONFIRM),
                 )
             },
-            dismissButton = { SecondaryButton("Cancel", { confirming = false }) },
+            dismissButton = { SecondaryButton(stringResource(R.string.common_cancel), { confirming = false }) },
         )
     }
 }

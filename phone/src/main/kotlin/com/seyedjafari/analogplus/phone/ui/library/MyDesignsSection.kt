@@ -31,6 +31,8 @@ import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SectionCard
 import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
 
 /** Naming and saving the current design, and the designs saved in [store]; [askToReplace] is called when one is chosen. */
 @Composable
@@ -40,16 +42,16 @@ internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (S
     var name by rememberSaveable { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
-    SectionCard("Save this design") {
+    SectionCard(stringResource(R.string.mydesigns_save_title)) {
         OutlinedTextField(
             value = name, onValueChange = { name = it; error = null }, singleLine = true,
-            label = { Text("Name for the current design") },
+            label = { Text(stringResource(R.string.mydesigns_name_label)) },
             isError = error != null,
             modifier = Modifier.fillMaxWidth().testTag(Tags.SAVE_NAME_FIELD),
         )
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(Tags.SAVE_ERROR)) }
         PrimaryButton(
-            "Save current design",
+            stringResource(R.string.mydesigns_button_save),
             {
                 try {
                     store.saveNamed(name, state.design)
@@ -61,11 +63,11 @@ internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (S
             },
             Modifier.testTag(Tags.SAVE_BUTTON),
         )
-        Text("Photos are not saved with a design.", style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.mydesigns_photos_note), style = MaterialTheme.typography.bodySmall)
     }
 
     if (saved.isEmpty()) {
-        EmptyState("Nothing saved yet", "Name your current design and save it to find it here.")
+        EmptyState(stringResource(R.string.mydesigns_empty_title), stringResource(R.string.mydesigns_empty_body))
     }
     saved.forEach { s ->
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
@@ -75,8 +77,8 @@ internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (S
                 Modifier.weight(1f).clickable { askToReplace(s.name, s.design) }.heightIn(min = Spacing.minTouch)
                     .wrapContentHeight(Alignment.CenterVertically).testTag(Tags.saved(s.name)),
             )
-            SecondaryButton("Load", { askToReplace(s.name, s.design) }, Modifier.testTag(Tags.field("saved_load_${s.name}")))
-            SecondaryButton("Delete", { store.deleteNamed(s.name); refresh() }, Modifier.testTag(Tags.savedDelete(s.name)))
+            SecondaryButton(stringResource(R.string.mydesigns_button_load), { askToReplace(s.name, s.design) }, Modifier.testTag(Tags.field("saved_load_${s.name}")))
+            SecondaryButton(stringResource(R.string.mydesigns_button_delete), { store.deleteNamed(s.name); refresh() }, Modifier.testTag(Tags.savedDelete(s.name)))
         }
     }
 }

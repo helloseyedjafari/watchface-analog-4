@@ -27,8 +27,19 @@ import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SectionChips
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
+import androidx.annotation.StringRes
 
-enum class LibrarySection(val label: String) { TEMPLATES("Templates"), MY_DESIGNS("My designs"), SHARE("Share") }
+/**
+ * [labelRes] is the displayed (localisable) name; [label] is its English default, kept for the tag and for code that must not
+ * need resources; an instrumented test keeps the two in step.
+ */
+enum class LibrarySection(val label: String, @StringRes val labelRes: Int) {
+    TEMPLATES("Templates", R.string.library_section_templates),
+    MY_DESIGNS("My designs", R.string.library_section_my_designs),
+    SHARE("Share", R.string.library_section_share),
+}
 
 /** Chip tag: `tab_templates`, `tab_mydesigns`, `tab_share`. */
 fun LibrarySection.tag() = Tags.tab(label.lowercase().replace(" ", ""))
@@ -42,13 +53,13 @@ internal fun ReplaceDialog(pending: PendingReplace?, onConfirm: (PendingReplace)
     if (pending == null) return
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text("Replace your current design?") },
-        text = { Text("\"${pending.name.shortForDisplay(40)}\" will replace what you are editing.") },
+        title = { Text(stringResource(R.string.library_replace_title)) },
+        text = { Text(stringResource(R.string.library_replace_message, pending.name.shortForDisplay(40))) },
         confirmButton = {
-            PrimaryButton("Replace", { onConfirm(pending) }, Modifier.testTag(Tags.field("replace_confirm")))
+            PrimaryButton(stringResource(R.string.library_replace_button_confirm), { onConfirm(pending) }, Modifier.testTag(Tags.field("replace_confirm")))
         },
         dismissButton = {
-            SecondaryButton("Cancel", onCancel, Modifier.testTag(Tags.field("replace_cancel")))
+            SecondaryButton(stringResource(R.string.common_cancel), onCancel, Modifier.testTag(Tags.field("replace_cancel")))
         },
         modifier = Modifier.testTag(Tags.field("replace_dialog")),
     )
@@ -66,7 +77,7 @@ fun LibraryScreen(state: EditorState, store: Store, modifier: Modifier = Modifie
     val askToReplace: (String, DesignSettings) -> Unit = { name, target -> if (target != state.design) pending = PendingReplace(name, target) }
     ReplaceDialog(pending, onConfirm = { state.replace(it.design); pending = null }, onCancel = { pending = null })
     Column(modifier.fillMaxSize()) {
-        SectionChips(LibrarySection.entries, selected, { selected = it }, { it.label }, { it.tag() }, Modifier.padding(vertical = Spacing.sm))
+        SectionChips(LibrarySection.entries, selected, { selected = it }, { stringResource(it.labelRes) }, { it.tag() }, Modifier.padding(vertical = Spacing.sm))
         Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(Spacing.lg),
             verticalArrangement = Arrangement.spacedBy(Spacing.md),
