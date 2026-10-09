@@ -2,7 +2,8 @@ package com.seyedjafari.analogplus.phone.ui.send
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -19,7 +20,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -85,10 +85,18 @@ private fun WatchStatusCard(watch: WatchStatusChecker) {
     }
 }
 
+/**
+ * Label and pill side by side while both fit; otherwise the pill drops under the label. The label is not weighted, so a
+ * wide pill can never squeeze it narrower than its longest word (it used to break "Analog" at 2x font scale).
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StatusRow(label: String, status: CheckStatus, ok: String, action: String, tag: String) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+    FlowRow(
+        Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(end = Spacing.md))
         val (text, kind) = when (status) {
             CheckStatus.OK -> ok to StatusKind.OK
             CheckStatus.ACTION_NEEDED -> action to StatusKind.WARNING
