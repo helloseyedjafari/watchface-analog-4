@@ -22,7 +22,7 @@ Bottom navigation, four destinations (replaces the eight-tab `EditorScreen`):
 |---|---|---|
 | **Design** | Live preview hero (pinned top) and an editor below it with six sections: Colours, Dial, Hands, Background, Complications, Rings | the six editing tabs |
 | **Library** | Templates (built in), My designs (saved), Share (link, QR, load from link) | Templates and Share tabs, the saved-designs list |
-| **Send** | Watch status (paired, watch app installed, face version, activation), the Send button, last result and failure reasons | the send bar and its messages |
+| **Send** | Watch status (watch paired, Analog Plus installed on it, "needs a Wear OS 6 watch" note; the phone cannot read the watch's OS version), the Send button, last result and failure reasons | the send bar and its messages |
 | **Account** | Sign-in, sync status, recovery passphrase, delete account, app info | new (spec 3 fills it; until then it shows app info and a "sign in comes later" state) |
 
 - Design sections are a horizontally scrolling chip row under the preview (not tabs), with a shared-axis slide
@@ -41,8 +41,8 @@ Bottom navigation, four destinations (replaces the eight-tab `EditorScreen`):
   Dynamic colour (Material You) is **off** so the brand is consistent. Contrast checked to WCAG AA for text.
 - **Type:** one family bundled in the app (a font with tabular numerals for colour/number fields); scale of
   display / title / body / label.
-- **Components** (own wrappers, one file each, previewable): `SectionCard`, `ColourField` (swatch + hex, existing logic
-  kept), `StepperField`, `ChoiceChips`, `ToggleRow`, `PrimaryButton`/`SecondaryButton`, `StatusPill`, `EmptyState`,
+- **Components** (own wrappers, one file each, previewable): `SectionCard`, `SectionChips`, and restyled versions of the existing `ColourField` (swatch + hex, logic kept),
+  `IntField` (number + slider), `ChoiceRow` and `SwitchRow`, `PrimaryButton`/`SecondaryButton`, `StatusPill`, `EmptyState`,
   `ErrorBanner`, `Skeleton`. The existing validation (`FieldHelpers`, `ColourField` parsing, clamping) is reused, not
   rewritten.
 - **Motion:** shared-axis transitions between destinations and Design sections, animated preview on value change
@@ -67,7 +67,7 @@ the face).
   `EditorState`, `Store`, `SendController`, `Sender`, `SlotDragEditor`, `PreviewPane` logic stay as they are. Only the
   UI layer changes.
 - `MainActivity` hosts `AppNav`; the theme moves out of it.
-- Compose BoM and Navigation Compose versions are pinned at plan time after checking current stable versions.
+- Navigation is plain state (enum, `rememberSaveable`, `BackHandler`, `AnimatedContent`); Navigation Compose is not used, because there are four flat destinations. The Compose BoM stays as is.
 
 ## Testing
 

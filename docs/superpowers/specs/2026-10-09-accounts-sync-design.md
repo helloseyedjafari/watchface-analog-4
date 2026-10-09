@@ -37,7 +37,7 @@ signed in. No code in `Store`, `SendController` or `facegen` knows about Firebas
   `AccountState` as a sealed type: `SignedOut`, `SigningIn`, `SignedIn(uid, email)`, `Failed(reason)`.
 - **`CloudSync`** (interface + Firestore implementation): push local changes, pull remote changes, listen for
   remote changes while the app is in the foreground, expose `SyncStatus`: `OFF`, `IDLE`, `SYNCING`, `OFFLINE`,
-  `ERROR(reason)`. Firestore offline persistence queues writes made offline.
+  `ERROR(reason)`. A local journal (not Firestore's cache) is the durable offline queue and replays when the phone is online.
 - **`KeyVault`** (pure Kotlin, JVM-testable): `seal(pem, passphrase) -> SealedKey` and
   `open(sealed, passphrase) -> pem | WrongPassphrase`. No Firebase dependency.
 - Fakes for `AccountManager` and `CloudSync` in tests, in the same style as `KeyValueStore`'s in-memory fake.
@@ -50,7 +50,7 @@ signed in. No code in `Store`, `SendController` or `facegen` knows about Firebas
 | `users/{uid}/state/current` | `design`, `updatedAt`, `deviceId` (the design being edited) |
 | `users/{uid}/backup/signingKey` | `sealed` (base64 ciphertext), `kdf` (`"pbkdf2-hmac-sha256"` or the chosen KDF), `iterations`, `salt`, `iv`, `version`, `createdAt`, `keyFingerprint` (the existing `KeyFingerprint`, so a restored key can be checked against the installed face) |
 
-- **Photos** are downscaled to watch resolution (about 450 px, JPEG) and stored inline in the design document, which
+- **Photos** are downscaled to watch resolution (512 px longest side, JPEG) and stored inline in the design document, which
   keeps every document far below Firestore's 1 MiB limit and **avoids Firebase Storage**. Checked 2026-10-09: Cloud
   Storage for Firebase needs the Blaze (pay-as-you-go) plan; Firestore and Auth fit the free Spark plan for this
   scale. A design restored from the cloud therefore carries the downscaled photo, not the original, and the app says so.
@@ -83,12 +83,16 @@ signed in. No code in `Store`, `SendController` or `facegen` knows about Firebas
   client.
 - **Forgotten passphrase:** the blob cannot be recovered. The user is told this up front. A reset deletes the blob,
   creates a new key and requires a new face identity (the old one can no longer be updated). **This reset path
-  (new face name/package, one activation per install) must be verified on an emulator before the UI promises it**;
+  (the watch app only updates the single listed face, so the likely path is: remove the old face, then add the new key's face under the same package; one activation per install) must be verified on an emulator before the UI promises it**;
   it is a plan task, not an assumption.
 - Backups update when the signing key changes (it should not) and are verified after upload by reading back and
   opening them locally in a self-test, so a bad backup is detected immediately and the user is told.
 
 ### Account destination (UI)
+
+Navigation is state-based (`AppNav` from the app-shell plan; there is no Navigation Compose). The Account destination
+already exists from that plan (`AccountScreen`: app info, a "Backup and sync" placeholder card, the signing-key reset);
+this work replaces the placeholder card with the section below.
 
 Signed out: benefits in two lines, Sign in with Google. Signed in: email, sync status pill with last sync time,
 Back up signing key / change passphrase, Restore from backup, Sign out, Delete account (confirms, explains that

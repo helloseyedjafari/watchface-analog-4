@@ -19,9 +19,11 @@ Five pages in a pager with a progress indicator, Skip on every page, Back works.
 
 1. **Welcome.** Lottie loop: a watch face morphing between designs (colours, ring layout, complication slots).
    Headline and one line. Primary: Get started.
-2. **Pair your watch.** Live checklist, each row with a status (`CHECKING`, `OK`, `ACTION_NEEDED`, `UNKNOWN`):
-   watch paired (Wear Data Layer node found), Analog Plus watch app installed on that watch (capability
-   advertised by the watch app), watch is Wear OS 6. Lottie for the "searching" and "found" states. Re-checks
+2. **Pair your watch.** Live checklist, two rows, each with a status (`CHECKING`, `OK`, `ACTION_NEEDED`, `UNKNOWN`):
+   watch paired (Wear Data Layer node found) and Analog Plus watch app installed on that watch (capability
+   advertised by the watch app). The phone cannot read the watch's Wear OS version, so there is no Wear OS row: an
+   informational line says "Needs a Wear OS 6 watch." The check is the app shell's `WatchStatusChecker` (the same one
+   the Send screen uses). Lottie for the "searching" and "found" states. Re-checks
    automatically when the app resumes. `ACTION_NEEDED` rows show the exact next step (open Galaxy Wearable / Wear OS
    app; install the watch app from the Play Store link, or the debug install for dev builds). A user with no
    watch can continue (the preview and editor work without one); the Send screen then shows the same status.
@@ -37,11 +39,13 @@ Finish goes to Design with the chosen template loaded. If the watch was found, a
 
 ## State
 
-- `OnboardingState` enum: `NOT_STARTED`, `IN_PROGRESS(page)`, `COMPLETED`, `SKIPPED`. Stored in `Store`
+- `OnboardingState`: `NOT_STARTED`, `IN_PROGRESS(page)`, `COMPLETED`, `SKIPPED` (a sealed type in code, because
+  `IN_PROGRESS` carries a page; stored as one string such as `IN_PROGRESS:PERMISSION`). Stored in `Store`
   (SharedPreferences, same durable-write rules). Not a boolean: a skipped onboarding and a completed one are
   different (Account offers "Run setup again" for both).
 - Shown when the state is `NOT_STARTED` **and** the app has no saved design history (an update from the POC with
-  existing designs goes straight to the editor and is recorded as `SKIPPED`).
+  existing designs goes straight to the editor and is recorded as `SKIPPED`). The decision is made and stored on the
+  first launch, because the app autosaves the default design right after it.
 - Process death mid-onboarding resumes at the stored page.
 
 ## Lottie
@@ -60,14 +64,18 @@ Finish goes to Design with the chosen template loaded. If the watch was found, a
 
 ## Code structure
 
-`ui/onboarding/`: `OnboardingScreen` (pager), one composable per page, `WatchStatusChecker` (interface; the
-real one wraps the Wear `CapabilityClient`/`NodeClient`, a fake drives tests and previews), `OnboardingState` +
-store methods. `AppNav` shows onboarding as a full-screen route before the bottom navigation.
+`ui/onboarding/`: `OnboardingScreen` (pager), one composable per page. `WatchStatusChecker`, `WatchStatus` and
+`CheckStatus` already exist in `ui/send` (app shell plan, Task 7; the real one wraps the Wear `NodeClient` and
+`CapabilityClient`, a fake drives tests and previews) and are reused, not duplicated. `OnboardingState`,
+`OnboardingController` and the `Store` methods are logic and live in the root package. Navigation is state-based
+(`AppNav`, no Navigation Compose): `AppShell` shows onboarding as a gate before `AppNav` while the state is
+`NOT_STARTED` or `IN_PROGRESS`.
 
 ## Testing
 
-- JVM: `OnboardingState` transitions and persistence (resume page, update-from-POC becomes `SKIPPED`);
-  `WatchStatusChecker` mapping from node/capability results to row statuses with the fake.
+- JVM: `OnboardingState` transitions and persistence (resume page, update-from-POC becomes `SKIPPED`); the mapping of
+  `WatchStatus` to row texts and advice. The mapping of node/capability results to `WatchStatus` is tested by the app
+  shell plan (`WatchStatusTest`).
 - Instrumented: full pass through all pages, Skip on each page, Back, rotation and process-death resume, template
   choice sets the design, "no watch" path, reduced-motion path shows static frames.
 - Asset test: all four raw files parse as Lottie compositions and stay under the size cap.
