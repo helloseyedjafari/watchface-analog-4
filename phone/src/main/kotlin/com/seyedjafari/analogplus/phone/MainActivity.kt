@@ -8,9 +8,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -165,8 +169,9 @@ fun AppShell(
 ) {
     val sendUi by send.state.collectAsState()
     AnalogTheme {
-        // insets: edge-to-edge is enforced on Android 15, and the keyboard must not cover the field being edited
-        Surface(Modifier.fillMaxSize().systemBarsPadding().imePadding(), color = MaterialTheme.colorScheme.background) {
+        // insets: edge-to-edge is enforced on Android 15, a camera cutout must not sit over the rail of a phone held sideways (the union is
+        // the larger of the two on each side, so the status bar is not padded twice), and the keyboard must not cover the field being edited
+        Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)).imePadding(), color = MaterialTheme.colorScheme.background) {
             AppNav(content = { destination, navigateTo ->
                 when (destination) {
                     Destination.DESIGN -> DesignScreen(state, onSend = { send.send(state.design); navigateTo(Destination.SEND) }, sendBusy = sendUi.isBusy)
