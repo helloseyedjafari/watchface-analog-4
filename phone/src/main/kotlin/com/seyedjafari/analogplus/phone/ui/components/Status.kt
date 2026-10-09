@@ -11,6 +11,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 
 enum class StatusKind(val prefix: String) {
@@ -38,9 +39,10 @@ fun StatusPill(text: String, kind: StatusKind, modifier: Modifier = Modifier) {
 
 /** An error message announced to screen readers when it appears. */
 @Composable
-fun ErrorBanner(text: String, modifier: Modifier = Modifier) {
+fun ErrorBanner(text: String, modifier: Modifier = Modifier, maxLines: Int = Int.MAX_VALUE) {
     Text(
         text, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium,
+        maxLines = maxLines, overflow = TextOverflow.Ellipsis,
         modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
     )
 }

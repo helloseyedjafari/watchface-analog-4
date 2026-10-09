@@ -27,6 +27,8 @@ import com.seyedjafari.analogplus.facegen.design.designHints
 import com.seyedjafari.analogplus.phone.EditorState
 import com.seyedjafari.analogplus.phone.PreviewPane
 import com.seyedjafari.analogplus.phone.Tags
+import com.seyedjafari.analogplus.phone.fixFirstText
+import com.seyedjafari.analogplus.phone.ui.components.ErrorBanner
 import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SectionChips
 import com.seyedjafari.analogplus.phone.ui.theme.Motion
@@ -67,6 +69,13 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
                     DesignSection.RINGS -> RingSection(state)
                 }
             }
+        }
+        if (state.errors.isNotEmpty()) {
+            ErrorBanner(
+                state.design.fixFirstText(state.errors),
+                Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.xs).testTag(Tags.field("design_validation")),
+                maxLines = 2,
+            )
         }
         PrimaryButton(
             "Send to watch", onSend,

@@ -8,12 +8,14 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.dp
+import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.ui.design.DesignScreen
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -54,6 +56,17 @@ class DesignScreenTest {
 
     @Test fun sendButtonIsOnForAValidDesign() {
         show(EditorState())
+        rule.onNodeWithTag(Tags.field("design_send")).assertIsEnabled()
+    }
+
+    @Test fun aDisabledSendSaysWhyOnTheDesignScreen() {
+        val state = EditorState(DesignSettings(accent = "red"))
+        show(state)
+        rule.onNodeWithTag(Tags.field("design_send")).assertIsNotEnabled()
+        rule.onNodeWithTag(Tags.field("design_validation")).assertIsDisplayed().assertTextContains("Fix first", substring = true)
+        rule.onNodeWithTag(Tags.field("design_validation")).assertTextContains("accent", substring = true)
+        state.update { DesignSettings() }
+        rule.onNodeWithTag(Tags.field("design_validation")).assertDoesNotExist()
         rule.onNodeWithTag(Tags.field("design_send")).assertIsEnabled()
     }
 }
