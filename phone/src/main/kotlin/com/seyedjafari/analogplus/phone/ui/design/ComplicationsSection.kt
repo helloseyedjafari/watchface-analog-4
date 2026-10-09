@@ -46,9 +46,13 @@ import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
+import androidx.annotation.StringRes
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.res.pluralStringResource
 
 private const val NEW_SLOT_BACKGROUND = "#FF1E1E1E"
-private const val OVER_LIMIT = "over limit"
 private const val MAX_ERROR_LINES = 4
 
 /** "N of 8": movable slots plus ring segments. Turns red (and its state description reads "over limit") above 8. */
@@ -56,11 +60,12 @@ private const val MAX_ERROR_LINES = 4
 fun CapIndicator(state: EditorState, modifier: Modifier = Modifier) {
     val n = state.complicationCount
     val over = n > SlotGeometry.MAX_COMPLICATIONS
+    val stateText = stringResource(if (over) R.string.complications_cap_over_limit else R.string.complications_cap_within_limit)
     Text(
-        "$n of ${SlotGeometry.MAX_COMPLICATIONS}",
+        stringResource(R.string.complications_cap_indicator, n, SlotGeometry.MAX_COMPLICATIONS),
         modifier = modifier
             .testTag(Tags.CAP_INDICATOR)
-            .semantics { stateDescription = if (over) OVER_LIMIT else "within the limit" },
+            .semantics { stateDescription = stateText },
         color = if (over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
         style = MaterialTheme.typography.titleSmall,
     )
@@ -71,6 +76,7 @@ fun CapIndicator(state: EditorState, modifier: Modifier = Modifier) {
  * position and size (arrow buttons and number fields, which also work where dragging is awkward), and its colours.
  * Lays its content out in a plain Column: the section host must scroll it.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ComplicationsSection(state: EditorState) {
     var selectedId by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -85,7 +91,7 @@ fun ComplicationsSection(state: EditorState) {
 
     Column(Modifier.fillMaxWidth().padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            SectionTitle("Complications")
+            SectionTitle(stringResource(R.string.complications_title))
             CapIndicator(state)
         }
         SlotDragEditor(
@@ -106,7 +112,7 @@ fun ComplicationsSection(state: EditorState) {
         val selectedIndex = design.slots.indexOfFirst { it.id == selected?.id }
         state.errors.filter { it.field.startsWith("slots[") && (selectedIndex < 0 || !it.field.startsWith("slots[$selectedIndex]")) }
             .take(MAX_ERROR_LINES).forEach {
-            Text("${design.describeField(it.field)}: ${design.describe(it)}", color = MaterialTheme.colorScheme.error,
+            Text(stringResource(R.string.complications_slot_field_error, design.describeField(it.field), design.describe(it)), color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.testTag(Tags.field("slots_field_error")))
         }
@@ -115,9 +121,9 @@ fun ComplicationsSection(state: EditorState) {
             val covered = SlotGeometry.numeralsCovered(s, design.numerals)
             if (covered.isNotEmpty()) {
                 Text(
-                    "Slot ${s.id} (${s.name.shortForDisplay(16)}) overlaps the " +
-                        (if (covered.size == 1) "numeral ${covered[0]}" else "numerals ${covered.joinToString(", ")}") +
-                        ". That is allowed, but the numbers may be hard to read.",
+                    pluralStringResource(
+                        R.plurals.complications_numeral_overlap, covered.size, s.id, s.name.shortForDisplay(16), covered.joinToString(", "),
+                    ),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.testTag(Tags.field("slot_numeral_note_${s.id}")),
                 )
@@ -126,7 +132,7 @@ fun ComplicationsSection(state: EditorState) {
 
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             SecondaryButton(
-                "4 slots (classic)",
+                stringResource(R.string.complications_button_slots_classic),
                 {
                     state.update { it.copy(slots = defaultSlots()) }
                     selectedId = null
@@ -134,11 +140,11 @@ fun ComplicationsSection(state: EditorState) {
                 },
                 Modifier.testTag(Tags.field("slots_4")),
             )
-            SecondaryButton("6 slots", { apply(SlotGeometry.addUpTo(state.design, 6)) }, Modifier.testTag(Tags.field("slots_6")))
+            SecondaryButton(stringResource(R.string.complications_button_slots_six), { apply(SlotGeometry.addUpTo(state.design, 6)) }, Modifier.testTag(Tags.field("slots_6")))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             PrimaryButton(
-                "Add slot",
+                stringResource(R.string.complications_button_add_slot),
                 {
                     val r = SlotGeometry.addSlot(state.design)
                     apply(r)
@@ -147,7 +153,7 @@ fun ComplicationsSection(state: EditorState) {
                 Modifier.testTag(Tags.field("slot_add")),
             )
             SecondaryButton(
-                "Remove slot",
+                stringResource(R.string.complications_button_remove_slot),
                 {
                     selected?.let { state.replace(SlotGeometry.removeSlot(state.design, it.id)) }
                     selectedId = null
@@ -163,7 +169,7 @@ fun ComplicationsSection(state: EditorState) {
                 FilterChip(
                     selected = s.id == selected?.id,
                     onClick = { selectedId = s.id },
-                    label = { Text("${s.id}: ${s.name.shortForDisplay(16)}") },
+                    label = { Text(stringResource(R.string.complications_slot_chip, s.id, s.name.shortForDisplay(16))) },
                     modifier = Modifier.testTag(Tags.field("select_slot_${s.id}")),
                 )
             }
@@ -171,12 +177,12 @@ fun ComplicationsSection(state: EditorState) {
 
         if (design.slots.size > SlotGeometry.MAX_SHOWN) {
             Text(
-                "+${design.slots.size - SlotGeometry.MAX_SHOWN} more (fix by resetting slots)",
+                stringResource(R.string.complications_slots_more, design.slots.size - SlotGeometry.MAX_SHOWN),
                 color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag(Tags.field("slots_more")),
             )
             SecondaryButton(
-                "Reset slots to default",
+                stringResource(R.string.complications_button_reset_slots),
                 {
                     state.update { it.copy(slots = defaultSlots()) }
                     selectedId = null
@@ -187,7 +193,7 @@ fun ComplicationsSection(state: EditorState) {
         }
 
         if (selected == null) {
-            Text("Tap a slot to edit it, drag it to move it.", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.complications_tap_hint), style = MaterialTheme.typography.bodySmall)
         } else {
             SelectedSlotControls(state, selected, onResult = ::apply)
         }
@@ -206,7 +212,7 @@ private fun SelectedSlotControls(state: EditorState, s: SlotDesign, onResult: (S
         OutlinedTextField(
             value = s.name,
             onValueChange = { edit { slot -> slot.copy(name = it) } },
-            label = { Text("Name") },
+            label = { Text(stringResource(R.string.complications_name)) },
             singleLine = true,
             isError = s.name.isBlank(),
             modifier = Modifier.fillMaxWidth().testTag(Tags.field("slot_name")),
@@ -216,7 +222,7 @@ private fun SelectedSlotControls(state: EditorState, s: SlotDesign, onResult: (S
                 FilterChip(
                     selected = s.shape == shape,
                     onClick = { edit { it.copy(shape = shape) } },
-                    label = { Text(shapeLabel(shape)) },
+                    label = { Text(stringResource(shapeLabelRes(shape))) },
                     modifier = Modifier.testTag(Tags.field("slot_shape_${shape.name}")),
                 )
             }
@@ -225,64 +231,73 @@ private fun SelectedSlotControls(state: EditorState, s: SlotDesign, onResult: (S
         // position: arrow buttons (by 5 or 10 units) and number fields; both go through SlotGeometry
         var step by rememberSaveable { mutableStateOf(5) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-            Text("Nudge by")
+            Text(stringResource(R.string.complications_nudge_by))
             listOf(5, 10).forEach {
-                FilterChip(selected = step == it, onClick = { step = it }, label = { Text("$it") },
+                FilterChip(selected = step == it, onClick = { step = it }, label = { Text(it.toString()) },
                     modifier = Modifier.testTag(Tags.field("nudge_step_$it")))
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-            listOf("left" to ("←" to (-1 to 0)), "up" to ("↑" to (0 to -1)), "down" to ("↓" to (0 to 1)), "right" to ("→" to (1 to 0)))
-                .forEach { (name, arrow) ->
-                    val (label, dir) = arrow
-                    SecondaryButton(
-                        label,
-                        { onResult(SlotGeometry.move(state.design, s.id, s.x + dir.first * step, s.y + dir.second * step)) },
-                        Modifier.testTag(Tags.field("nudge_$name")),
-                        contentDescription = "Move $name",
-                    )
-                }
+            NUDGES.forEach { nudge ->
+                SecondaryButton(
+                    stringResource(nudge.arrowRes),
+                    { onResult(SlotGeometry.move(state.design, s.id, s.x + nudge.dx * step, s.y + nudge.dy * step)) },
+                    Modifier.testTag(Tags.field("nudge_${nudge.name}")),
+                    contentDescription = stringResource(nudge.descriptionRes),
+                )
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-            SlotIntField("x", s.x, "slot_x", Modifier.weight(1f)) { onResult(SlotGeometry.move(state.design, s.id, it, s.y)) }
-            SlotIntField("y", s.y, "slot_y", Modifier.weight(1f)) { onResult(SlotGeometry.move(state.design, s.id, s.x, it)) }
+            SlotIntField(stringResource(R.string.complications_field_x), s.x, "slot_x", Modifier.weight(1f)) { onResult(SlotGeometry.move(state.design, s.id, it, s.y)) }
+            SlotIntField(stringResource(R.string.complications_field_y), s.y, "slot_y", Modifier.weight(1f)) { onResult(SlotGeometry.move(state.design, s.id, s.x, it)) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-            SlotIntField("width", s.w, "slot_w", Modifier.weight(1f)) { onResult(SlotGeometry.resize(state.design, s.id, it, s.h)) }
-            SlotIntField("height", s.h, "slot_h", Modifier.weight(1f)) { onResult(SlotGeometry.resize(state.design, s.id, s.w, it)) }
+            SlotIntField(stringResource(R.string.complications_field_width), s.w, "slot_w", Modifier.weight(1f)) { onResult(SlotGeometry.resize(state.design, s.id, it, s.h)) }
+            SlotIntField(stringResource(R.string.complications_field_height), s.h, "slot_h", Modifier.weight(1f)) { onResult(SlotGeometry.resize(state.design, s.id, s.w, it)) }
         }
 
         // colours
         SwitchRow(
-            "Background", s.backgroundColor != null,
+            stringResource(R.string.complications_background), s.backgroundColor != null,
             { on -> edit { it.copy(backgroundColor = if (on) NEW_SLOT_BACKGROUND else null) } },
             Tags.field("slot_bg_switch"),
         )
         s.backgroundColor?.let { bg ->
-            ColourField("Background colour", bg, { c -> edit { it.copy(backgroundColor = c) } }, errorOf("backgroundColor"),
+            ColourField(stringResource(R.string.complications_background_colour), bg, { c -> edit { it.copy(backgroundColor = c) } }, errorOf("backgroundColor"),
                 Tags.field("slot_bg"), Modifier.fillMaxWidth())
         }
-        ColourField("Text colour", s.textColor, { c -> edit { it.copy(textColor = c) } }, errorOf("textColor"),
+        ColourField(stringResource(R.string.complications_text_colour), s.textColor, { c -> edit { it.copy(textColor = c) } }, errorOf("textColor"),
             Tags.field("slot_text"), Modifier.fillMaxWidth())
         SwitchRow(
-            "Icon uses the accent colour", s.iconColor == null,
+            stringResource(R.string.complications_icon_accent), s.iconColor == null,
             // switching "use accent" off keeps the colour the icon has now, so nothing changes until the user edits it
             { useAccent -> edit { it.copy(iconColor = if (useAccent) null else state.design.accent) } },
             Tags.field("slot_icon_accent_switch"),
         )
         s.iconColor?.let { ic ->
-            ColourField("Icon colour", ic, { c -> edit { it.copy(iconColor = c) } }, errorOf("iconColor"),
+            ColourField(stringResource(R.string.complications_icon_colour), ic, { c -> edit { it.copy(iconColor = c) } }, errorOf("iconColor"),
                 Tags.field("slot_icon"), Modifier.fillMaxWidth())
         }
     }
 }
 
 /** What the shape chip says; the stored value is the enum name. */
-private fun shapeLabel(shape: SlotShape) = when (shape) {
-    SlotShape.BOX -> "Box"
-    SlotShape.OVAL -> "Oval"
-    SlotShape.ROUND_BOX -> "Rounded box"
+@StringRes
+private fun shapeLabelRes(shape: SlotShape): Int = when (shape) {
+    SlotShape.BOX -> R.string.complications_shape_box
+    SlotShape.OVAL -> R.string.complications_shape_oval
+    SlotShape.ROUND_BOX -> R.string.complications_shape_round_box
 }
+
+/** One nudge arrow button: [name] is its test tag suffix; the glyph and the screen-reader text are resources. */
+private class Nudge(val name: String, @StringRes val arrowRes: Int, @StringRes val descriptionRes: Int, val dx: Int, val dy: Int)
+
+private val NUDGES = listOf(
+    Nudge("left", R.string.complications_arrow_left, R.string.complications_move_left, -1, 0),
+    Nudge("up", R.string.complications_arrow_up, R.string.complications_move_up, 0, -1),
+    Nudge("down", R.string.complications_arrow_down, R.string.complications_move_down, 0, 1),
+    Nudge("right", R.string.complications_arrow_right, R.string.complications_move_right, 1, 0),
+)
 
 /**
  * A number field for a slot value. Typing applies the value through [onValue] at once (so the rules decide); a refused

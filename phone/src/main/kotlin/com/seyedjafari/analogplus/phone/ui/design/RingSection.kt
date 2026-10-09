@@ -40,6 +40,9 @@ import com.seyedjafari.analogplus.phone.ringLayoutLimitHint
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import kotlin.math.roundToInt
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
+import androidx.annotation.StringRes
 
 private const val MAX_RING_ERROR_LINES = 4
 
@@ -60,7 +63,7 @@ fun RingSection(state: EditorState) {
 
     Column(Modifier.fillMaxWidth().padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            SectionTitle("Ring complications")
+            SectionTitle(stringResource(R.string.ring_title))
             CapIndicator(state)
         }
         state.errorsFor("slots").filter { it.message.startsWith("at most") }.forEach {
@@ -69,15 +72,15 @@ fun RingSection(state: EditorState) {
         }
         if (ringErrors.isNotEmpty()) {
             ringErrors.take(MAX_RING_ERROR_LINES).forEach {
-                Text("${it.field}: ${state.design.describe(it)}", color = MaterialTheme.colorScheme.error,
+                Text(stringResource(R.string.ring_error_line, it.field, state.design.describe(it)), color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.testTag(Tags.field("ring_error")))
             }
             if (ringErrors.size > MAX_RING_ERROR_LINES) {
-                Text("and ${ringErrors.size - MAX_RING_ERROR_LINES} more", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.ring_errors_more, ringErrors.size - MAX_RING_ERROR_LINES), style = MaterialTheme.typography.bodySmall)
             }
             SecondaryButton(
-                "Reset ring to default",
+                stringResource(R.string.ring_button_reset),
                 { edit { r -> RingDesign(layout = r.layout, colors = ringColoursFor(emptyList(), r.layout, state.design.accent)) } },
                 Modifier.testTag(Tags.field("ring_reset")),
             )
@@ -94,7 +97,7 @@ fun RingSection(state: EditorState) {
                             d.copy(ring = d.ring.copy(layout = layout, colors = ringColoursFor(d.ring.colors, layout, d.accent)))
                         }
                     },
-                    label = { Text(layoutLabel(layout)) },
+                    label = { Text(stringResource(layoutLabelRes(layout))) },
                     modifier = Modifier.testTag(Tags.field("ring_layout_${layout.name}")),
                 )
             }
@@ -108,7 +111,7 @@ fun RingSection(state: EditorState) {
                 val error = state.errorsFor("ring.colors").firstOrNull { it.message.startsWith("'$colour'") }
                     ?.let { state.design.describe(it) }
                 ColourField(
-                    label = if (ring.colors.size == 1) "Ring colour" else "Segment ${i + 1} colour",
+                    label = if (ring.colors.size == 1) stringResource(R.string.ring_colour_single) else stringResource(R.string.ring_colour_segment, i + 1),
                     value = colour,
                     onChange = { c -> edit { r -> r.copy(colors = r.colors.mapIndexed { j, old -> if (j == i) c else old }) } },
                     errorText = error,
@@ -118,57 +121,58 @@ fun RingSection(state: EditorState) {
             }
             if (ring.colors.size > SlotGeometry.MAX_SHOWN) {
                 Text(
-                    "+${ring.colors.size - SlotGeometry.MAX_SHOWN} more (fix by choosing a ring layout / resetting colours)",
+                    stringResource(R.string.ring_colours_more, ring.colors.size - SlotGeometry.MAX_SHOWN),
                     color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag(Tags.field("ring_colours_more")),
                 )
                 SecondaryButton(
-                    "Reset ring colours",
+                    stringResource(R.string.ring_button_reset_colours),
                     { edit { r -> r.copy(colors = ringColoursFor(r.colors.take(SlotGeometry.MAX_SHOWN), r.layout, state.design.accent)) } },
                     Modifier.testTag(Tags.field("ring_reset_colours")),
                 )
             }
             ColourField(
-                label = "Track colour",
+                label = stringResource(R.string.ring_track_colour),
                 value = ring.trackColor,
                 onChange = { c -> edit { it.copy(trackColor = c) } },
                 errorText = state.firstError("ring.trackColor"),
                 fieldTag = Tags.field("ring_track"),
                 modifier = Modifier.fillMaxWidth(),
             )
-            RingNumberRow("Thickness", ring.thicknessPx, 4..40, "ring_thickness", state.firstError("ring.thicknessPx")) { v ->
+            RingNumberRow(stringResource(R.string.ring_thickness), ring.thicknessPx, 4..40, "ring_thickness", state.firstError("ring.thicknessPx")) { v ->
                 edit { it.copy(thicknessPx = v) }
             }
-            RingNumberRow("Gap (degrees)", ring.gapDegrees, 0..30, "ring_gap", state.firstError("ring.gapDegrees")) { v ->
+            RingNumberRow(stringResource(R.string.ring_gap), ring.gapDegrees, 0..30, "ring_gap", state.firstError("ring.gapDegrees")) { v ->
                 edit { it.copy(gapDegrees = v) }
             }
-            RingNumberRow("Start angle", ring.startAngle, -360..360, "ring_start", state.firstError("ring.startAngle"), allowNegative = true) { v ->
+            RingNumberRow(stringResource(R.string.ring_start_angle), ring.startAngle, -360..360, "ring_start", state.firstError("ring.startAngle"), allowNegative = true) { v ->
                 edit { it.copy(startAngle = v) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                Text("Ends")
+                Text(stringResource(R.string.ring_ends))
                 RingCaps.entries.forEach { caps ->
                     FilterChip(
                         selected = ring.caps == caps,
                         onClick = { edit { it.copy(caps = caps) } },
-                        label = { Text(if (caps == RingCaps.ROUND) "Round" else "Flat") },
+                        label = { Text(stringResource(if (caps == RingCaps.ROUND) R.string.ring_caps_round else R.string.ring_caps_flat)) },
                         modifier = Modifier.testTag(Tags.field("ring_caps_${caps.name}")),
                     )
                 }
             }
-            SwitchRow("Clockwise", ring.clockwise, { on -> edit { it.copy(clockwise = on) } }, Tags.field("ring_clockwise"))
+            SwitchRow(stringResource(R.string.ring_clockwise), ring.clockwise, { on -> edit { it.copy(clockwise = on) } }, Tags.field("ring_clockwise"))
         } else {
-            Text("Choose a layout to put ring complications around the dial.", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.ring_choose_layout_hint), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
 
-private fun layoutLabel(layout: RingLayout) = when (layout) {
-    RingLayout.NONE -> "None"
-    RingLayout.FULL -> "Full"
-    RingLayout.HALVES -> "2 halves"
-    RingLayout.THIRDS -> "3 thirds"
-    RingLayout.QUARTERS -> "4 quarters"
+@StringRes
+private fun layoutLabelRes(layout: RingLayout): Int = when (layout) {
+    RingLayout.NONE -> R.string.ring_layout_none
+    RingLayout.FULL -> R.string.ring_layout_full
+    RingLayout.HALVES -> R.string.ring_layout_halves
+    RingLayout.THIRDS -> R.string.ring_layout_thirds
+    RingLayout.QUARTERS -> R.string.ring_layout_quarters
 }
 
 /**

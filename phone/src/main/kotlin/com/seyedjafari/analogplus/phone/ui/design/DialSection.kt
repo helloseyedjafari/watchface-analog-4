@@ -10,33 +10,35 @@ import com.seyedjafari.analogplus.phone.SwitchRow
 import com.seyedjafari.analogplus.phone.TabColumn
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.firstError
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
 
 /** Tick size, ticks, dots, numerals and complication text. */
 @Composable
 fun DialSection(state: EditorState) {
     val d = state.design
     TabColumn {
-        SectionTitle("Ticks")
-        SwitchRow("Show minute ticks", d.showMinuteTicks, { v -> state.update { it.copy(showMinuteTicks = v) } },
+        SectionTitle(stringResource(R.string.dial_title_ticks))
+        SwitchRow(stringResource(R.string.dial_show_minute_ticks), d.showMinuteTicks, { v -> state.update { it.copy(showMinuteTicks = v) } },
             Tags.field("showMinuteTicks"))
-        IntField("Minute tick width (1 to 8)", d.minuteTickWidth, 1..8,
+        IntField(stringResource(R.string.dial_minute_tick_width), d.minuteTickWidth, 1..8,
             { v -> state.update { it.copy(minuteTickWidth = v) } },
             Tags.field("minuteTickWidth"), state.firstError("minuteTickWidth"))
-        IntField("Minute tick length (3 to 20)", d.minuteTickLength, 3..20,
+        IntField(stringResource(R.string.dial_minute_tick_length), d.minuteTickLength, 3..20,
             { v -> state.update { it.copy(minuteTickLength = v) } },
             Tags.field("minuteTickLength"), state.firstError("minuteTickLength"))
-        SwitchRow("Five-minute dots", d.fiveMinuteDots, { v -> state.update { it.copy(fiveMinuteDots = v) } },
+        SwitchRow(stringResource(R.string.dial_five_minute_dots), d.fiveMinuteDots, { v -> state.update { it.copy(fiveMinuteDots = v) } },
             Tags.field("fiveMinuteDots"))
-        SectionTitle("Numerals")
-        ChoiceRow("Numerals", NumeralMode.entries, d.numerals, { m -> state.update { it.copy(numerals = m) } }, "numerals")
-        SectionTitle("Complications")
-        IntField("Text size (10 to 48)", d.complicationTextSize, 10..48,
+        SectionTitle(stringResource(R.string.dial_title_numerals))
+        ChoiceRow(stringResource(R.string.dial_numerals), NumeralMode.entries, d.numerals, { m -> state.update { it.copy(numerals = m) } }, "numerals")
+        SectionTitle(stringResource(R.string.dial_title_complications))
+        IntField(stringResource(R.string.dial_text_size), d.complicationTextSize, 10..48,
             { v -> state.update { it.copy(complicationTextSize = v) } },
             Tags.field("complicationTextSize"), state.firstError("complicationTextSize"))
-        IntField("Title size (10 to 48)", d.complicationTitleSize, 10..48,
+        IntField(stringResource(R.string.dial_title_size), d.complicationTitleSize, 10..48,
             { v -> state.update { it.copy(complicationTitleSize = v) } },
             Tags.field("complicationTitleSize"), state.firstError("complicationTitleSize"))
-        SwitchRow("Show titles", d.showTitles, { v -> state.update { it.copy(showTitles = v) } }, Tags.field("showTitles"))
-        SwitchRow("Show icons", d.showIcons, { v -> state.update { it.copy(showIcons = v) } }, Tags.field("showIcons"))
+        SwitchRow(stringResource(R.string.dial_show_titles), d.showTitles, { v -> state.update { it.copy(showTitles = v) } }, Tags.field("showTitles"))
+        SwitchRow(stringResource(R.string.dial_show_icons), d.showIcons, { v -> state.update { it.copy(showIcons = v) } }, Tags.field("showIcons"))
     }
 }

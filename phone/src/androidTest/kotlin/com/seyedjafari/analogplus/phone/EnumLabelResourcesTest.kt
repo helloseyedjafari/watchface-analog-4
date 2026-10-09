@@ -2,6 +2,7 @@ package com.seyedjafari.analogplus.phone
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.seyedjafari.analogplus.phone.ui.design.DesignSection
 import com.seyedjafari.analogplus.phone.ui.nav.Destination
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -17,5 +18,9 @@ class EnumLabelResourcesTest {
 
     @Test fun destinationLabelResMatchesLabel() {
         Destination.entries.forEach { assertEquals(it.name, it.label, context.getString(it.labelRes)) }
+    }
+
+    @Test fun designSectionLabelResMatchesLabel() {
+        DesignSection.entries.forEach { assertEquals(it.name, it.label, context.getString(it.labelRes)) }
     }
 }

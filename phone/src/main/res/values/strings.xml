@@ -20,4 +20,117 @@
     <string name="load_shared_message">\"%1$s\" will replace the design you are editing.</string>
     <string name="load_shared_button_load">Load</string>
     <string name="load_shared_button_keep">Keep mine</string>
+
+    <!-- Design: sections -->
+    <string name="design_section_colours">Colours</string>
+    <string name="design_section_dial">Dial</string>
+    <string name="design_section_hands">Hands</string>
+    <string name="design_section_background">Background</string>
+    <string name="design_section_complications">Complications</string>
+    <string name="design_section_rings">Rings</string>
+    <string name="design_button_send_to_watch">Send to watch</string>
+
+    <!-- Design: Colours and Hands -->
+    <string name="colours_accent">Accent colour</string>
+    <string name="colours_tick">Tick colour</string>
+    <string name="colours_numeral">Numeral colour</string>
+    <string name="hands_second_hand">Second hand</string>
+
+    <!-- Design: Dial -->
+    <string name="dial_title_ticks">Ticks</string>
+    <string name="dial_show_minute_ticks">Show minute ticks</string>
+    <string name="dial_minute_tick_width">Minute tick width (1 to 8)</string>
+    <string name="dial_minute_tick_length">Minute tick length (3 to 20)</string>
+    <string name="dial_five_minute_dots">Five-minute dots</string>
+    <string name="dial_title_numerals">Numerals</string>
+    <string name="dial_numerals">Numerals</string>
+    <string name="dial_title_complications">Complications</string>
+    <string name="dial_text_size">Text size (10 to 48)</string>
+    <string name="dial_title_size">Title size (10 to 48)</string>
+    <string name="dial_show_titles">Show titles</string>
+    <string name="dial_show_icons">Show icons</string>
+
+    <!-- Design: Background -->
+    <string name="background_loading_photo">Loading photo</string>
+    <string name="background_reading_photo">Reading photo</string>
+    <string name="background_chosen_photo">Chosen photo</string>
+    <string name="background_preview_unavailable">Preview unavailable</string>
+    <string name="background_photo_too_large">That photo is larger than %1$d MB. Pick a smaller one.</string>
+    <string name="background_photo_empty">That file is empty.</string>
+    <string name="background_photo_unreadable">The photo could not be read.</string>
+    <string name="background_kind">Background</string>
+    <string name="background_colour_solid">Colour</string>
+    <string name="background_colour_gradient">Top colour</string>
+    <string name="background_colour_photo">Fallback colour</string>
+    <string name="background_colour_bottom">Bottom colour</string>
+    <string name="background_button_choose_photo">Choose photo</string>
+    <string name="background_button_change_photo">Change photo</string>
+    <string name="background_button_remove_photo">Remove photo</string>
+    <string name="background_dim">Dim photo (0 to 80 percent)</string>
+
+    <!-- Design: Rings -->
+    <string name="ring_title">Ring complications</string>
+    <string name="ring_error_line">%1$s: %2$s</string>
+    <string name="ring_errors_more">and %1$d more</string>
+    <string name="ring_button_reset">Reset ring to default</string>
+    <string name="ring_layout_none">None</string>
+    <string name="ring_layout_full">Full</string>
+    <string name="ring_layout_halves">2 halves</string>
+    <string name="ring_layout_thirds">3 thirds</string>
+    <string name="ring_layout_quarters">4 quarters</string>
+    <string name="ring_colour_single">Ring colour</string>
+    <string name="ring_colour_segment">Segment %1$d colour</string>
+    <string name="ring_colours_more">+%1$d more (fix by choosing a ring layout / resetting colours)</string>
+    <string name="ring_button_reset_colours">Reset ring colours</string>
+    <string name="ring_track_colour">Track colour</string>
+    <string name="ring_thickness">Thickness</string>
+    <string name="ring_gap">Gap (degrees)</string>
+    <string name="ring_start_angle">Start angle</string>
+    <string name="ring_ends">Ends</string>
+    <string name="ring_caps_round">Round</string>
+    <string name="ring_caps_flat">Flat</string>
+    <string name="ring_clockwise">Clockwise</string>
+    <string name="ring_choose_layout_hint">Choose a layout to put ring complications around the dial.</string>
+
+    <!-- Design: Complications -->
+    <string name="complications_title">Complications</string>
+    <string name="complications_cap_indicator">%1$d of %2$d</string>
+    <string name="complications_cap_over_limit">over limit</string>
+    <string name="complications_cap_within_limit">within the limit</string>
+    <string name="complications_slot_field_error">%1$s: %2$s</string>
+    <plurals name="complications_numeral_overlap">
+        <item quantity="one">Slot %1$d (%2$s) overlaps the numeral %3$s. That is allowed, but the numbers may be hard to read.</item>
+        <item quantity="other">Slot %1$d (%2$s) overlaps the numerals %3$s. That is allowed, but the numbers may be hard to read.</item>
+    </plurals>
+    <string name="complications_button_slots_classic">4 slots (classic)</string>
+    <string name="complications_button_slots_six">6 slots</string>
+    <string name="complications_button_add_slot">Add slot</string>
+    <string name="complications_button_remove_slot">Remove slot</string>
+    <string name="complications_slot_chip">%1$d: %2$s</string>
+    <string name="complications_slots_more">+%1$d more (fix by resetting slots)</string>
+    <string name="complications_button_reset_slots">Reset slots to default</string>
+    <string name="complications_tap_hint">Tap a slot to edit it, drag it to move it.</string>
+    <string name="complications_name">Name</string>
+    <string name="complications_shape_box">Box</string>
+    <string name="complications_shape_oval">Oval</string>
+    <string name="complications_shape_round_box">Rounded box</string>
+    <string name="complications_nudge_by">Nudge by</string>
+    <string name="complications_move_left">Move left</string>
+    <string name="complications_move_up">Move up</string>
+    <string name="complications_move_down">Move down</string>
+    <string name="complications_move_right">Move right</string>
+    <!-- arrow glyphs: symbols, not words -->
+    <string name="complications_arrow_left" translatable="false">←</string>
+    <string name="complications_arrow_up" translatable="false">↑</string>
+    <string name="complications_arrow_down" translatable="false">↓</string>
+    <string name="complications_arrow_right" translatable="false">→</string>
+    <string name="complications_field_x">x</string>
+    <string name="complications_field_y">y</string>
+    <string name="complications_field_width">width</string>
+    <string name="complications_field_height">height</string>
+    <string name="complications_background">Background</string>
+    <string name="complications_background_colour">Background colour</string>
+    <string name="complications_text_colour">Text colour</string>
+    <string name="complications_icon_accent">Icon uses the accent colour</string>
+    <string name="complications_icon_colour">Icon colour</string>
 </resources>

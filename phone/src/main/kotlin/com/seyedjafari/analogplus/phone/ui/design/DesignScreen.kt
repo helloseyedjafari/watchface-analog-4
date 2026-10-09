@@ -35,6 +35,8 @@ import com.seyedjafari.analogplus.phone.ui.components.keyboardIsOpen
 import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import com.seyedjafari.analogplus.phone.ui.theme.rememberSharedAxis
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
 
 /**
  * Pinned preview and hint, section chips, the selected section (scrolls vertically, so a section must not hold a lazy
@@ -64,7 +66,7 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
         SectionChips(DesignSection.entries, selected, {
             if (it != selected) scope.launch(start = CoroutineStart.UNDISPATCHED) { scrolls.getValue(it).scrollTo(0) }
             selected = it
-        }, { it.label }, { it.tag() })
+        }, { stringResource(it.labelRes) }, { it.tag() })
         AnimatedContent(
             selected, Modifier.weight(1f).fillMaxWidth(), transitionSpec = sectionTransition, label = "design-section",
         ) { section ->
@@ -92,7 +94,7 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
         // with the keyboard open the send row would eat the little space left for the field being edited
         if (!keyboardOpen) {
             PrimaryButton(
-                "Send to watch", onSend,
+                stringResource(R.string.design_button_send_to_watch), onSend,
                 Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.sm).testTag(Tags.field("design_send")),
                 enabled = state.errors.isEmpty(), loading = sendBusy,
             )

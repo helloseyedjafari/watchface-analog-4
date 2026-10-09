@@ -46,6 +46,18 @@ import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
+
+/** Why the picked photo was not taken; resolved to text where it is shown, so it follows the language. */
+private enum class PhotoMessage { TOO_LARGE, EMPTY, UNREADABLE }
+
+@Composable
+private fun photoMessageText(m: PhotoMessage): String = when (m) {
+    PhotoMessage.TOO_LARGE -> stringResource(R.string.background_photo_too_large, MAX_PHOTO_BYTES / (1024 * 1024))
+    PhotoMessage.EMPTY -> stringResource(R.string.background_photo_empty)
+    PhotoMessage.UNREADABLE -> stringResource(R.string.background_photo_unreadable)
+}
 
 /** The thumbnail of the chosen photo: still being decoded, ready, or not decodable. */
 private sealed interface Thumb {
@@ -63,11 +75,12 @@ internal fun PhotoThumb(bytes: ByteArray, decode: (ByteArray) -> android.graphic
     val thumb by produceState<Thumb>(Thumb.Loading, bytes) {
         value = withContext(Dispatchers.Default) { decode(bytes)?.let { Thumb.Ready(it) } ?: Thumb.Unavailable }
     }
+    val loadingPhoto = stringResource(R.string.background_loading_photo)
     when (val t = thumb) {
-        Thumb.Loading -> Skeleton(Modifier.size(Dimens.PhotoThumbSize).testTag(Tags.field("background_thumb_loading")).semantics { contentDescription = "Loading photo" })
-        is Thumb.Ready -> Image(t.bitmap.asImageBitmap(), contentDescription = "Chosen photo", contentScale = ContentScale.Crop,
+        Thumb.Loading -> Skeleton(Modifier.size(Dimens.PhotoThumbSize).testTag(Tags.field("background_thumb_loading")).semantics { contentDescription = loadingPhoto })
+        is Thumb.Ready -> Image(t.bitmap.asImageBitmap(), contentDescription = stringResource(R.string.background_chosen_photo), contentScale = ContentScale.Crop,
             modifier = Modifier.size(Dimens.PhotoThumbSize).testTag(Tags.field("background_thumb")))
-        Thumb.Unavailable -> Text("Preview unavailable", style = MaterialTheme.typography.bodySmall,
+        Thumb.Unavailable -> Text(stringResource(R.string.background_preview_unavailable), style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.testTag(Tags.field("background_thumb_unavailable")))
     }
 }
@@ -78,7 +91,7 @@ internal fun BackgroundSection(state: EditorState, readPhoto: (Context, Uri) -> 
     val bg = state.design.background
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var message by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<PhotoMessage?>(null) }
     // the picked photo is being read (up to 25 MB, off the main thread)
     var reading by remember { mutableStateOf(false) }
 
@@ -96,39 +109,39 @@ internal fun BackgroundSection(state: EditorState, readPhoto: (Context, Uri) -> 
             }
             when (result) {
                 is PhotoRead.Ok -> { message = null; setBackground { it.copy(photoJpeg = result.bytes) } }
-                PhotoRead.TooLarge -> message = "That photo is larger than ${MAX_PHOTO_BYTES / (1024 * 1024)} MB. Pick a smaller one."
-                PhotoRead.Empty -> message = "That file is empty."
-                null -> message = "The photo could not be read."
+                PhotoRead.TooLarge -> message = PhotoMessage.TOO_LARGE
+                PhotoRead.Empty -> message = PhotoMessage.EMPTY
+                null -> message = PhotoMessage.UNREADABLE
             }
         }
     }
 
     TabColumn {
-        ChoiceRow("Background", BackgroundKind.entries, bg.kind, { k -> setBackground { it.copy(kind = k) } }, "background_kind")
+        ChoiceRow(stringResource(R.string.background_kind), BackgroundKind.entries, bg.kind, { k -> setBackground { it.copy(kind = k) } }, "background_kind")
         // a colour that is invalid stays visible in every mode so Send is never blocked by a hidden field
         ColourField(
             when (bg.kind) {
-                BackgroundKind.SOLID -> "Colour"
-                BackgroundKind.GRADIENT -> "Top colour"
-                BackgroundKind.PHOTO -> "Fallback colour"
+                BackgroundKind.SOLID -> stringResource(R.string.background_colour_solid)
+                BackgroundKind.GRADIENT -> stringResource(R.string.background_colour_gradient)
+                BackgroundKind.PHOTO -> stringResource(R.string.background_colour_photo)
             },
             bg.color, { v -> setBackground { it.copy(color = v) } },
             state.firstError("background.color"), Tags.field("background_color"),
         )
         if (bg.kind == BackgroundKind.GRADIENT || state.errorsFor("background.color2").isNotEmpty()) {
-            ColourField("Bottom colour", bg.color2, { v -> setBackground { it.copy(color2 = v) } },
+            ColourField(stringResource(R.string.background_colour_bottom), bg.color2, { v -> setBackground { it.copy(color2 = v) } },
                 state.firstError("background.color2"), Tags.field("background_color2"))
         }
         if (bg.kind == BackgroundKind.PHOTO) {
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
                 PrimaryButton(
-                    if (bg.photoJpeg == null) "Choose photo" else "Change photo",
+                    stringResource(if (bg.photoJpeg == null) R.string.background_button_choose_photo else R.string.background_button_change_photo),
                     { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                     Modifier.testTag(Tags.field("background_pick")),
                 )
                 if (bg.photoJpeg != null) {
                     SecondaryButton(
-                        "Remove photo",
+                        stringResource(R.string.background_button_remove_photo),
                         { message = null; setBackground { it.copy(photoJpeg = null) } },
                         Modifier.testTag(Tags.field("background_remove")),
                     )
@@ -139,21 +152,23 @@ internal fun BackgroundSection(state: EditorState, readPhoto: (Context, Uri) -> 
                 Text(photoError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag(Tags.error(Tags.field("background_photo"))))
             }
-            if (message != null) {
-                Text(message!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+            message?.let { m ->
+                Text(photoMessageText(m), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag(Tags.field("background_message")))
             }
             val bytes = bg.photoJpeg
             val loadingSaved = bytes == null && state.photoLoad == PhotoLoad.LOADING
+            val readingPhoto = stringResource(R.string.background_reading_photo)
+            val loadingPhoto = stringResource(R.string.background_loading_photo)
             when {
-                reading -> Skeleton(Modifier.size(Dimens.PhotoThumbSize).testTag(Tags.field("background_reading")).semantics { contentDescription = "Reading photo" })
-                loadingSaved -> Skeleton(Modifier.size(Dimens.PhotoThumbSize).testTag(Tags.field("background_loading")).semantics { contentDescription = "Loading photo" })
+                reading -> Skeleton(Modifier.size(Dimens.PhotoThumbSize).testTag(Tags.field("background_reading")).semantics { contentDescription = readingPhoto })
+                loadingSaved -> Skeleton(Modifier.size(Dimens.PhotoThumbSize).testTag(Tags.field("background_loading")).semantics { contentDescription = loadingPhoto })
                 bytes != null -> PhotoThumb(bytes)
             }
         }
         // an invalid dim stays visible after switching away from PHOTO, like the colours above
         if (bg.kind == BackgroundKind.PHOTO || state.errorsFor("background.dimPercent").isNotEmpty()) {
-            IntField("Dim photo (0 to 80 percent)", bg.dimPercent, 0..80,
+            IntField(stringResource(R.string.background_dim), bg.dimPercent, 0..80,
                 { v -> setBackground { it.copy(dimPercent = v) } },
                 Tags.field("background_dim"), state.firstError("background.dimPercent"))
         }
