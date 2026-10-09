@@ -10,9 +10,10 @@ import androidx.compose.ui.unit.Dp
 internal val LocalSectionViewportHeight = compositionLocalOf { Dp.Unspecified }
 
 /**
- * The side of the square slot canvas: [maxSide] (the width the section has, capped), or, when the section area is
- * [viewportHeight] tall and [fitToViewport] asks for it, whatever is left of that height under [aboveCanvas] and the
- * [topPadding] over it. Never below [minSide] (a canvas smaller than that is too small to drag on; the section scrolls then), never above [maxSide].
+ * The side of the square slot canvas: [maxSide] (the width the section has, capped) when [viewportHeight] is null (the canvas
+ * is not fitted to the section area), or, when the section area is [viewportHeight] tall, whatever is left of that height
+ * under [aboveCanvas] and the [topPadding] over it. Never below [minSide] (a canvas smaller than that is too small to drag
+ * on; the section scrolls then), never above [maxSide].
  */
 internal fun slotCanvasSide(maxSide: Int, minSide: Int, viewportHeight: Int?, topPadding: Int, aboveCanvas: Int): Int {
     if (viewportHeight == null) return maxSide
