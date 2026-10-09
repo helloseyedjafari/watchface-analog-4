@@ -1,5 +1,9 @@
 package com.seyedjafari.analogplus.phone.ui.components
 
+import com.seyedjafari.analogplus.phone.ui.theme.LightDarkPreview
+import com.seyedjafari.analogplus.phone.ui.theme.PreviewFrame
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
@@ -50,4 +54,13 @@ fun ErrorBanner(text: String, modifier: Modifier = Modifier, maxLines: Int = Int
         maxLines = maxLines, overflow = TextOverflow.Ellipsis,
         modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
     )
+}
+
+@LightDarkPreview
+@Composable
+private fun StatusPreview() = PreviewFrame {
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+        StatusKind.entries.forEach { StatusPill(stringResource(R.string.send_status_found), it) }
+        ErrorBanner(stringResource(R.string.send_status_could_not_check))
+    }
 }

@@ -1,5 +1,7 @@
 package com.seyedjafari.analogplus.phone.ui.components
 
+import com.seyedjafari.analogplus.phone.ui.theme.LightDarkPreview
+import com.seyedjafari.analogplus.phone.ui.theme.PreviewFrame
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,3 +29,7 @@ fun LoadSharedDesignDialog(design: DesignSettings, onLoad: () -> Unit, onKeep: (
         modifier = Modifier.testTag(Tags.field("link_dialog")),
     )
 }
+
+@LightDarkPreview
+@Composable
+private fun LoadSharedDesignDialogPreview() = PreviewFrame { LoadSharedDesignDialog(DesignSettings(), {}, {}) }

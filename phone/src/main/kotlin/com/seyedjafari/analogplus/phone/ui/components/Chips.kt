@@ -1,5 +1,10 @@
 package com.seyedjafari.analogplus.phone.ui.components
 
+import com.seyedjafari.analogplus.phone.ui.theme.LightDarkPreview
+import com.seyedjafari.analogplus.phone.ui.theme.PreviewFrame
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.ui.design.DesignSection
+import com.seyedjafari.analogplus.phone.ui.design.tag
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -35,4 +40,10 @@ fun <T> SectionChips(items: List<T>, selected: T, onSelect: (T) -> Unit, label: 
             )
         }
     }
+}
+
+@LightDarkPreview
+@Composable
+private fun SectionChipsPreview() = PreviewFrame {
+    SectionChips(DesignSection.entries, DesignSection.DIAL, {}, { stringResource(it.labelRes) }, { it.tag() })
 }

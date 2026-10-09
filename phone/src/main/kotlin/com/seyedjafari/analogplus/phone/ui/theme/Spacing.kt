@@ -14,6 +14,15 @@ object Spacing {
     val hairline = 1.dp
 }
 
+/** Tonal elevations of the surfaces. Screens use these, never dp literals. */
+object Elevation {
+    val none = 0.dp
+    /** A card on the page. */
+    val card = 1.dp
+    /** Something that sits above the cards. */
+    val raised = 3.dp
+}
+
 /** Fixed sizes that are not spacing: previews, thumbnails and field widths. Screens use these, never dp literals. */
 object Dimens {
     /** The hero preview of the Design destination. */

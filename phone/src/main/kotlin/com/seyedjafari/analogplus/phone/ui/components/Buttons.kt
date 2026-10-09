@@ -1,5 +1,9 @@
 package com.seyedjafari.analogplus.phone.ui.components
 
+import com.seyedjafari.analogplus.phone.ui.theme.LightDarkPreview
+import com.seyedjafari.analogplus.phone.ui.theme.PreviewFrame
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
@@ -55,5 +59,16 @@ fun SecondaryButton(
             text, style = MaterialTheme.typography.labelLarge,
             modifier = if (contentDescription != null) Modifier.clearAndSetSemantics {} else Modifier,
         )
+    }
+}
+
+@LightDarkPreview
+@Composable
+private fun ButtonsPreview() = PreviewFrame {
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+        PrimaryButton(stringResource(R.string.design_button_send_to_watch), {})
+        PrimaryButton(stringResource(R.string.design_button_send_to_watch), {}, loading = true)
+        PrimaryButton(stringResource(R.string.design_button_send_to_watch), {}, enabled = false)
+        SecondaryButton(stringResource(R.string.common_cancel), {})
     }
 }

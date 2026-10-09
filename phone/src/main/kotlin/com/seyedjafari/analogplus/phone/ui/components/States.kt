@@ -1,5 +1,11 @@
 package com.seyedjafari.analogplus.phone.ui.components
 
+import com.seyedjafari.analogplus.phone.ui.theme.LightDarkPreview
+import com.seyedjafari.analogplus.phone.ui.theme.PreviewFrame
+import com.seyedjafari.analogplus.phone.ui.theme.Dimens
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -53,4 +59,13 @@ fun Skeleton(modifier: Modifier = Modifier) {
         // alpha first: a layer only affects what comes after it in the chain, so it must wrap the background it pulses
         modifier.alpha(alpha).clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surfaceVariant),
     )
+}
+
+@LightDarkPreview
+@Composable
+private fun StatesPreview() = PreviewFrame {
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+        EmptyState(stringResource(R.string.mydesigns_empty_title), stringResource(R.string.mydesigns_empty_body))
+        Skeleton(Modifier.size(Dimens.ThumbSizeLarge))
+    }
 }
