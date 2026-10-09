@@ -28,6 +28,7 @@ import com.seyedjafari.analogplus.phone.ui.design.BackgroundSection
 import com.seyedjafari.analogplus.phone.ui.design.PhotoThumb
 import com.seyedjafari.analogplus.phone.ui.library.DesignThumbnail
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
+import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -35,11 +36,20 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /** Spec: a skeleton shimmer while the photo (or a thumbnail) loads, replaced by the real thing when it is ready. */
 @RunWith(AndroidJUnit4::class)
 class PhotoLoadingTest {
     @get:Rule val rule = createComposeRule()
+
+    // every gate is opened after the test, so a read that is still waiting on a background thread cannot outlive a failed test
+    private val gates = mutableListOf<CountDownLatch>()
+    private fun newGate() = CountDownLatch(1).also { gates += it }
+
+    @After fun openAllGates() {
+        gates.forEach { it.countDown() }
+    }
 
     private fun count(tag: String) = rule.onAllNodesWithTag(tag).fetchSemanticsNodes().size
 
@@ -89,9 +99,9 @@ class PhotoLoadingTest {
 
     @Test fun aPickedPhotoShowsASkeletonWhileItIsReadThenTheThumbnail() {
         val state = EditorState(photoDesign)
-        val gate = CountDownLatch(1)
+        val gate = newGate()
         val bytes = jpeg()
-        rule.setContent { host(state, readPhoto = { _, _ -> gate.await(); PhotoRead.Ok(bytes) }) }
+        rule.setContent { host(state, readPhoto = { _, _ -> gate.await(10, TimeUnit.SECONDS); PhotoRead.Ok(bytes) }) }
         assertEquals(0, count(Tags.field("background_reading")))
         rule.onNodeWithTag(Tags.field("background_pick")).performScrollTo().performClick()
         rule.waitUntil(5_000) { count(Tags.field("background_reading")) == 1 }
@@ -104,8 +114,8 @@ class PhotoLoadingTest {
 
     @Test fun theReadingSkeletonGoesAwayWhenThePhotoCannotBeRead() {
         val state = EditorState(photoDesign)
-        val gate = CountDownLatch(1)
-        rule.setContent { host(state, readPhoto = { _, _ -> gate.await(); null }) }
+        val gate = newGate()
+        rule.setContent { host(state, readPhoto = { _, _ -> gate.await(10, TimeUnit.SECONDS); null }) }
         rule.onNodeWithTag(Tags.field("background_pick")).performScrollTo().performClick()
         rule.waitUntil(5_000) { count(Tags.field("background_reading")) == 1 }
         gate.countDown()
@@ -114,9 +124,9 @@ class PhotoLoadingTest {
     }
 
     @Test fun theThumbnailIsASkeletonUntilItIsDecoded() {
-        val gate = CountDownLatch(1)
+        val gate = newGate()
         val decoded = bitmap()
-        rule.setContent { AnalogTheme { PhotoThumb(ByteArray(10), decode = { gate.await(); decoded }) } }
+        rule.setContent { AnalogTheme { PhotoThumb(ByteArray(10), decode = { gate.await(10, TimeUnit.SECONDS); decoded }) } }
         rule.onNodeWithTag(Tags.field("background_thumb_loading")).assertIsDisplayed()
         assertEquals(0, count(Tags.field("background_thumb")))
         gate.countDown()
@@ -131,9 +141,9 @@ class PhotoLoadingTest {
     }
 
     @Test fun aDesignThumbnailIsASkeletonUntilItIsRendered() {
-        val gate = CountDownLatch(1)
+        val gate = newGate()
         val rendered = bitmap()
-        rule.setContent { AnalogTheme { DesignThumbnail(Templates.all.first(), 96.dp, render = { _, _, _ -> gate.await(); rendered }) } }
+        rule.setContent { AnalogTheme { DesignThumbnail(Templates.all.first(), 96.dp, render = { _, _, _ -> gate.await(10, TimeUnit.SECONDS); rendered }) } }
         rule.onNodeWithTag(Tags.field("design_thumb_loading")).assertIsDisplayed()
         assertEquals(0, count(Tags.field("design_thumb")))
         gate.countDown()

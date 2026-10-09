@@ -21,7 +21,10 @@ internal class FakeKv : KeyValueStore {
 internal fun testStore(): Store =
     Store(FakeKv(), File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "test-${System.nanoTime()}.jpg"))
 
-/** A controller whose sender never answers; the default builder must not be reached. */
+/**
+ * A controller whose sender never answers. The default builder fails when it is reached; SendController turns that error into
+ * a status message, so a test that does not mean to build only sees the message (it does not crash).
+ */
 internal fun testSend(store: Store, builder: FaceBuilder = FaceBuilder { _, _ -> error("not called") }): SendController =
     SendController(builder, FaceSender { emptyFlow() }, store, CoroutineScope(Dispatchers.Default))
 
