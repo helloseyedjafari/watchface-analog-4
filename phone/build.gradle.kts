@@ -34,6 +34,13 @@ android {
     }
 }
 
+// Some JVM tests read the sources and strings.xml as files (NoHardCodedLiteralsTest, StringsXmlMatchesCodeTest). They are
+// not on the test classpath, so without these inputs Gradle would call the tests up to date after an edit to them.
+tasks.withType<Test>().configureEach {
+    inputs.dir("src/main/kotlin").withPropertyName("mainSourcesRead")
+    inputs.dir("src/main/res/values").withPropertyName("stringsRead")
+}
+
 dependencies {
     implementation(project(":facegen"))
     implementation(project(":protocol"))
