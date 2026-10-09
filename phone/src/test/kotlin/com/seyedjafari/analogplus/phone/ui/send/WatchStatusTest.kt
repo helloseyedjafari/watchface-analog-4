@@ -15,7 +15,6 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
-import org.junit.Assert.fail
 import org.junit.Test
 
 class WatchStatusTest {
@@ -35,14 +34,9 @@ class WatchStatusTest {
     @Test fun appFound() = assertEquals(WatchStatus(CheckStatus.OK, CheckStatus.OK), check(FakeTransport(withApp = listOf(WatchNode("w", true)))))
     @Test fun pairedButNoApp() = assertEquals(WatchStatus(CheckStatus.OK, CheckStatus.ACTION_NEEDED), check(FakeTransport(connected = listOf("w"))))
     @Test fun noWatchAtAll() = assertEquals(WatchStatus(CheckStatus.ACTION_NEEDED, CheckStatus.UNKNOWN), check(FakeTransport()))
-    @Test fun cancellationPropagatesInsteadOfBecomingUnknown() {
-        try {
-            check(FakeTransport(cancel = true))
-            fail("CancellationException must propagate, not be mapped to a WatchStatus")
-        } catch (e: CancellationException) {
-            assertEquals("cancelled", e.message)
-        }
-    }
+    /** A CancellationException that did not come from the caller being cancelled (a transport's own, say) is a failed check: rethrowing it would leave "Checking" on screen forever. */
+    @Test fun aCancellationThatDidNotComeFromTheCallerIsUnknown() =
+        assertEquals(WatchStatus(CheckStatus.UNKNOWN, CheckStatus.UNKNOWN), check(FakeTransport(cancel = true)))
 
     @Test fun transportFailureIsUnknownNotNegative() = assertEquals(WatchStatus(CheckStatus.UNKNOWN, CheckStatus.UNKNOWN), check(FakeTransport(fail = true)))
 

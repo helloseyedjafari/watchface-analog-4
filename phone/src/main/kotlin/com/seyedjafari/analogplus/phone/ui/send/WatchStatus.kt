@@ -4,6 +4,8 @@ import android.content.Context
 import com.seyedjafari.analogplus.phone.GmsTransport
 import com.seyedjafari.analogplus.phone.WatchTransport
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 
 enum class CheckStatus { CHECKING, OK, ACTION_NEEDED, UNKNOWN }
@@ -22,7 +24,9 @@ class TransportWatchStatusChecker(private val transport: WatchTransport) : Watch
     override suspend fun check(): WatchStatus = try {
         withTimeoutOrNull(WATCH_CHECK_TIMEOUT_MS) { query() } ?: WatchStatus(CheckStatus.UNKNOWN, CheckStatus.UNKNOWN)
     } catch (e: CancellationException) {
-        throw e
+        // the caller being cancelled must propagate; a CancellationException of the transport's own is a failed check
+        currentCoroutineContext().ensureActive()
+        WatchStatus(CheckStatus.UNKNOWN, CheckStatus.UNKNOWN)
     } catch (e: Exception) {
         WatchStatus(CheckStatus.UNKNOWN, CheckStatus.UNKNOWN)
     }
