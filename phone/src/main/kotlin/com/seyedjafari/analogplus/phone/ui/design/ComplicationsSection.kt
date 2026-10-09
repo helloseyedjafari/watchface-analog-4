@@ -9,10 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,7 +26,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.SlotDesign
 import com.seyedjafari.analogplus.facegen.design.SlotShape
 import com.seyedjafari.analogplus.facegen.design.defaultSlots
@@ -37,6 +34,7 @@ import com.seyedjafari.analogplus.phone.EditorState
 import com.seyedjafari.analogplus.phone.SlotDragEditor
 import com.seyedjafari.analogplus.phone.SlotGeometry
 import com.seyedjafari.analogplus.phone.SlotRefusal
+import com.seyedjafari.analogplus.phone.SectionTitle
 import com.seyedjafari.analogplus.phone.SlotResult
 import com.seyedjafari.analogplus.phone.SwitchRow
 import com.seyedjafari.analogplus.phone.Tags
@@ -44,7 +42,9 @@ import com.seyedjafari.analogplus.phone.describe
 import com.seyedjafari.analogplus.phone.describeField
 import com.seyedjafari.analogplus.phone.firstError
 import com.seyedjafari.analogplus.phone.shortForDisplay
+import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
+import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 
 private const val NEW_SLOT_BACKGROUND = "#FF1E1E1E"
@@ -62,7 +62,7 @@ fun CapIndicator(state: EditorState, modifier: Modifier = Modifier) {
             .testTag(Tags.CAP_INDICATOR)
             .semantics { stateDescription = if (over) OVER_LIMIT else "within the limit" },
         color = if (over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-        style = MaterialTheme.typography.titleMedium,
+        style = MaterialTheme.typography.titleSmall,
     )
 }
 
@@ -85,7 +85,7 @@ fun ComplicationsSection(state: EditorState) {
 
     Column(Modifier.fillMaxWidth().padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Complications", style = MaterialTheme.typography.titleMedium)
+            SectionTitle("Complications")
             CapIndicator(state)
         }
         SlotDragEditor(
@@ -93,7 +93,7 @@ fun ComplicationsSection(state: EditorState) {
             selectedId = selected?.id,
             onSelect = { selectedId = it },
             onRefusal = { message = it },
-            modifier = Modifier.fillMaxWidth().widthIn(max = 360.dp).align(Alignment.CenterHorizontally),
+            modifier = Modifier.fillMaxWidth().widthIn(max = Dimens.SlotEditorMaxWidth).align(Alignment.CenterHorizontally),
         )
         message?.let {
             Text(it.message, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(Tags.field("slot_message")))
@@ -124,34 +124,41 @@ fun ComplicationsSection(state: EditorState) {
             }
         }
 
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = {
-                state.update { it.copy(slots = defaultSlots()) }
-                selectedId = null
-                message = null
-            }, modifier = Modifier.testTag(Tags.field("slots_4"))) { Text("4 slots (classic)") }
-            OutlinedButton(onClick = { apply(SlotGeometry.addUpTo(state.design, 6)) }, modifier = Modifier.testTag(Tags.field("slots_6"))) {
-                Text("6 slots")
-            }
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+            SecondaryButton(
+                "4 slots (classic)",
+                {
+                    state.update { it.copy(slots = defaultSlots()) }
+                    selectedId = null
+                    message = null
+                },
+                Modifier.testTag(Tags.field("slots_4")),
+            )
+            SecondaryButton("6 slots", { apply(SlotGeometry.addUpTo(state.design, 6)) }, Modifier.testTag(Tags.field("slots_6")))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = {
-                val r = SlotGeometry.addSlot(state.design)
-                apply(r)
-                if (r.refusal == null) selectedId = r.design.slots.last().id
-            }, modifier = Modifier.testTag(Tags.field("slot_add"))) { Text("Add slot") }
-            Button(
-                onClick = {
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+            PrimaryButton(
+                "Add slot",
+                {
+                    val r = SlotGeometry.addSlot(state.design)
+                    apply(r)
+                    if (r.refusal == null) selectedId = r.design.slots.last().id
+                },
+                Modifier.testTag(Tags.field("slot_add")),
+            )
+            SecondaryButton(
+                "Remove slot",
+                {
                     selected?.let { state.replace(SlotGeometry.removeSlot(state.design, it.id)) }
                     selectedId = null
                     message = null
                 },
+                Modifier.testTag(Tags.field("slot_remove")),
                 enabled = selected != null,
-                modifier = Modifier.testTag(Tags.field("slot_remove")),
-            ) { Text("Remove slot") }
+            )
         }
 
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             design.slots.take(SlotGeometry.MAX_SHOWN).forEach { s ->
                 FilterChip(
                     selected = s.id == selected?.id,
@@ -168,14 +175,15 @@ fun ComplicationsSection(state: EditorState) {
                 color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag(Tags.field("slots_more")),
             )
-            Button(
-                onClick = {
+            SecondaryButton(
+                "Reset slots to default",
+                {
                     state.update { it.copy(slots = defaultSlots()) }
                     selectedId = null
                     message = null
                 },
-                modifier = Modifier.testTag(Tags.field("slots_reset")),
-            ) { Text("Reset slots to default") }
+                Modifier.testTag(Tags.field("slots_reset")),
+            )
         }
 
         if (selected == null) {
@@ -194,7 +202,7 @@ private fun SelectedSlotControls(state: EditorState, s: SlotDesign, onResult: (S
     }
     fun errorOf(field: String) = state.firstError("slots[$index].$field")
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         OutlinedTextField(
             value = s.name,
             onValueChange = { edit { slot -> slot.copy(name = it) } },
@@ -216,7 +224,7 @@ private fun SelectedSlotControls(state: EditorState, s: SlotDesign, onResult: (S
 
         // position: arrow buttons (by 5 or 10 units) and number fields; both go through SlotGeometry
         var step by rememberSaveable { mutableStateOf(5) }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             Text("Nudge by")
             listOf(5, 10).forEach {
                 FilterChip(selected = step == it, onClick = { step = it }, label = { Text("$it") },
@@ -235,11 +243,11 @@ private fun SelectedSlotControls(state: EditorState, s: SlotDesign, onResult: (S
                     )
                 }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             SlotIntField("x", s.x, "slot_x", Modifier.weight(1f)) { onResult(SlotGeometry.move(state.design, s.id, it, s.y)) }
             SlotIntField("y", s.y, "slot_y", Modifier.weight(1f)) { onResult(SlotGeometry.move(state.design, s.id, s.x, it)) }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             SlotIntField("width", s.w, "slot_w", Modifier.weight(1f)) { onResult(SlotGeometry.resize(state.design, s.id, it, s.h)) }
             SlotIntField("height", s.h, "slot_h", Modifier.weight(1f)) { onResult(SlotGeometry.resize(state.design, s.id, s.w, it)) }
         }
