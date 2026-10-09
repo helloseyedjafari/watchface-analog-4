@@ -7,6 +7,8 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.seyedjafari.analogplus.phone.ui.nav.AppNav
 import com.seyedjafari.analogplus.phone.ui.nav.Destination
@@ -42,5 +44,27 @@ class NavigationTest {
         rule.onNodeWithTag(Destination.DESIGN.tag).assertIsSelected()
         rule.onNodeWithText("screen DESIGN").assertExists()
         rule.onNodeWithText("screen SEND").assertDoesNotExist()
+    }
+
+    private fun leftOfScreen(name: String) = rule.onNodeWithText("screen $name").fetchSemanticsNode().positionInRoot.x
+
+    /** Shared axis: mid-transition the entering destination is still offset sideways (forward = from the right), not only faded. */
+    @Test fun destinationsSlideInTheDirectionOfTheirOrder() {
+        show()
+        rule.mainClock.autoAdvance = false
+        rule.onNodeWithTag(Destination.SEND.tag).performClick()
+        rule.mainClock.advanceTimeBy(100)
+        assertTrue("forward: Send enters from the right (left=${leftOfScreen("SEND")})", leftOfScreen("SEND") > 0f)
+        rule.mainClock.autoAdvance = true
+        rule.waitForIdle()
+        assertEquals(0f, leftOfScreen("SEND"), 0.5f)
+
+        rule.mainClock.autoAdvance = false
+        rule.onNodeWithTag(Destination.DESIGN.tag).performClick()
+        rule.mainClock.advanceTimeBy(100)
+        assertTrue("backward: Design enters from the left (left=${leftOfScreen("DESIGN")})", leftOfScreen("DESIGN") < 0f)
+        rule.mainClock.autoAdvance = true
+        rule.waitForIdle()
+        assertEquals(0f, leftOfScreen("DESIGN"), 0.5f)
     }
 }

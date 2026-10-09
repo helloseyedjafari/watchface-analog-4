@@ -1,9 +1,6 @@
 package com.seyedjafari.analogplus.phone.ui.design
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,9 +29,8 @@ import com.seyedjafari.analogplus.phone.fixFirstText
 import com.seyedjafari.analogplus.phone.ui.components.ErrorBanner
 import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SectionChips
-import com.seyedjafari.analogplus.phone.ui.theme.Motion
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
-import com.seyedjafari.analogplus.phone.ui.theme.motionSpec
+import com.seyedjafari.analogplus.phone.ui.theme.rememberSharedAxis
 
 private val PREVIEW_SIZE = 150.dp   // the one size literal: the hero preview, as in the POC
 
@@ -49,8 +45,7 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
     val scroll = rememberSaveable(selected, saver = ScrollState.Saver) { ScrollState(0) }
     // a section that leaves composition would lose its rememberSaveable state (selected slot, nudge step ...); keep it per section
     val sections = rememberSaveableStateHolder()
-    val fadeIn = fadeIn(motionSpec(Motion.MEDIUM))
-    val fadeOut = fadeOut(motionSpec(Motion.SHORT))
+    val sectionTransition = rememberSharedAxis<DesignSection>()
     Column(modifier.fillMaxSize()) {
         PreviewPane(state, Modifier.padding(vertical = Spacing.sm).size(PREVIEW_SIZE).align(Alignment.CenterHorizontally))
         designHints(state.design).firstOrNull()?.let {
@@ -62,7 +57,7 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
         }
         SectionChips(DesignSection.entries, selected, { selected = it }, { it.label }, { it.tag() })
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll)) {
-            AnimatedContent(selected, transitionSpec = { fadeIn togetherWith fadeOut }, label = "design-section") { section ->
+            AnimatedContent(selected, transitionSpec = sectionTransition, label = "design-section") { section ->
                 sections.SaveableStateProvider(section.name) {
                     when (section) {
                         DesignSection.COLOURS -> ColoursSection(state)

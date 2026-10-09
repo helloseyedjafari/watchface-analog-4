@@ -11,4 +11,10 @@ class MotionTest {
         assertEquals(0, motionDuration(300, -1f))
         assertEquals(0, motionDuration(300, Float.NaN))
     }
+
+    @Test fun laterItemsSlideInFromTheEndAndEarlierOnesFromTheStart() {
+        assertEquals(1, sharedAxisDirection(from = 0, to = 2))
+        assertEquals(-1, sharedAxisDirection(from = 3, to = 1))
+        assertEquals(1, sharedAxisDirection(from = 2, to = 2))
+    }
 }

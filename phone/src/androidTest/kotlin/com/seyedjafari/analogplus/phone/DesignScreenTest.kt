@@ -92,4 +92,17 @@ class DesignScreenTest {
         // the selected slot (an inner rememberSaveable) is still selected: its editor is open
         rule.onNodeWithTag(Tags.field("slot_name")).assertExists()
     }
+
+    /** Shared axis: going to a later section, the section being left slides out towards the start while it fades. */
+    @Test fun sectionsSlideInTheDirectionOfTheirOrder() {
+        show(EditorState())
+        val settled = rule.onNodeWithTag(Tags.ACCENT_FIELD).fetchSemanticsNode().positionInRoot.x
+        rule.mainClock.autoAdvance = false
+        rule.onNodeWithTag(Tags.tab("dial")).performClick()
+        rule.mainClock.advanceTimeBy(100)
+        val leaving = rule.onNodeWithTag(Tags.ACCENT_FIELD).fetchSemanticsNode().positionInRoot.x
+        assertTrue("forward: Colours leaves towards the start (left=$leaving, was $settled)", leaving < settled)
+        rule.mainClock.autoAdvance = true
+        rule.waitForIdle()
+    }
 }

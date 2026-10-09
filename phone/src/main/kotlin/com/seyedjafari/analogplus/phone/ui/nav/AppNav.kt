@@ -2,9 +2,6 @@ package com.seyedjafari.analogplus.phone.ui.nav
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -23,9 +20,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.semantics.contentDescription
+import com.seyedjafari.analogplus.phone.ui.theme.rememberSharedAxis
 import androidx.compose.ui.semantics.semantics
-import com.seyedjafari.analogplus.phone.ui.theme.Motion
-import com.seyedjafari.analogplus.phone.ui.theme.motionSpec
 
 private const val NAV_MAX_FONT_SCALE = 1.3f
 
@@ -39,8 +35,7 @@ fun AppNav(
     // AnimatedContent drops a destination's rememberSaveable state when it leaves composition; keep it per destination.
     val stateHolder = rememberSaveableStateHolder()
     BackHandler(enabled = selected.backTarget() != null) { selected.backTarget()?.let { selected = it } }
-    val enter = fadeIn(motionSpec(Motion.MEDIUM))
-    val exit = fadeOut(motionSpec(Motion.SHORT))
+    val destinationTransition = rememberSharedAxis<Destination>()
     Scaffold(
         modifier = modifier,
         bottomBar = {
@@ -61,7 +56,7 @@ fun AppNav(
             }
         },
     ) { padding ->
-        AnimatedContent(selected, Modifier.padding(padding), transitionSpec = { enter togetherWith exit }, label = "destination") { d ->
+        AnimatedContent(selected, Modifier.padding(padding), transitionSpec = destinationTransition, label = "destination") { d ->
             stateHolder.SaveableStateProvider(d.name) { content(d) { selected = it } }
         }
     }
