@@ -118,10 +118,12 @@ class PreviewCrossfadeTest {
     private fun uniqueAccent(n: Int) = "#FF%02X%02X%02X".format((n * 37) % 200 + 30, (n * 53) % 200 + 30, 0xFF)
 
     /**
-     * A render that arrives in the last frames of the previous fade (the window in which the fade's completion could drop it):
-     * wherever in the fade the next design is changed, the preview ends up showing the last render.
+     * A smoke test, not the guard against a dropped render: it sweeps the moment the second design is rendered across the end of
+     * the previous fade and checks that the preview always settles on one image showing the last render. It passes with the
+     * dropped-render bug restored (the timing of a render on a real thread cannot be hit on purpose here); the deterministic guard
+     * for that bug is `CrossfadeLayersTest` (JVM), which drives the layer bookkeeping step by step.
      */
-    @Test fun aRenderArrivingInTheLastFramesOfAFadeIsNeverDropped() {
+    @Test fun sweepingTheSecondRenderAcrossTheEndOfAFadeAlwaysSettlesOnTheLastRender() {
         val state = EditorState()
         rule.mainClock.autoAdvance = false
         rule.setContent {
