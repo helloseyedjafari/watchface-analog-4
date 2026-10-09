@@ -100,7 +100,7 @@ fun ComplicationsSection(state: EditorState) {
 
     Column(Modifier.fillMaxWidth().padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         TitledSlotEditor(
-            // in a short window (a phone held sideways) the canvas shrinks to fit the section area, so it is not cut off by the scrolling
+            // in a short window (a phone held sideways) the canvas shrinks to fit the section area, down to its minimum size, then the section scrolls
             fitToViewport = rememberScreenLayout() == ScreenLayout.SIDE_BY_SIDE,
             title = {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -222,8 +222,9 @@ private enum class EditorPart { TITLE, EDITOR }
 /**
  * The section title row over the square slot canvas. The canvas is as wide as the section, at most
  * [Dimens.SlotEditorMaxWidth]; with [fitToViewport] it is also no taller than what the section area (see
- * [LocalSectionViewportHeight]) leaves under the title, so it is shown whole without scrolling. The section's own top padding
- * is part of what the canvas has to leave.
+ * [LocalSectionViewportHeight]) leaves under the title, but never below [Dimens.SlotEditorMinSide] (the smallest default slot
+ * stays a 48 dp target), so in a very short window the section scrolls to it. The section's own top padding is part of what
+ * the canvas has to leave.
  */
 @Composable
 private fun TitledSlotEditor(fitToViewport: Boolean, title: @Composable () -> Unit, editor: @Composable () -> Unit) {

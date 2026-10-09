@@ -19,6 +19,8 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -57,7 +59,9 @@ class DesignLayoutTest {
     // does), it is never applied to a screen that stays alive
     private var hostSize = TALL
 
-    private val verticalScroller = SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
+    // the section's own scroller (the rail scrolls too, when the shell is shown)
+    private val verticalScroller = SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and
+        hasAnyAncestor(hasTestTag(Tags.DESIGN_SECTION_AREA))
 
     @Composable
     private fun Host(content: @Composable () -> Unit) {
@@ -270,29 +274,57 @@ class DesignLayoutTest {
         rule.onNodeWithTag(Tags.PREVIEW).assertIsDisplayed()
     }
 
-    /** N11: in a short window the slot canvas shrinks to the section area, so it is shown whole without scrolling, and still drags. */
-    @Test fun inALandscapePhoneTheSlotCanvasIsWholeWithoutScrollingAndStillDrags() {
+    /**
+     * In a short window the slot canvas keeps a minimum size (the smallest default slot stays a 48 dp target on it) and the
+     * section scrolls instead. Dragging a slot moves the slot and leaves the page where it is.
+     */
+    @Test fun inALandscapePhoneTheSlotCanvasKeepsItsMinimumSizeScrollsIntoViewAndStillDrags() {
         val state = EditorState()
         showInShell(state, WIDE)
         rule.onNodeWithTag(Tags.tab("complications")).performScrollTo().performClick()
         rule.waitForIdle()
         val area = bounds(Tags.DESIGN_SECTION_AREA)
-        val canvas = bounds(Tags.SLOT_CANVAS)
-        Log.i("R2", "800x360 Complications: section area ${dp(area.height)} x ${dp(area.width)} dp, canvas ${dp(canvas.width)} x ${dp(canvas.height)} dp at top ${dp(canvas.top - area.top)}")
-        assertEquals("the canvas is square", canvas.width, canvas.height, 1f)
-        assertTrue("the canvas is whole inside the section area without scrolling ($canvas in $area)", canvas.top >= area.top && canvas.bottom <= area.bottom)
-        assertTrue("the canvas is big enough to drag on (${dp(canvas.width)} dp)", dp(canvas.width) >= 96f)
-        rule.onNodeWithTag(Tags.SLOT_CANVAS).assertIsDisplayed()
+        rule.onNodeWithTag(Tags.SLOT_CANVAS).performScrollTo().assertIsDisplayed()
+        val side = rule.onNodeWithTag(Tags.SLOT_CANVAS).fetchSemanticsNode().size
+        val sideDp = side.width / density.density
+        Log.i("R3", "800x360 Complications: section area ${dp(area.height)} x ${dp(area.width)} dp, canvas $sideDp x ${side.height / density.density} dp, minimum ${Dimens.SlotEditorMinSide}")
+        assertEquals("the canvas is square", side.width, side.height)
+        assertTrue("the canvas keeps its minimum side (was $sideDp dp)", sideDp >= Dimens.SlotEditorMinSide.value - 0.5f)
+        assertTrue("the section area (${dp(area.height)} dp) is shorter than the canvas, so the section scrolls", dp(area.height) < sideDp)
+        val smallest = state.design.slots.minOf { minOf(it.w, it.h) }
+        assertTrue("the smallest default slot is ${smallest * sideDp / 450f} dp on this canvas", smallest * sideDp / 450f >= 48f - 0.5f)
 
-        // the bottom slot has free space above it between its two neighbours; the pull is long enough to pass the touch slop on a canvas this small
+        // drag the bottom slot: bring it into view first, then pull it up; the slot moves and the page does not
+        rule.onNodeWithTag(Tags.slot(3)).performScrollTo()
+        rule.waitForIdle()
+        val offsetBefore = scrollOffset()
         val before = state.design.slots.first { it.id == 3 }
-        val k = canvas.width / 450f
+        val k = side.width / 450f
         rule.onNodeWithTag(Tags.SLOT_CANVAS).performTouchInput {
             swipe(Offset((before.x + before.w / 2f) * k, (before.y + before.h / 2f) * k), Offset((before.x + before.w / 2f) * k, (before.y + before.h / 2f - 90f) * k), 300)
         }
         rule.waitForIdle()
         val after = state.design.slots.first { it.id == 3 }
-        assertTrue("a drag on the shrunk canvas moves the slot (from (${before.x}, ${before.y}) to (${after.x}, ${after.y}))", after.y < before.y)
+        assertTrue("a drag on the canvas moves the slot (from (${before.x}, ${before.y}) to (${after.x}, ${after.y}))", after.y < before.y)
+        assertEquals("a drag on a slot does not scroll the page", offsetBefore, scrollOffset(), 0.5f)
+    }
+
+    /** A drag that starts on empty canvas is left to the page: it scrolls, and no slot moves. */
+    @Test fun inALandscapePhoneADragOnEmptyCanvasScrollsThePage() {
+        val state = EditorState()
+        showInShell(state, WIDE)
+        rule.onNodeWithTag(Tags.tab("complications")).performScrollTo().performClick()
+        rule.waitForIdle()
+        assertEquals(0f, scrollOffset(), 0f)
+        val side = rule.onNodeWithTag(Tags.SLOT_CANVAS).fetchSemanticsNode().size
+        val k = side.width / 450f
+        val pull = 60f * density.density
+        val before = state.design.slots.map { it.x to it.y }
+        // (30, 110) in the 450 unit space is left of every slot, and near the top of the canvas, which is the part in view at the top of the page
+        rule.onNodeWithTag(Tags.SLOT_CANVAS).performTouchInput { swipe(Offset(30f * k, 110f * k), Offset(30f * k, 110f * k - pull), 300) }
+        rule.waitForIdle()
+        assertTrue("the page scrolled (offset ${scrollOffset()})", scrollOffset() > 0f)
+        assertEquals("no slot moved", before, state.design.slots.map { it.x to it.y })
     }
 
     @Test fun anUprightPhoneKeepsTheFullSizeSlotCanvas() {

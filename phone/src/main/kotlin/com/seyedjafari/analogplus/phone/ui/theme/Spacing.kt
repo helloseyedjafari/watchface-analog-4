@@ -44,6 +44,10 @@ object Dimens {
     val SidePaneWidth = 200.dp
     /** The navigation rail of a phone held sideways never takes more than this (the M3 rail is 80 dp; this leaves room for a larger one), and never more than a third of the window. */
     val RailMaxWidth = 120.dp
-    /** The slot drag canvas in a short window shrinks to fit the section area, but not below this: a smaller one is too small to drag on. */
-    val SlotEditorMinSide = 96.dp
+    /**
+     * The slot drag canvas in a short window shrinks to fit the section area, but not below this (the section scrolls instead).
+     * Derived: the canvas shows 450 units across, the smallest default slot is 76 units (every default slot is 76 tall; the
+     * narrowest is 90 wide), and it must stay a 48 dp target: 48 * 450 / 76 = 284.2, rounded up to 285 (SlotEditorMinSideTest checks it).
+     */
+    val SlotEditorMinSide = 285.dp
 }
