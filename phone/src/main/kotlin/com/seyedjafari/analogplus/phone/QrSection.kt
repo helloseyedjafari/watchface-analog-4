@@ -3,17 +3,12 @@ package com.seyedjafari.analogplus.phone
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -28,7 +23,6 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
@@ -37,9 +31,14 @@ import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.phone.ui.components.ErrorBanner
+import com.seyedjafari.analogplus.phone.ui.components.LoadSharedDesignDialog
+import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
+import com.seyedjafari.analogplus.phone.ui.components.SectionCard
+import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import kotlinx.coroutines.delay
 
-/** Shows the design as a QR code and scans another one. Call it from the Share tab; it owns its own dialogs. */
+/** Shows the design as a QR code and scans another one, in a card of its own. Call it from the Share section; it owns its dialog. */
 @Composable
 fun QrSection(state: EditorState, modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -67,8 +66,7 @@ fun QrSection(state: EditorState, modifier: Modifier = Modifier) {
         onDispose { owner?.lifecycle?.removeObserver(observer) }
     }
 
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("QR code", style = MaterialTheme.typography.titleMedium)
+    SectionCard("QR code", modifier.testTag(Tags.field("qr_card"))) {
         when (val e = encoded) {
             is QrCode.Encoded.Matrix -> {
                 val bitmap = remember(e) {
@@ -81,24 +79,20 @@ fun QrSection(state: EditorState, modifier: Modifier = Modifier) {
                         contentDescription = "QR code of the design \"${QrCode.dialogName(state.design.name)}\"",
                         filterQuality = FilterQuality.None, // keep the modules sharp when scaled up
                         modifier = Modifier
-                            .widthIn(max = 320.dp)
+                            .widthIn(max = Dimens.QrMaxWidth)
                             .fillMaxWidth()
                             .aspectRatio(1f)
-                            .background(Color.White)
+                            .background(Color.White) // a QR code is dark on light in every theme: scanners need that
                             .testTag(Tags.field("qr_image")),
                     )
                 }
             }
-            QrCode.Encoded.TooBig -> Text(
-                QrCode.TOO_BIG_MESSAGE,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag(Tags.field("qr_too_big")),
-            )
+            QrCode.Encoded.TooBig -> ErrorBanner(QrCode.TOO_BIG_MESSAGE, Modifier.testTag(Tags.field("qr_too_big")))
         }
 
-        OutlinedButton(
-            enabled = !scanning,
-            onClick = {
+        SecondaryButton(
+            "Scan QR code",
+            {
                 scanMessage = null
                 scanning = true
                 startScan(
@@ -114,31 +108,17 @@ fun QrSection(state: EditorState, modifier: Modifier = Modifier) {
                     onError = { scanning = false; scanMessage = it },
                 )
             },
-            modifier = Modifier.testTag(Tags.field("qr_scan")),
-        ) { Text("Scan QR code") }
+            Modifier.testTag(Tags.field("qr_scan")),
+            enabled = !scanning,
+        )
         if (preparing && scanning) {
             Text("Preparing the scanner...", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag(Tags.field("qr_preparing")))
         }
-        scanMessage?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(Tags.field("qr_scan_error")))
-        }
+        scanMessage?.let { ErrorBanner(it, Modifier.testTag(Tags.field("qr_scan_error"))) }
     }
 
     incoming?.let { design ->
-        AlertDialog(
-            onDismissRequest = { incoming = null },
-            title = { Text("Load shared design?") },
-            text = { Text("\"${QrCode.dialogName(design.name)}\" will replace the design you are editing.") },
-            confirmButton = {
-                TextButton(
-                    onClick = { state.replace(design); incoming = null },
-                    modifier = Modifier.testTag(Tags.field("qr_load")),
-                ) { Text("Load") }
-            },
-            dismissButton = {
-                TextButton(onClick = { incoming = null }, modifier = Modifier.testTag(Tags.field("qr_keep"))) { Text("Keep mine") }
-            },
-        )
+        LoadSharedDesignDialog(design, onLoad = { state.replace(design); incoming = null }, onKeep = { incoming = null })
     }
 }
 

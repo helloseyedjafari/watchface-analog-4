@@ -1,5 +1,11 @@
 package com.seyedjafari.analogplus.phone
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -22,6 +28,7 @@ import com.seyedjafari.analogplus.phone.ui.library.ShareSection
 import com.seyedjafari.analogplus.phone.ui.library.tag
 import com.seyedjafari.analogplus.phone.ui.nav.Destination
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
+import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -35,33 +42,44 @@ class ShareTemplatesTest {
 
     private fun freshStore(): Store = testStore()
 
+    /** The Share section in the scrolling Column the Library screen puts it in: its three cards stack instead of overlapping. */
+    private fun showShare(state: EditorState) {
+        rule.setContent {
+            AnalogTheme {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                    ShareSection(state)
+                }
+            }
+        }
+    }
+
     @Test fun pastingAValidLinkLoadsThatDesign() {
         val target = Templates.all.first { it.name == "Neon" }
         val state = EditorState(DesignSettings())
-        rule.setContent { AnalogTheme { ShareSection(state) } }
-        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performTextInput(DesignJson.shareLink(target))
-        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performClick()
+        showShare(state)
+        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performScrollTo().performTextInput(DesignJson.shareLink(target))
+        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performScrollTo().performClick()
         rule.waitForIdle()
         assertEquals(target, state.design)
     }
 
     @Test fun garbageLinkShowsAnErrorAndKeepsTheDesign() {
         val state = EditorState(DesignSettings())
-        rule.setContent { AnalogTheme { ShareSection(state) } }
-        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performTextInput("analogplus://design?d=@@not-a-design@@")
-        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performClick()
-        rule.onNodeWithTag(Tags.SHARE_ERROR).assertIsDisplayed()
+        showShare(state)
+        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performScrollTo().performTextInput("analogplus://design?d=@@not-a-design@@")
+        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performScrollTo().performClick()
+        rule.onNodeWithTag(Tags.SHARE_ERROR).performScrollTo().assertIsDisplayed()
         assertEquals(DesignSettings(), state.design)
     }
 
     @Test fun nonLinkTextShowsAnErrorAndEmptyFieldToo() {
         val state = EditorState(DesignSettings())
-        rule.setContent { AnalogTheme { ShareSection(state) } }
-        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performClick()
-        rule.onNodeWithTag(Tags.SHARE_ERROR).assertIsDisplayed()
-        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performTextInput("hello world")
-        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performClick()
-        rule.onNodeWithTag(Tags.SHARE_ERROR).assertIsDisplayed()
+        showShare(state)
+        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performScrollTo().performClick()
+        rule.onNodeWithTag(Tags.SHARE_ERROR).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performScrollTo().performTextInput("hello world")
+        rule.onNodeWithTag(Tags.SHARE_LOAD_BUTTON).performScrollTo().performClick()
+        rule.onNodeWithTag(Tags.SHARE_ERROR).performScrollTo().assertIsDisplayed()
         assertEquals(DesignSettings(), state.design)
     }
 

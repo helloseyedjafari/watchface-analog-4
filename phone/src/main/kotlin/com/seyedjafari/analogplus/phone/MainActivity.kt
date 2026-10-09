@@ -11,11 +11,8 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -28,6 +25,7 @@ import androidx.lifecycle.viewModelScope
 import com.seyedjafari.analogplus.facegen.FacePackager
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.ui.account.AccountScreen
+import com.seyedjafari.analogplus.phone.ui.components.LoadSharedDesignDialog
 import com.seyedjafari.analogplus.phone.ui.design.DesignScreen
 import com.seyedjafari.analogplus.phone.ui.library.LibraryScreen
 import com.seyedjafari.analogplus.phone.ui.nav.AppNav
@@ -176,13 +174,7 @@ fun AppShell(
             })
         }
         pendingLink?.let { incoming ->
-            AlertDialog(
-                onDismissRequest = onPendingLinkResolved,
-                title = { Text("Load shared design?") },
-                text = { Text("\"${dialogName(incoming.name)}\" will replace the design you are editing.") },
-                confirmButton = { TextButton(onClick = { state.replace(incoming); onPendingLinkResolved() }) { Text("Load") } },
-                dismissButton = { TextButton(onClick = onPendingLinkResolved) { Text("Keep mine") } },
-            )
+            LoadSharedDesignDialog(incoming, onLoad = { state.replace(incoming); onPendingLinkResolved() }, onKeep = onPendingLinkResolved)
         }
     }
 }
