@@ -40,4 +40,7 @@ object Tags {
     const val SEND_SUCCESS = "send_success"
     fun saved(name: String) = "saved_$name"
     fun savedDelete(name: String) = "saved_delete_$name"
+
+    // onboarding
+    fun onboardingAnimation(name: String) = "onboarding_anim_$name"
 }
