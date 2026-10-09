@@ -11,6 +11,8 @@ import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -144,7 +146,7 @@ class ShellThemeAndSweepTest {
                     rule.waitForIdle() // the section slides in; a click mid-slide can miss
                     if (s == DesignSection.COMPLICATIONS) {
                         // a selected slot shows the nudge arrows, the shape chips and the colour switches
-                        rule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
+                        rule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and hasAnyAncestor(hasTestTag(Tags.DESIGN_SECTION_AREA)))
                             .performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
                         rule.waitForIdle()
                         rule.onNodeWithTag(Tags.field("select_slot_0")).performClick()
