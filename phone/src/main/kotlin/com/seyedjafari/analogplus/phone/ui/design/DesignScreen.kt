@@ -18,7 +18,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
@@ -34,13 +33,15 @@ import com.seyedjafari.analogplus.phone.ui.components.SectionChips
 import com.seyedjafari.analogplus.phone.ui.components.keyboardIsOpen
 import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import com.seyedjafari.analogplus.phone.ui.theme.rememberScreenLayout
 import com.seyedjafari.analogplus.phone.ui.theme.rememberSharedAxis
 import androidx.compose.ui.res.stringResource
 import com.seyedjafari.analogplus.phone.R
 
 /**
  * Pinned preview and hint, section chips, the selected section (scrolls vertically, so a section must not hold a lazy
- * list or other unbounded-height scroller), then a compact send row.
+ * list or other unbounded-height scroller), then a compact send row. In a short, wide window (a phone held sideways) the
+ * preview and hint sit in a column on the left and the chips, section, summary and send row in a column on the right.
  */
 @Composable
 fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modifier: Modifier = Modifier) {
@@ -54,8 +55,11 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
     // a section that leaves composition would lose its rememberSaveable state (selected slot, nudge step ...); keep it per section
     val sections = rememberSaveableStateHolder()
     val sectionTransition = rememberSharedAxis<DesignSection>()
-    Column(modifier.fillMaxSize()) {
-        PreviewPane(state, Modifier.padding(vertical = Spacing.sm).size(Dimens.PreviewSize).align(Alignment.CenterHorizontally))
+    val layout = rememberScreenLayout()
+    val preview: @Composable () -> Unit = {
+        PreviewPane(state, Modifier.padding(vertical = Spacing.sm).size(Dimens.PreviewSize))
+    }
+    val hint: @Composable () -> Unit = {
         designHints(state.design).firstOrNull()?.let {
             Text(
                 it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -63,12 +67,16 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
                 modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.xs).testTag(Tags.field("design_hint")),
             )
         }
+    }
+    val chips: @Composable () -> Unit = {
         SectionChips(DesignSection.entries, selected, {
             if (it != selected) scope.launch(start = CoroutineStart.UNDISPATCHED) { scrolls.getValue(it).scrollTo(0) }
             selected = it
         }, { stringResource(it.labelRes) }, { it.tag() })
+    }
+    val sectionArea: @Composable () -> Unit = {
         AnimatedContent(
-            selected, Modifier.weight(1f).fillMaxWidth(), transitionSpec = sectionTransition, label = "design-section",
+            selected, Modifier.fillMaxSize().testTag(Tags.DESIGN_SECTION_AREA), transitionSpec = sectionTransition, label = "design-section",
         ) { section ->
             sections.SaveableStateProvider(section.name) {
                 Column(Modifier.fillMaxSize().verticalScroll(scrolls.getValue(section))) {
@@ -83,6 +91,8 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
                 }
             }
         }
+    }
+    val validation: @Composable () -> Unit = {
         val shownErrors = state.shownErrors
         if (shownErrors.isNotEmpty()) {
             // not an ErrorBanner: the field's own error is the live region, a second one would be announced twice per keystroke
@@ -93,6 +103,8 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
                 modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.xs).testTag(Tags.field("design_validation")),
             )
         }
+    }
+    val sendRow: @Composable () -> Unit = {
         // with the keyboard open the send row would eat the little space left for the field being edited
         if (!keyboardOpen) {
             PrimaryButton(
@@ -102,4 +114,5 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
             )
         }
     }
+    DesignLayout(layout, preview, hint, chips, sectionArea, validation, sendRow, modifier.fillMaxSize())
 }

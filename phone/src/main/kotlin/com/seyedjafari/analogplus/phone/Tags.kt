@@ -6,6 +6,8 @@ object Tags {
     const val PREVIEW = "preview"
     /** The bitmap inside the preview; two of them exist while the crossfade between an old and a new render runs. */
     const val PREVIEW_IMAGE = "preview_image"
+    /** The area of the Design screen that holds the selected section (the part that scrolls). */
+    const val DESIGN_SECTION_AREA = "design_section_area"
     const val SEND_BUTTON = "send_button"
     const val SEND_STATUS = "send_status"
     const val CAP_INDICATOR = "cap_indicator"

@@ -2,6 +2,7 @@ package com.seyedjafari.analogplus.phone.ui.nav
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -22,6 +23,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.semantics.contentDescription
 import com.seyedjafari.analogplus.phone.ui.components.keyboardIsOpen
+import com.seyedjafari.analogplus.phone.ui.theme.Dimens
+import com.seyedjafari.analogplus.phone.ui.theme.ScreenLayout
+import com.seyedjafari.analogplus.phone.ui.theme.rememberScreenLayout
 import com.seyedjafari.analogplus.phone.ui.theme.rememberSharedAxis
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
@@ -41,6 +45,8 @@ fun AppNav(
     val destinationTransition = rememberSharedAxis<Destination>()
     // with the keyboard open the bar would eat the little space left for the field being edited
     val keyboardOpen = keyboardIsOpen()
+    // a phone held sideways has little height to spare: the bar is lower there
+    val compactBar = rememberScreenLayout() == ScreenLayout.SIDE_BY_SIDE
     Scaffold(
         modifier = modifier,
         bottomBar = {
@@ -48,7 +54,7 @@ fun AppNav(
                 // four labels share the width: at the largest font scales "Account" would break mid-word, so the bar stops growing at 1.3x
                 val density = LocalDensity.current
                 CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = minOf(density.fontScale, NAV_MAX_FONT_SCALE))) {
-                    NavigationBar {
+                    NavigationBar(if (compactBar) Modifier.height(Dimens.CompactNavBarHeight) else Modifier) {
                         Destination.entries.forEach { d ->
                             val labelText = stringResource(d.labelRes)
                             NavigationBarItem(

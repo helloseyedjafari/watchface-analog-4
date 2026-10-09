@@ -38,4 +38,10 @@ object Dimens {
     val SlotEditorMaxWidth = 360.dp
     /** Width of a four-digit number field at font scale 1; the field grows with the font scale. */
     val IntFieldWidth = 96.dp
+    /** Below this window height (and wider than tall) a screen lays out beside, not above: the stacked Design screen needs about 400 dp. */
+    val CompactHeight = 480.dp
+    /** Height of the bottom navigation bar in a landscape phone (the standard bar is 80 dp, and the section area needs the room). */
+    val CompactNavBarHeight = 56.dp
+    /** Width of the preview column of the Design screen when it sits beside the controls. */
+    val SidePaneWidth = 200.dp
 }
