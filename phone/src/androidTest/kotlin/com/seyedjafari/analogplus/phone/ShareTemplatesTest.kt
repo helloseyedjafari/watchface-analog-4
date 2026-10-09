@@ -16,6 +16,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.Templates
+import com.seyedjafari.analogplus.phone.ui.account.SigningKeySection
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -168,11 +169,10 @@ class ShareTemplatesTest {
         val keys = com.seyedjafari.analogplus.facegen.KeyStore(ctx, testKeyName)
         try {
             val before = keys.pem()
-            val state = EditorState(DesignSettings())
             rule.setContent {
                 androidx.compose.foundation.layout.Column(
                     androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
-                ) { ShareTab(state) { c -> com.seyedjafari.analogplus.facegen.KeyStore(c, testKeyName) } }
+                ) { SigningKeySection(keyStoreFactory = { c -> com.seyedjafari.analogplus.facegen.KeyStore(c, testKeyName) }) }
             }
             rule.onNodeWithTag(Tags.RESET_KEY_BUTTON).performScrollTo().performClick()
             // nothing happens until the dialog is confirmed
@@ -180,7 +180,7 @@ class ShareTemplatesTest {
             rule.onNodeWithTag(Tags.RESET_KEY_CONFIRM).performClick()
             // the reset runs off the main thread
             rule.waitUntil(10_000) { rule.onAllNodesWithTag(Tags.RESET_KEY_NOTICE).fetchSemanticsNodes().isNotEmpty() }
-            rule.onNodeWithTag(Tags.RESET_KEY_NOTICE).performScrollTo().assertIsDisplayed() // the QR section above pushes it down
+            rule.onNodeWithTag(Tags.RESET_KEY_NOTICE).performScrollTo().assertIsDisplayed()
             assertEquals(false, keys.hasKey())
             assertNotEquals(before, keys.pem())
         } finally {

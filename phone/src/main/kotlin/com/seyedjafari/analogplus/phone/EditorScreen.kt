@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -34,6 +35,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.seyedjafari.analogplus.facegen.FacePackager
+import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.designHints
 import com.seyedjafari.analogplus.phone.ui.design.BackgroundSection
 import com.seyedjafari.analogplus.phone.ui.design.ColoursSection
@@ -41,6 +43,11 @@ import com.seyedjafari.analogplus.phone.ui.design.ComplicationsSection
 import com.seyedjafari.analogplus.phone.ui.design.DialSection
 import com.seyedjafari.analogplus.phone.ui.design.HandsSection
 import com.seyedjafari.analogplus.phone.ui.design.RingSection
+import com.seyedjafari.analogplus.phone.ui.library.MyDesignsSection
+import com.seyedjafari.analogplus.phone.ui.library.PendingReplace
+import com.seyedjafari.analogplus.phone.ui.library.ReplaceDialog
+import com.seyedjafari.analogplus.phone.ui.library.ShareSection
+import com.seyedjafari.analogplus.phone.ui.library.TemplatesSection
 import com.seyedjafari.analogplus.phone.ui.send.sendStatusText
 
 /** The tabs in order; the tab tag is `Tags.tab(name.lowercase())`. */
@@ -103,6 +110,26 @@ fun EditorScreen(
             SendPanel(state, send)
         }
     }
+}
+
+// The two tabs below keep the old editor working until the app shell replaces it (Task 9 deletes them with this screen).
+
+/** Templates and "My designs" under one replace dialog, for the old editor tab. */
+@Composable
+internal fun TemplatesTab(state: EditorState, store: Store = rememberStore()) {
+    var pending by remember { mutableStateOf<PendingReplace?>(null) }
+    val askToReplace: (String, DesignSettings) -> Unit = { name, target -> if (target != state.design) pending = PendingReplace(name, target) }
+    ReplaceDialog(pending, onConfirm = { state.replace(it.design); pending = null }, onCancel = { pending = null })
+    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        TemplatesSection(askToReplace)
+        MyDesignsSection(state, store, askToReplace)
+    }
+}
+
+/** The share section in the old editor's padded column. */
+@Composable
+internal fun ShareTab(state: EditorState) {
+    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { ShareSection(state) }
 }
 
 /** The send panel never takes more than this, so the tab content above it always keeps room (see [SendPanel]). */
