@@ -2,7 +2,13 @@ package com.seyedjafari.analogplus.phone.ui.nav
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Alignment
+import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -39,7 +45,7 @@ private enum class NavPart { NAV, CONTENT }
 
 /**
  * The four destinations: a bottom bar under the content, or, in a short, wide window (a phone held sideways, which has no
- * height to spare), a rail at the start edge beside it. The rail stays when the keyboard is open (it takes no height); the
+ * height to spare), a rail at the start edge beside it. The rail stays when the keyboard is open (its items scroll when the window gets too short for them); the
  * bar hides then, since it would eat the little room left for the field being edited.
  */
 @Composable
@@ -64,15 +70,22 @@ fun AppNav(
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = minOf(density.fontScale, NAV_MAX_FONT_SCALE))) {
                 if (rail) {
                     NavigationRail {
-                        Destination.entries.forEach { d ->
-                            val labelText = stringResource(d.labelRes)
-                            NavigationRailItem(
-                                selected = d == selected, onClick = { selected = d },
-                                icon = { Icon(painterResource(d.iconRes), contentDescription = null) },
-                                label = { Text(labelText, maxLines = 1) },
-                                alwaysShowLabel = true,
-                                modifier = Modifier.testTag(d.tag).semantics { contentDescription = labelText },
-                            )
+                        // with the keyboard open the window is short (adjustResize), and the rail stays: its items keep their size and scroll
+                        Column(
+                            Modifier.verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Destination.entries.forEach { d ->
+                                val labelText = stringResource(d.labelRes)
+                                NavigationRailItem(
+                                    selected = d == selected, onClick = { selected = d },
+                                    icon = { Icon(painterResource(d.iconRes), contentDescription = null) },
+                                    label = { Text(labelText, maxLines = 1) },
+                                    alwaysShowLabel = true,
+                                    modifier = Modifier.testTag(d.tag).semantics { contentDescription = labelText },
+                                )
+                            }
                         }
                     }
                 } else if (!keyboardOpen) {

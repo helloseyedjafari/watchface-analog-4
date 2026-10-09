@@ -1,5 +1,6 @@
 package com.seyedjafari.analogplus.phone
 
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
@@ -19,6 +20,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -100,5 +103,39 @@ class NavigationRailTest {
         val items = Destination.entries.map { rule.onNodeWithTag(it.tag).fetchSemanticsNode().boundsInRoot }
         assertTrue("the items sit side by side (a bar, not a rail)", items.zipWithNext().all { (a, b) -> a.right <= b.left + 1f })
         Destination.entries.forEach { d -> assertEquals(1, layoutOf(labelOf(d)).lineCount) }
+    }
+
+    /**
+     * With the keyboard open in landscape the window is shrunk (adjustResize plus imePadding): 200 dp of padding stands in for
+     * the keyboard here. The rail stays, its items keep their size and scroll inside it.
+     */
+    @Test fun withTheKeyboardOpenTheRailItemsKeepTheirSizeDoNotOverlapAndScroll() {
+        var density = Density(1f)
+        rule.setContent {
+            AnalogTheme {
+                PinnedWindow(PHONE_LANDSCAPE, onDensity = { density = it }) {
+                    AppNav(content = { d, _ -> Text("screen ${d.name}") }, modifier = Modifier.padding(bottom = KEYBOARD_DP.dp))
+                }
+            }
+        }
+        // size and position, not boundsInRoot: that one is clipped to the rail, and an item scrolled out of it would read short
+        val nodes = Destination.entries.map { rule.onNodeWithTag(it.tag).fetchSemanticsNode() }
+        nodes.forEachIndexed { i, n ->
+            val name = Destination.entries[i].label
+            assertTrue("the $name item is at least 48 dp tall (was ${n.size.height / density.density} dp)", n.size.height / density.density >= 48f - 0.5f)
+            assertTrue("the $name item is at least 48 dp wide (was ${n.size.width / density.density} dp)", n.size.width / density.density >= 48f - 0.5f)
+        }
+        assertTrue(
+            "the items do not overlap",
+            nodes.zipWithNext().all { (a, b) -> a.positionInRoot.y + a.size.height <= b.positionInRoot.y + 1f },
+        )
+        val last = Destination.ACCOUNT
+        rule.onNodeWithTag(last.tag).performScrollTo().assertIsDisplayed().performClick()
+        rule.onNodeWithText("screen ${last.name}").assertExists()
+        rule.onNodeWithTag(last.tag).assertIsSelected()
+    }
+
+    private companion object {
+        const val KEYBOARD_DP = 200
     }
 }
