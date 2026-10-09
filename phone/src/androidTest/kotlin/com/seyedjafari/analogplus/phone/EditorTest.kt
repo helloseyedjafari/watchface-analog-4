@@ -138,7 +138,10 @@ class EditorTest {
         rule.onNodeWithTag(Tags.field("replace_cancel")).performClick()
         rule.waitForIdle()
         assertEquals(DesignSettings(), state.design)
+        // the preview lives on the Design destination: look at it there, then come back for the second tap
+        goTo(Destination.DESIGN)
         assertEquals(before, previewCentreOffset(state))
+        goTo(Destination.LIBRARY)
         click(Tags.template("Neon"))
         rule.onNodeWithTag(Tags.field("replace_confirm")).performClick()
         rule.waitForIdle()
@@ -174,7 +177,8 @@ class EditorTest {
         rule.setContent {
             androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.height(440.dp)) { AppShell(state, store, send, watchReady, null) {} }
         }
-        rule.onNodeWithTag(Tags.ACCENT_FIELD).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag(Tags.ACCENT_FIELD).assertIsDisplayed() // the Colours section keeps its room
+        rule.onNodeWithTag(Tags.tab("colours")).assertIsDisplayed()
         goTo(Destination.SEND)
         rule.onNodeWithTag(Tags.SEND_VALIDATION).performScrollTo().assertIsDisplayed()
         rule.onNodeWithTag(Tags.SEND_BUTTON).performScrollTo().assertIsDisplayed()

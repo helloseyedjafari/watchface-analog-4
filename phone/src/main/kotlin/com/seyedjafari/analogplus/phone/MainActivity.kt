@@ -11,9 +11,9 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -21,20 +21,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.seyedjafari.analogplus.facegen.FacePackager
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.Modifier
+import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.ui.account.AccountScreen
 import com.seyedjafari.analogplus.phone.ui.design.DesignScreen
 import com.seyedjafari.analogplus.phone.ui.library.LibraryScreen
@@ -44,6 +36,14 @@ import com.seyedjafari.analogplus.phone.ui.send.SendScreen
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
 import com.seyedjafari.analogplus.phone.ui.send.gmsWatchStatusChecker
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Lives across rotation: the design being edited, its store and the running send. */
 class AppModel(app: Application) : AndroidViewModel(app) {
@@ -115,13 +115,14 @@ internal fun dialogName(name: String, max: Int = 40): String {
 
 class MainActivity : ComponentActivity() {
     private val model: AppModel by viewModels()
+    private val watchChecker: WatchStatusChecker by lazy { gmsWatchStatusChecker(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (savedInstanceState == null) loadFromIntent(intent)
         setContent {
-            AppShell(model.state, model.store, model.send, gmsWatchStatusChecker(applicationContext), model.pendingLinkDesign) {
+            AppShell(model.state, model.store, model.send, watchChecker, model.pendingLinkDesign) {
                 model.pendingLinkDesign = null
             }
         }
