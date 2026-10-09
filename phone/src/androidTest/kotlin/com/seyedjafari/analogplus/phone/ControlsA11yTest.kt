@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -126,6 +127,13 @@ class ControlsA11yTest {
         rule.onNodeWithTag(Tags.field("select_slot_0")).performScrollTo().performClick()
         // the last chip is reachable even when the row is wider than the screen
         rule.onNodeWithTag(Tags.field("slot_shape_ROUND_BOX")).performScrollTo().assertIsDisplayed()
+    }
+
+    /** A colour field's error line is announced when it appears (ErrorBanner). */
+    @Test fun aColourFieldErrorIsALiveRegion() {
+        show(EditorState()) { ColourField("Accent", "red", {}, "'red' is not a colour", "acc") }
+        rule.onNodeWithTag(Tags.error("acc")).assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+            .assertTextContains("is not a colour", substring = true)
     }
 
     /** Four digits plus the field's own padding fit the field at a font scale of 2. */
