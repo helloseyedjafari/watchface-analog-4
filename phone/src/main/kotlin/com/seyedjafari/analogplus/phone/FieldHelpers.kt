@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
@@ -27,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
@@ -107,11 +109,20 @@ fun SectionTitle(text: String) {
     Text(text, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
 }
 
+/**
+ * A labelled switch as ONE control: the whole row toggles and a screen reader reads "<label>, switch, on/off". The test
+ * [tag] is on the row (a click on it toggles); the Switch inside only draws the state.
+ */
 @Composable
 fun SwitchRow(label: String, checked: Boolean, onChecked: (Boolean) -> Unit, tag: String) {
-    Row(Modifier.fillMaxWidth().heightIn(min = Spacing.minTouch), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = Spacing.minTouch).testTag(tag)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChecked),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+    ) {
         Text(label, Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChecked, modifier = Modifier.testTag(tag))
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 

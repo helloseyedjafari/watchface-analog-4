@@ -13,7 +13,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,6 +31,7 @@ import com.seyedjafari.analogplus.facegen.design.RingLayout
 import com.seyedjafari.analogplus.phone.ColourField
 import com.seyedjafari.analogplus.phone.EditorState
 import com.seyedjafari.analogplus.phone.SlotGeometry
+import com.seyedjafari.analogplus.phone.SwitchRow
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.describe
 import com.seyedjafari.analogplus.phone.firstError
@@ -156,14 +156,7 @@ fun RingSection(state: EditorState) {
                     )
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Switch(
-                    checked = ring.clockwise,
-                    onCheckedChange = { on -> edit { it.copy(clockwise = on) } },
-                    modifier = Modifier.testTag(Tags.field("ring_clockwise")),
-                )
-                Text("Clockwise")
-            }
+            SwitchRow("Clockwise", ring.clockwise, { on -> edit { it.copy(clockwise = on) } }, Tags.field("ring_clockwise"))
         } else {
             Text("Choose a layout to put ring complications around the dial.", style = MaterialTheme.typography.bodySmall)
         }

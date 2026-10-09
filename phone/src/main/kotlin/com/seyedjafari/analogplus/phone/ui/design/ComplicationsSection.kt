@@ -14,7 +14,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,6 +38,7 @@ import com.seyedjafari.analogplus.phone.SlotDragEditor
 import com.seyedjafari.analogplus.phone.SlotGeometry
 import com.seyedjafari.analogplus.phone.SlotRefusal
 import com.seyedjafari.analogplus.phone.SlotResult
+import com.seyedjafari.analogplus.phone.SwitchRow
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.describe
 import com.seyedjafari.analogplus.phone.describeField
@@ -242,29 +242,23 @@ private fun SelectedSlotControls(state: EditorState, s: SlotDesign, onResult: (S
         }
 
         // colours
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Switch(
-                checked = s.backgroundColor != null,
-                onCheckedChange = { on -> edit { it.copy(backgroundColor = if (on) NEW_SLOT_BACKGROUND else null) } },
-                modifier = Modifier.testTag(Tags.field("slot_bg_switch")),
-            )
-            Text("Background")
-        }
+        SwitchRow(
+            "Background", s.backgroundColor != null,
+            { on -> edit { it.copy(backgroundColor = if (on) NEW_SLOT_BACKGROUND else null) } },
+            Tags.field("slot_bg_switch"),
+        )
         s.backgroundColor?.let { bg ->
             ColourField("Background colour", bg, { c -> edit { it.copy(backgroundColor = c) } }, errorOf("backgroundColor"),
                 Tags.field("slot_bg"), Modifier.fillMaxWidth())
         }
         ColourField("Text colour", s.textColor, { c -> edit { it.copy(textColor = c) } }, errorOf("textColor"),
             Tags.field("slot_text"), Modifier.fillMaxWidth())
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Switch(
-                checked = s.iconColor == null,
-                // switching "use accent" off keeps the colour the icon has now, so nothing changes until the user edits it
-                onCheckedChange = { useAccent -> edit { it.copy(iconColor = if (useAccent) null else state.design.accent) } },
-                modifier = Modifier.testTag(Tags.field("slot_icon_accent_switch")),
-            )
-            Text("Icon uses the accent colour")
-        }
+        SwitchRow(
+            "Icon uses the accent colour", s.iconColor == null,
+            // switching "use accent" off keeps the colour the icon has now, so nothing changes until the user edits it
+            { useAccent -> edit { it.copy(iconColor = if (useAccent) null else state.design.accent) } },
+            Tags.field("slot_icon_accent_switch"),
+        )
         s.iconColor?.let { ic ->
             ColourField("Icon colour", ic, { c -> edit { it.copy(iconColor = c) } }, errorOf("iconColor"),
                 Tags.field("slot_icon"), Modifier.fillMaxWidth())
