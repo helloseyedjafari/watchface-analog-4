@@ -117,9 +117,10 @@ private fun SendCard(state: EditorState, send: SendController) {
         } else {
             Text(sendStatusText(ui), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag(Tags.SEND_STATUS))
         }
-        if (errors.isNotEmpty()) {
+        val shownErrors = state.shownErrors
+        if (shownErrors.isNotEmpty()) {
             Text(
-                state.design.fixFirstText(errors),
+                state.design.fixFirstText(shownErrors),
                 color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag(Tags.SEND_VALIDATION),
             )

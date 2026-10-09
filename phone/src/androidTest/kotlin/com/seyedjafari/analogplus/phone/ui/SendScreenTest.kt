@@ -18,7 +18,10 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.seyedjafari.analogplus.facegen.design.BackgroundDesign
+import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.phone.PhotoLoad
 import com.seyedjafari.analogplus.phone.EditorState
 import com.seyedjafari.analogplus.phone.FaceBuilder
 import com.seyedjafari.analogplus.phone.FaceSender
@@ -80,6 +83,16 @@ class SendScreenTest {
         assertEquals(1, calls.get())
         rule.onNodeWithTag(Tags.WATCH_CHECK_AGAIN).performClick()
         rule.waitUntil(5_000) { calls.get() == 2 }
+    }
+
+    @Test fun theMissingPhotoErrorStaysHiddenWhileTheSavedPhotoLoadsAndShowsOnceItIsKnownMissing() {
+        val state = EditorState(DesignSettings(background = BackgroundDesign(kind = BackgroundKind.PHOTO)), PhotoLoad.LOADING)
+        rule.setContent { AnalogTheme { SendScreen(state, idleController(), { WatchStatus(CheckStatus.OK, CheckStatus.OK) }) } }
+        rule.onNodeWithTag(Tags.SEND_VALIDATION).assertDoesNotExist()
+        rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsNotEnabled()
+        state.photoLoaded()
+        rule.waitForIdle()
+        rule.onNodeWithTag(Tags.SEND_VALIDATION).assertIsDisplayed().assertTextContains("photo", substring = true, ignoreCase = true)
     }
 
     @Test fun appMissingShowsInstallAdvice() {

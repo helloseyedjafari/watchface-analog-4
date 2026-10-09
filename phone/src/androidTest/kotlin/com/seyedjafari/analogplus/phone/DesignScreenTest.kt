@@ -16,6 +16,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.dp
+import com.seyedjafari.analogplus.facegen.design.BackgroundDesign
+import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.ui.design.DesignScreen
 import org.junit.Assert.assertEquals
@@ -55,6 +57,38 @@ class DesignScreenTest {
         rule.onNodeWithTag(Tags.ACCENT_FIELD).assertIsDisplayed()
     }
 
+    @Test fun aSectionSlidingOutKeepsItsScrollOffsetInsteadOfJumpingToTheTop() {
+        show(EditorState())
+        rule.onNodeWithTag(Tags.tab("complications")).performClick()
+        rule.waitForIdle()
+        scrollSectionToTheBottom()
+        val scrolled = scrollOffset()
+        assertTrue("the Complications section should have been scrolled down", scrolled > 0f)
+
+        rule.mainClock.autoAdvance = false
+        rule.onNodeWithTag(Tags.tab("colours")).performClick()
+        rule.mainClock.advanceTimeBy(100)
+        val offsets = rule.onAllNodes(verticalScroller).fetchSemanticsNodes()
+            .map { it.config[SemanticsProperties.VerticalScrollAxisRange].value() }
+        assertEquals("the outgoing and the incoming section are both composed", 2, offsets.size)
+        assertTrue("the outgoing section is still at $scrolled (offsets $offsets)", offsets.contains(scrolled))
+        rule.mainClock.autoAdvance = true
+        rule.waitForIdle()
+    }
+
+    @Test fun comingBackToAScrolledSectionStartsAtTheTop() {
+        show(EditorState())
+        rule.onNodeWithTag(Tags.tab("complications")).performClick()
+        rule.waitForIdle()
+        scrollSectionToTheBottom()
+        assertTrue(scrollOffset() > 0f)
+        rule.onNodeWithTag(Tags.tab("colours")).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(Tags.tab("complications")).performClick()
+        rule.waitForIdle()
+        assertEquals(0f, scrollOffset(), 0f)
+    }
+
     @Test fun sendButtonIsOffWhileBusy() {
         show(EditorState(), busy = true)
         rule.onNodeWithTag(Tags.field("design_send")).assertIsNotEnabled()
@@ -74,6 +108,16 @@ class DesignScreenTest {
         state.update { DesignSettings() }
         rule.onNodeWithTag(Tags.field("design_validation")).assertDoesNotExist()
         rule.onNodeWithTag(Tags.field("design_send")).assertIsEnabled()
+    }
+
+    @Test fun theMissingPhotoErrorStaysHiddenWhileTheSavedPhotoLoadsAndShowsOnceItIsKnownMissing() {
+        val state = EditorState(DesignSettings(background = BackgroundDesign(kind = BackgroundKind.PHOTO)), PhotoLoad.LOADING)
+        show(state)
+        rule.onNodeWithTag(Tags.field("design_validation")).assertDoesNotExist()
+        rule.onNodeWithTag(Tags.field("design_send")).assertIsNotEnabled()
+        state.photoLoaded()
+        rule.waitForIdle()
+        rule.onNodeWithTag(Tags.field("design_validation")).assertIsDisplayed().assertTextContains("photo", substring = true, ignoreCase = true)
     }
 
     @Test fun aSectionKeepsItsInnerStateWhenYouSwitchChipsAndBack() {

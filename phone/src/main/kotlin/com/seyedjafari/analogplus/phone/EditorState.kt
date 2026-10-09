@@ -9,6 +9,8 @@ import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.RingLayout
 import com.seyedjafari.analogplus.facegen.design.validate
 
+private const val PHOTO_FIELD = "background.photoJpeg"
+
 /** Whether the saved photo of the design is still being read from disk at start ([LOADING]) or is in [EditorState.design] ([READY]). */
 enum class PhotoLoad { LOADING, READY }
 
@@ -33,6 +35,13 @@ class EditorState(initial: DesignSettings = DesignSettings(), photoLoad: PhotoLo
     var lastPreview: Bitmap? = null
 
     val errors: List<DesignError> get() = design.validate()
+
+    /**
+     * [errors] as the screens show them. While the saved photo is still [PhotoLoad.LOADING] the "needs a photo" error is
+     * not real yet (the photo is about to arrive), so it is left out of the text; Send stays gated on [errors].
+     */
+    val shownErrors: List<DesignError>
+        get() = if (photoLoad == PhotoLoad.LOADING) errors.filter { it.field != PHOTO_FIELD } else errors
 
     fun errorsFor(field: String): List<DesignError> = errors.filter { it.field == field }
 

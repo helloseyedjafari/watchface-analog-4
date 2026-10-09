@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -21,6 +22,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import com.seyedjafari.analogplus.facegen.design.designHints
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
 import com.seyedjafari.analogplus.phone.EditorState
 import com.seyedjafari.analogplus.phone.PreviewPane
 import com.seyedjafari.analogplus.phone.Tags
@@ -41,8 +44,11 @@ import com.seyedjafari.analogplus.phone.ui.theme.rememberSharedAxis
 fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modifier: Modifier = Modifier) {
     val keyboardOpen = keyboardIsOpen()
     var selected by rememberSaveable { mutableStateOf(DesignSection.COLOURS) }
-    // keyed on the section: a new section starts at the top, while rotation still restores the offset of the same one
-    val scroll = rememberSaveable(selected, saver = ScrollState.Saver) { ScrollState(0) }
+    // Each section owns its scroll state (rotation restores the offset of each), and it is used INSIDE the section's own
+    // content, so a section sliding out keeps its offset instead of jumping to the top. Choosing a section resets that
+    // section's offset first, so a section is always entered at the top.
+    val scrolls = DesignSection.entries.associateWith { rememberSaveable(it.name, saver = ScrollState.Saver) { ScrollState(0) } }
+    val scope = rememberCoroutineScope()
     // a section that leaves composition would lose its rememberSaveable state (selected slot, nudge step ...); keep it per section
     val sections = rememberSaveableStateHolder()
     val sectionTransition = rememberSharedAxis<DesignSection>()
@@ -55,10 +61,15 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
                 modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.xs).testTag(Tags.field("design_hint")),
             )
         }
-        SectionChips(DesignSection.entries, selected, { selected = it }, { it.label }, { it.tag() })
-        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll)) {
-            AnimatedContent(selected, transitionSpec = sectionTransition, label = "design-section") { section ->
-                sections.SaveableStateProvider(section.name) {
+        SectionChips(DesignSection.entries, selected, {
+            if (it != selected) scope.launch(start = CoroutineStart.UNDISPATCHED) { scrolls.getValue(it).scrollTo(0) }
+            selected = it
+        }, { it.label }, { it.tag() })
+        AnimatedContent(
+            selected, Modifier.weight(1f).fillMaxWidth(), transitionSpec = sectionTransition, label = "design-section",
+        ) { section ->
+            sections.SaveableStateProvider(section.name) {
+                Column(Modifier.fillMaxSize().verticalScroll(scrolls.getValue(section))) {
                     when (section) {
                         DesignSection.COLOURS -> ColoursSection(state)
                         DesignSection.DIAL -> DialSection(state)
@@ -70,9 +81,10 @@ fun DesignScreen(state: EditorState, onSend: () -> Unit, sendBusy: Boolean, modi
                 }
             }
         }
-        if (state.errors.isNotEmpty()) {
+        val shownErrors = state.shownErrors
+        if (shownErrors.isNotEmpty()) {
             ErrorBanner(
-                state.design.fixFirstText(state.errors),
+                state.design.fixFirstText(shownErrors),
                 Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.xs).testTag(Tags.field("design_validation")),
                 maxLines = 2,
             )
