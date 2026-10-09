@@ -1,6 +1,8 @@
 package com.seyedjafari.analogplus.phone.ui.components
 
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -9,17 +11,24 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+
+/** Test tag on the progress indicator shown while a [PrimaryButton] is loading. */
+internal const val LOADING_INDICATOR_TAG = "primary_button_loading"
 
 @Composable
 fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, loading: Boolean = false) {
     Button(
         onClick = onClick, enabled = enabled && !loading,
-        modifier = modifier.heightIn(min = Spacing.minTouch),
+        modifier = modifier.heightIn(min = Spacing.minTouch).then(if (loading) Modifier.semantics { stateDescription = "Working" } else Modifier),
         shape = MaterialTheme.shapes.large,
     ) {
         if (loading) {
-            CircularProgressIndicator(Modifier.size(Spacing.lg), strokeWidth = Spacing.xs / 2, color = MaterialTheme.colorScheme.onPrimary)
+            CircularProgressIndicator(Modifier.size(Spacing.lg).testTag(LOADING_INDICATOR_TAG), strokeWidth = Spacing.xs / 2, color = MaterialTheme.colorScheme.onPrimary)
+            Spacer(Modifier.width(Spacing.sm))
         }
         Text(text, style = MaterialTheme.typography.labelLarge, modifier = Modifier)
     }

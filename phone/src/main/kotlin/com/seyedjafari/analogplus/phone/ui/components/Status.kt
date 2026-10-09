@@ -23,7 +23,7 @@ fun StatusPill(text: String, kind: StatusKind, modifier: Modifier = Modifier) {
     val (bg, fg) = when (kind) {
         StatusKind.OK -> scheme.primaryContainer to scheme.onPrimaryContainer
         StatusKind.WARNING -> scheme.surfaceVariant to scheme.onSurface
-        StatusKind.ERROR -> scheme.error to scheme.surface
+        StatusKind.ERROR -> scheme.error to scheme.onError
         StatusKind.NEUTRAL, StatusKind.BUSY -> scheme.surfaceVariant to scheme.onSurfaceVariant
     }
     Text(
