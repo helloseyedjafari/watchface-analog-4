@@ -10,7 +10,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -24,12 +23,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.RingCaps
 import com.seyedjafari.analogplus.facegen.design.RingDesign
 import com.seyedjafari.analogplus.facegen.design.RingLayout
 import com.seyedjafari.analogplus.phone.ColourField
 import com.seyedjafari.analogplus.phone.EditorState
+import com.seyedjafari.analogplus.phone.SectionTitle
 import com.seyedjafari.analogplus.phone.SlotGeometry
 import com.seyedjafari.analogplus.phone.SwitchRow
 import com.seyedjafari.analogplus.phone.Tags
@@ -38,6 +37,7 @@ import com.seyedjafari.analogplus.phone.firstError
 import com.seyedjafari.analogplus.phone.layoutBlocked
 import com.seyedjafari.analogplus.phone.ringColoursFor
 import com.seyedjafari.analogplus.phone.ringLayoutLimitHint
+import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import kotlin.math.roundToInt
 
@@ -60,7 +60,7 @@ fun RingSection(state: EditorState) {
 
     Column(Modifier.fillMaxWidth().padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Ring complications", style = MaterialTheme.typography.titleMedium)
+            SectionTitle("Ring complications")
             CapIndicator(state)
         }
         state.errorsFor("slots").filter { it.message.startsWith("at most") }.forEach {
@@ -76,13 +76,14 @@ fun RingSection(state: EditorState) {
             if (ringErrors.size > MAX_RING_ERROR_LINES) {
                 Text("and ${ringErrors.size - MAX_RING_ERROR_LINES} more", style = MaterialTheme.typography.bodySmall)
             }
-            OutlinedButton(
-                onClick = { edit { r -> RingDesign(layout = r.layout, colors = ringColoursFor(emptyList(), r.layout, state.design.accent)) } },
-                modifier = Modifier.testTag(Tags.field("ring_reset")),
-            ) { Text("Reset ring to default") }
+            SecondaryButton(
+                "Reset ring to default",
+                { edit { r -> RingDesign(layout = r.layout, colors = ringColoursFor(emptyList(), r.layout, state.design.accent)) } },
+                Modifier.testTag(Tags.field("ring_reset")),
+            )
         }
 
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             RingLayout.entries.forEach { layout ->
                 FilterChip(
                     selected = ring.layout == layout,
@@ -121,12 +122,11 @@ fun RingSection(state: EditorState) {
                     color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag(Tags.field("ring_colours_more")),
                 )
-                OutlinedButton(
-                    onClick = {
-                        edit { r -> r.copy(colors = ringColoursFor(r.colors.take(SlotGeometry.MAX_SHOWN), r.layout, state.design.accent)) }
-                    },
-                    modifier = Modifier.testTag(Tags.field("ring_reset_colours")),
-                ) { Text("Reset ring colours") }
+                SecondaryButton(
+                    "Reset ring colours",
+                    { edit { r -> r.copy(colors = ringColoursFor(r.colors.take(SlotGeometry.MAX_SHOWN), r.layout, state.design.accent)) } },
+                    Modifier.testTag(Tags.field("ring_reset_colours")),
+                )
             }
             ColourField(
                 label = "Track colour",
@@ -145,7 +145,7 @@ fun RingSection(state: EditorState) {
             RingNumberRow("Start angle", ring.startAngle, -360..360, "ring_start", state.firstError("ring.startAngle"), allowNegative = true) { v ->
                 edit { it.copy(startAngle = v) }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
                 Text("Ends")
                 RingCaps.entries.forEach { caps ->
                     FilterChip(
@@ -187,7 +187,7 @@ private fun RingNumberRow(
 ) {
     var text by remember(value) { mutableStateOf(value.toString()) }
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             Text(label, Modifier.weight(1f))
             OutlinedTextField(
                 value = text,
