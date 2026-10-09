@@ -36,7 +36,7 @@ class EditorTest {
 
     private fun show(state: EditorState) {
         val store = testStore()
-        rule.setContent { AppShell(state, store, testSend(store), watchReady, null) {} }
+        rule.setContent { PinnedWindow { AppShell(state, store, testSend(store), watchReady, null) {} } }
     }
 
     private fun goTo(d: Destination) { rule.onNodeWithTag(d.tag).performClick(); rule.waitForIdle() }
@@ -175,7 +175,7 @@ class EditorTest {
         val store = testStore()
         val send = testSend(store)
         rule.setContent {
-            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.height(440.dp)) { AppShell(state, store, send, watchReady, null) {} }
+            PinnedWindow { androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.height(440.dp)) { AppShell(state, store, send, watchReady, null) {} } }
         }
         rule.onNodeWithTag(Tags.ACCENT_FIELD).assertIsDisplayed() // the Colours section keeps its room
         rule.onNodeWithTag(Tags.tab("colours")).assertIsDisplayed()

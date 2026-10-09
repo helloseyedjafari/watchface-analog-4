@@ -52,7 +52,7 @@ class ShellThemeAndSweepTest {
                     (if (darkMode.value) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO)
             }
             CompositionLocalProvider(LocalConfiguration provides config) {
-                AppShell(state, store, testSend(store), watchReady, null) {}
+                PinnedWindow { AppShell(state, store, testSend(store), watchReady, null) {} }
             }
         }
     }

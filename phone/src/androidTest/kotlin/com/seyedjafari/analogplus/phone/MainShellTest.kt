@@ -23,7 +23,7 @@ class MainShellTest {
     private fun show(pending: DesignSettings?, onResolved: () -> Unit = {}): EditorState {
         val state = EditorState(DesignSettings())
         val store = testStore()
-        rule.setContent { AppShell(state, store, testSend(store), watchReady, pending, onPendingLinkResolved = onResolved) }
+        rule.setContent { PinnedWindow { AppShell(state, store, testSend(store), watchReady, pending, onPendingLinkResolved = onResolved) } }
         return state
     }
 

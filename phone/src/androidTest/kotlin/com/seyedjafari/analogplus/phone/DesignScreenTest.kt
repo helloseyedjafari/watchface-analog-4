@@ -40,7 +40,8 @@ class DesignScreenTest {
     // the slide tests read mid-transition positions on the manual clock, so the device's animation setting must not change them
     private fun show(state: EditorState, busy: Boolean = false) = rule.setContent {
         CompositionLocalProvider(LocalAnimationScale provides 1f) {
-            Box(Modifier.height(560.dp)) { DesignScreen(state, onSend = {}, sendBusy = busy) }
+            // 411 dp wide, like the emulator: all the chips are on screen, so the tests below can tap them without scrolling the chip row first
+            PinnedWindow(WindowDp(411, 800)) { Box(Modifier.height(560.dp)) { DesignScreen(state, onSend = {}, sendBusy = busy) } }
         }
     }
 

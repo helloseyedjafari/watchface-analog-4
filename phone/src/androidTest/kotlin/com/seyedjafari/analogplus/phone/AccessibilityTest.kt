@@ -45,7 +45,7 @@ class AccessibilityTest {
         rule.setContent {
             val base = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(base.density, fontScale)) {
-                AppShell(state, store, testSend(store), watch, null) {}
+                PinnedWindow { AppShell(state, store, testSend(store), watch, null) {} }
             }
         }
     }

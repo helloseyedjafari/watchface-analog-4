@@ -196,7 +196,7 @@ class ShareTemplatesTest {
     @Test fun shellShowsTheFourDestinationsAndDisablesSendForAnInvalidDesign() {
         val state = EditorState(DesignSettings(accent = "red"))
         val store = freshStore()
-        rule.setContent { AppShell(state, store, testSend(store), watchReady, null) {} }
+        rule.setContent { PinnedWindow { AppShell(state, store, testSend(store), watchReady, null) {} } }
         Destination.entries.forEach { rule.onNodeWithTag(it.tag).assertExists() }
         rule.onNodeWithTag(Tags.field("design_send")).assertIsNotEnabled()
         rule.onNodeWithTag(Destination.SEND.tag).performClick()

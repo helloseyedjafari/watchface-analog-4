@@ -37,13 +37,13 @@ class AnimationsOffTest {
 
     private fun showNav(scale: Float?) = rule.setContent {
         CompositionLocalProvider(LocalAnimationScale provides scale) {
-            AnalogTheme { AppNav(content = { d, _ -> Text("screen ${d.name}") }) }
+            AnalogTheme { PinnedWindow { AppNav(content = { d, _ -> Text("screen ${d.name}") }) } }
         }
     }
 
     private fun showDesign(scale: Float?) = rule.setContent {
         CompositionLocalProvider(LocalAnimationScale provides scale) {
-            AnalogTheme { DesignScreen(EditorState(DesignSettings()), onSend = {}, sendBusy = false) }
+            AnalogTheme { PinnedWindow { DesignScreen(EditorState(DesignSettings()), onSend = {}, sendBusy = false) } }
         }
     }
 

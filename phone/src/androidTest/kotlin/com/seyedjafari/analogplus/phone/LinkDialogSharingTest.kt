@@ -27,7 +27,7 @@ class LinkDialogSharingTest {
         var resolved = 0
         val state = EditorState(DesignSettings())
         val store = testStore()
-        rule.setContent { AppShell(state, store, testSend(store), watchReady, incoming) { resolved++ } }
+        rule.setContent { PinnedWindow { AppShell(state, store, testSend(store), watchReady, incoming) { resolved++ } } }
         rule.onNodeWithTag(Tags.field("link_dialog")).assertIsDisplayed()
         rule.onNodeWithText("Load shared design?").assertIsDisplayed()
         rule.onNodeWithTag(Tags.field("qr_load")).assertIsDisplayed()

@@ -26,7 +26,7 @@ class RecreationTest {
         val state = EditorState(DesignSettings())
         val store = testStore()
         val send = testSend(store)
-        restoration.setContent { AppShell(state, store, send, watchReady, null) {} }
+        restoration.setContent { PinnedWindow { AppShell(state, store, send, watchReady, null) {} } }
         rule.onNodeWithTag("tab_dial").performClick()
         rule.onNodeWithTag(Destination.LIBRARY.tag).performClick()
         rule.onNodeWithTag("tab_share").performClick()
@@ -42,7 +42,7 @@ class RecreationTest {
         val state = EditorState(DesignSettings())
         val store = testStore()
         val send = testSend(store)
-        rule.setContent { AppShell(state, store, send, watchReady, null) {} }
+        rule.setContent { PinnedWindow { AppShell(state, store, send, watchReady, null) {} } }
         rule.onNodeWithTag("tab_dial").performClick()
         rule.onNodeWithTag(Destination.LIBRARY.tag).performClick()
         rule.onNodeWithTag("tab_share").performClick()
@@ -62,8 +62,8 @@ class RecreationTest {
             release.await(30, TimeUnit.SECONDS)
             throw FaceBuildException(listOf("released by the test"))
         })
-        rule.setContent { AppShell(state, store, send, watchReady, null) {} }
-        rule.onNodeWithTag(Tags.field("design_send")).performClick()          // starts the send and opens Send
+        rule.setContent { PinnedWindow { AppShell(state, store, send, watchReady, null) {} } }
+        rule.onNodeWithTag(Tags.field("design_send")).performClick()        // starts the send and opens Send
         assertTrue("the builder was never reached", started.await(10, TimeUnit.SECONDS))
         rule.onNodeWithTag(Destination.LIBRARY.tag).performClick()
         rule.onNodeWithTag(Destination.SEND.tag).performClick()
