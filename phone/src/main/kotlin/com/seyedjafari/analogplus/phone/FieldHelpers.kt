@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -26,10 +27,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.DesignError
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.phone.ui.components.ErrorBanner
+import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import com.seyedjafari.analogplus.phone.ui.theme.TabularNumbers
 import kotlin.math.roundToInt
 
 /** Digits only, at most [maxDigits] of them: the text a number field accepts from the keyboard or a paste. */
@@ -93,18 +98,18 @@ internal fun normaliseColourInput(raw: String): String = raw.trim()
 fun TabColumn(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     BoxWithConstraints(modifier) {
         val scroll = if (constraints.hasBoundedHeight) Modifier.verticalScroll(rememberScrollState()) else Modifier
-        Column(scroll.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
+        Column(scroll.fillMaxWidth().padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) { content() }
     }
 }
 
 @Composable
 fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleSmall)
+    Text(text, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
 }
 
 @Composable
 fun SwitchRow(label: String, checked: Boolean, onChecked: (Boolean) -> Unit, tag: String) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min = Spacing.minTouch), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onChecked, modifier = Modifier.testTag(tag))
     }
@@ -120,9 +125,9 @@ fun <T : Enum<T>> ChoiceRow(
     tagPrefix: String,
     optionLabel: (T) -> String = { it.name.lowercase().replaceFirstChar { c -> c.uppercase() }.replace('_', ' ') },
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
         Text(label, style = MaterialTheme.typography.labelLarge)
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             options.forEach { o ->
                 FilterChip(
                     selected = o == selected,
@@ -154,9 +159,9 @@ fun IntField(
     var text by remember { mutableStateOf(value.toString()) }
     // follow changes that did not come from typing (slider, template, share link); an empty or half typed text stays
     LaunchedEffect(value) { if (text.toIntOrNull() != value) text = value.toString() }
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.xs / 2)) {
         Text(label, style = MaterialTheme.typography.labelLarge)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
             OutlinedTextField(
                 value = text,
                 onValueChange = { raw ->
@@ -166,8 +171,9 @@ fun IntField(
                 },
                 singleLine = true,
                 isError = errorText != null,
+                textStyle = TabularNumbers.merge(MaterialTheme.typography.bodyLarge),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.width(96.dp).testTag(fieldTag),
+                modifier = Modifier.width(Spacing.xxl * 3).testTag(fieldTag),
             )
             Slider(
                 value = value.coerceIn(range).toFloat(),
@@ -177,8 +183,7 @@ fun IntField(
             )
         }
         if (errorText != null) {
-            Text(errorText, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.testTag(Tags.error(fieldTag)))
+            ErrorBanner(errorText, Modifier.testTag(Tags.error(fieldTag)))
         }
     }
 }

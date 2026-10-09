@@ -6,13 +6,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -28,13 +28,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.parseArgb
+import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import com.seyedjafari.analogplus.phone.ui.theme.TabularNumbers
 
 /** Preset colours offered under every colour field (white, black, the red accent, blue, green, amber, magenta, grey). */
 val COLOUR_PRESETS: List<String> = listOf(
@@ -42,6 +42,7 @@ val COLOUR_PRESETS: List<String> = listOf(
 )
 
 private const val MAX_ERROR_CHARS = 200
+private val PresetSize = Spacing.xxl + Spacing.xs
 
 /** Test tag of a preset chip: `preset_<fieldTag>_<hex>`. */
 fun presetTag(fieldTag: String, hex: String) = "preset_${fieldTag}_$hex"
@@ -61,15 +62,15 @@ fun ColourField(
     fieldTag: String = "",
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
             OutlinedTextField(
                 value = value,
                 onValueChange = { onChange(normaliseColourInput(it)) },
                 label = { Text(label) },
                 singleLine = true,
                 isError = errorText != null,
-                textStyle = TextStyle(fontFamily = FontFamily.Monospace),
+                textStyle = TabularNumbers.merge(MaterialTheme.typography.bodyLarge),
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Characters,
                     autoCorrectEnabled = false,
@@ -89,19 +90,23 @@ fun ColourField(
                 modifier = if (fieldTag.isNotBlank()) Modifier.testTag(Tags.error(fieldTag)) else Modifier,
             )
         }
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             COLOUR_PRESETS.forEach { hex ->
                 val argb = parseArgb(hex)!!
-                Row(
+                Box(
                     Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), CircleShape)
+                        .size(Spacing.minTouch)
                         .clickable(role = Role.Button) { onChange(hex) }
                         .semantics { contentDescription = "Preset $hex" }
                         .then(if (fieldTag.isNotBlank()) Modifier.testTag(presetTag(fieldTag, hex)) else Modifier),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Canvas(Modifier.size(36.dp)) { drawRect(Color(argb)) }
+                    Canvas(
+                        Modifier
+                            .size(PresetSize)
+                            .clip(CircleShape)
+                            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), CircleShape),
+                    ) { drawRect(Color(argb)) }
                 }
             }
         }
@@ -112,11 +117,13 @@ fun ColourField(
 @Composable
 private fun Swatch(argb: Int?) {
     val outline = MaterialTheme.colorScheme.outline
+    val shape = MaterialTheme.shapes.extraSmall
     Canvas(
         Modifier
-            .size(40.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .border(BorderStroke(1.dp, outline), RoundedCornerShape(6.dp)),
+            .size(Spacing.xxl + Spacing.sm)
+            .clip(shape)
+            .border(BorderStroke(1.dp, outline), shape)
+            .semantics { contentDescription = if (argb != null) "Colour preview" else "Not a colour yet" },
     ) {
         if (argb != null) {
             drawRect(Color(argb))
