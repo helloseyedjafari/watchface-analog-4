@@ -1,5 +1,6 @@
 package com.seyedjafari.analogplus.phone.ui
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -12,6 +13,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performClick
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.EditorState
@@ -35,6 +40,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.After
@@ -108,5 +114,34 @@ class SendScreenTest {
         release.countDown()
         rule.waitUntil(5_000) { controller.state.value is SendUi.Error }
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled()
+    }
+
+    @Test fun returningToTheScreenKeepsTheLastStatusVisibleWhileRechecking() {
+        val calls = AtomicInteger()
+        val secondCheckMayFinish = CountDownLatch(1)
+        val checker = WatchStatusChecker {
+            if (calls.incrementAndGet() == 1) WatchStatus(CheckStatus.OK, CheckStatus.OK)
+            else { withContext(Dispatchers.IO) { secondCheckMayFinish.await() }; WatchStatus(CheckStatus.OK, CheckStatus.OK) }
+        }
+        val owner = object : LifecycleOwner {
+            val registry = LifecycleRegistry.createUnsafe(this)
+            override val lifecycle: Lifecycle get() = registry
+        }
+        rule.runOnUiThread { owner.registry.currentState = Lifecycle.State.RESUMED }
+        rule.setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+                AnalogTheme { SendScreen(EditorState(DesignSettings()), idleController(), checker) }
+            }
+        }
+        rule.waitUntil(5_000) { calls.get() == 1 }
+        rule.onNodeWithTag(Tags.WATCH_PAIRED).assertTextEquals("OK: Found")
+        // leave and come back: the second check is now running (blocked), and the pills must not flash "Working: Checking"
+        rule.runOnUiThread { owner.registry.currentState = Lifecycle.State.STARTED }
+        rule.runOnUiThread { owner.registry.currentState = Lifecycle.State.RESUMED }
+        rule.waitUntil(5_000) { calls.get() == 2 }
+        rule.waitForIdle()
+        rule.onNodeWithTag(Tags.WATCH_PAIRED).assertTextEquals("OK: Found")
+        rule.onNodeWithTag(Tags.WATCH_APP).assertTextEquals("OK: Installed")
+        secondCheckMayFinish.countDown()
     }
 }

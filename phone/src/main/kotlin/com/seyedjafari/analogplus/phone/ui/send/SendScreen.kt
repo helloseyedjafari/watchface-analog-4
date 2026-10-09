@@ -59,12 +59,10 @@ fun SendScreen(state: EditorState, send: SendController, watch: WatchStatusCheck
 @Composable
 private fun WatchStatusCard(watch: WatchStatusChecker) {
     var status by remember { mutableStateOf(WatchStatus.CHECKING) }
-    // bumped by "Check again" and by every return to the screen; each bump re-runs the check (the previous one is cancelled)
+    // bumped by "Check again" and by every return to the screen; each bump re-runs the check (the previous one is cancelled).
+    // Only the very first check (and "Check again") shows "Checking"; a re-check on return keeps the last answer visible.
     var round by remember { mutableIntStateOf(0) }
-    LaunchedEffect(round) {
-        status = WatchStatus.CHECKING
-        status = watch.check()
-    }
+    LaunchedEffect(round) { status = watch.check() }
     var firstResume by remember { mutableStateOf(true) }
     LifecycleResumeEffect(Unit) {
         if (firstResume) firstResume = false else round++   // the first resume coincides with the initial check
@@ -81,7 +79,7 @@ private fun WatchStatusCard(watch: WatchStatusChecker) {
             "Needs a Wear OS 6 watch.", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        SecondaryButton("Check again", { round++ }, Modifier.testTag(Tags.WATCH_CHECK_AGAIN))
+        SecondaryButton("Check again", { status = WatchStatus.CHECKING; round++ }, Modifier.testTag(Tags.WATCH_CHECK_AGAIN))
     }
 }
 
