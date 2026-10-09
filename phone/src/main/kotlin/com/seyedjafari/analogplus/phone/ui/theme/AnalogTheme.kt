@@ -41,6 +41,7 @@ fun AnalogTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable
     MaterialTheme(
         colorScheme = if (darkTheme) DarkScheme else LightScheme,
         shapes = AnalogShapes,
+        typography = AnalogTypography,
         content = content,
     )
 }
