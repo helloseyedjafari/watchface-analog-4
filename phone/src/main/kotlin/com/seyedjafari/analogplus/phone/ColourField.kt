@@ -30,9 +30,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.facegen.design.parseArgb
+import com.seyedjafari.analogplus.phone.ui.components.ErrorBanner
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import com.seyedjafari.analogplus.phone.ui.theme.TabularNumbers
 
@@ -81,13 +80,10 @@ fun ColourField(
             Swatch(parseArgb(value))
         }
         if (errorText != null) {
-            Text(
+            ErrorBanner(
                 errorText.shortForDisplay(MAX_ERROR_CHARS),
+                if (fieldTag.isNotBlank()) Modifier.testTag(Tags.error(fieldTag)) else Modifier,
                 maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = if (fieldTag.isNotBlank()) Modifier.testTag(Tags.error(fieldTag)) else Modifier,
             )
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
@@ -106,7 +102,7 @@ fun ColourField(
                         Modifier
                             .size(PresetSize)
                             .clip(CircleShape)
-                            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), CircleShape),
+                            .border(BorderStroke(Spacing.hairline, MaterialTheme.colorScheme.outline), CircleShape),
                     ) { drawRect(Color(argb)) }
                 }
             }
@@ -123,14 +119,14 @@ private fun Swatch(argb: Int?) {
         Modifier
             .size(Spacing.xxl + Spacing.sm)
             .clip(shape)
-            .border(BorderStroke(1.dp, outline), shape)
+            .border(BorderStroke(Spacing.hairline, outline), shape)
             .semantics { contentDescription = if (argb != null) "Colour preview" else "Not a colour yet" },
     ) {
         if (argb != null) {
             drawRect(Color(argb))
         } else {
-            drawLine(outline, Offset(0f, 0f), Offset(size.width, size.height), strokeWidth = 2.dp.toPx())
-            drawLine(outline, Offset(size.width, 0f), Offset(0f, size.height), strokeWidth = 2.dp.toPx())
+            drawLine(outline, Offset(0f, 0f), Offset(size.width, size.height), strokeWidth = (Spacing.xs / 2).toPx())
+            drawLine(outline, Offset(size.width, 0f), Offset(0f, size.height), strokeWidth = (Spacing.xs / 2).toPx())
         }
     }
 }
