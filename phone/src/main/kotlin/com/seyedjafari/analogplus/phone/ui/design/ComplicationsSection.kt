@@ -17,7 +17,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,6 +44,7 @@ import com.seyedjafari.analogplus.phone.describe
 import com.seyedjafari.analogplus.phone.describeField
 import com.seyedjafari.analogplus.phone.firstError
 import com.seyedjafari.analogplus.phone.shortForDisplay
+import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 
 private const val NEW_SLOT_BACKGROUND = "#FF1E1E1E"
 private const val OVER_LIMIT = "over limit"
@@ -82,7 +82,7 @@ fun ComplicationsSection(state: EditorState) {
         message = r.refusal
     }
 
-    Column(Modifier.fillMaxWidth().padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Complications", style = MaterialTheme.typography.titleMedium)
             CapIndicator(state)

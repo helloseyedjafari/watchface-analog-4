@@ -48,6 +48,7 @@ import com.seyedjafari.analogplus.facegen.design.RingCaps
 import com.seyedjafari.analogplus.facegen.design.SlotDesign
 import com.seyedjafari.analogplus.facegen.design.SlotShape
 import com.seyedjafari.analogplus.facegen.design.parseArgb
+import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
@@ -85,6 +86,7 @@ fun SlotDragEditor(
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val selectedColour = MaterialTheme.colorScheme.primary
+    val rimColour = MaterialTheme.colorScheme.outline
 
     LaunchedEffect(flashStamp) {
         if (flashId != null) {
@@ -137,7 +139,7 @@ fun SlotDragEditor(
             },
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            drawDial(state.design, selectedId, flashId, selectedColour, measurer)
+            drawDial(state.design, selectedId, flashId, selectedColour, rimColour, measurer)
         }
         // one semantics-only node per slot so tests (and screen readers) can find each slot and its position
         val scale = sizePx / SlotGeometry.CANVAS
@@ -161,6 +163,7 @@ private fun DrawScope.drawDial(
     selectedId: Int?,
     flashId: Int?,
     selectedColour: Color,
+    rimColour: Color,
     measurer: TextMeasurer,
 ) {
     val k = size.width / SlotGeometry.CANVAS
@@ -168,7 +171,8 @@ private fun DrawScope.drawDial(
     val centre = Offset(size.width / 2, size.height / 2)
     drawCircle(Color(0xFF141414), radius = size.width / 2, center = centre)
     // a rim, so the dial stays visible on a dark page
-    drawCircle(Color(0xFF8A8A8A), radius = size.width / 2 - 1.5f, center = centre, style = Stroke(3f))
+    val rimWidth = Spacing.hairline.toPx()
+    drawCircle(rimColour, radius = size.width / 2 - rimWidth / 2, center = centre, style = Stroke(rimWidth))
 
     // ring band, roughly as the face draws it: segments with gaps, clockwise from 12 o'clock plus the start angle
     val n = SlotGeometry.ringSegments(d.ring.layout)

@@ -16,7 +16,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +38,7 @@ import com.seyedjafari.analogplus.phone.firstError
 import com.seyedjafari.analogplus.phone.layoutBlocked
 import com.seyedjafari.analogplus.phone.ringColoursFor
 import com.seyedjafari.analogplus.phone.ringLayoutLimitHint
+import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import kotlin.math.roundToInt
 
 private const val MAX_RING_ERROR_LINES = 4
@@ -58,7 +58,7 @@ fun RingSection(state: EditorState) {
     val showFields = ring.layout != RingLayout.NONE || ringErrors.isNotEmpty()
     val limitHint = ringLayoutLimitHint(state.design.slots.size)
 
-    Column(Modifier.fillMaxWidth().padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Ring complications", style = MaterialTheme.typography.titleMedium)
             CapIndicator(state)

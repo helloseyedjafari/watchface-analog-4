@@ -11,7 +11,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 
 enum class StatusKind(val prefix: String) {
@@ -29,7 +28,7 @@ fun StatusPill(text: String, kind: StatusKind, modifier: Modifier = Modifier) {
         StatusKind.NEUTRAL, StatusKind.BUSY -> scheme.surfaceVariant to scheme.onSurfaceVariant
     }
     // the muted kinds share the card colour: an outline keeps the pill visible on a card as well as on the page
-    val outline = if (bg == scheme.surfaceVariant) Modifier.border(1.dp, scheme.outline, MaterialTheme.shapes.large) else Modifier
+    val outline = if (bg == scheme.surfaceVariant) Modifier.border(Spacing.hairline, scheme.outline, MaterialTheme.shapes.large) else Modifier
     Text(
         kind.prefix + text, color = fg, style = MaterialTheme.typography.labelMedium,
         modifier = modifier.clip(MaterialTheme.shapes.large).background(bg).then(outline)

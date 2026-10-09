@@ -11,4 +11,5 @@ object Spacing {
     val xl = 24.dp
     val xxl = 32.dp
     val minTouch = 48.dp
+    val hairline = 1.dp
 }
