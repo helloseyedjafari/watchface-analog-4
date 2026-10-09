@@ -16,16 +16,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.test.swipe
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.RingLayout
 import com.seyedjafari.analogplus.facegen.design.Templates
 import com.seyedjafari.analogplus.facegen.design.parseArgb
-import java.io.File
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.emptyFlow
+import com.seyedjafari.analogplus.phone.ui.nav.Destination
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -33,28 +29,17 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** The editor as a person uses it: the whole screen, real tabs, real preview; only the watch link is faked. */
+/** The app as a person uses it: the whole shell, real sections, real preview; only the watch link is faked. */
 @RunWith(AndroidJUnit4::class)
 class EditorTest {
     @get:Rule val rule = createComposeRule()
 
-    private class FakeKv : KeyValueStore {
-        private val m = HashMap<String, Any>()
-        override fun getString(key: String) = m[key] as String?
-        override fun getLong(key: String, default: Long) = (m[key] as Long?) ?: default
-        override fun putString(key: String, value: String) { m[key] = value }
-        override fun putLong(key: String, value: Long) { m[key] = value }
+    private fun show(state: EditorState) {
+        val store = testStore()
+        rule.setContent { AppShell(state, store, testSend(store), watchReady, null) {} }
     }
 
-    private fun show(state: EditorState) {
-        val dir = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
-        val store = Store(FakeKv(), File(dir, "editor-test-${System.nanoTime()}.jpg"))
-        val send = SendController(
-            FaceBuilder { _, _ -> error("not called") }, FaceSender { emptyFlow() }, store,
-            CoroutineScope(Dispatchers.Default),
-        )
-        rule.setContent { EditorScreen(state, store, send) }
-    }
+    private fun goTo(d: Destination) { rule.onNodeWithTag(d.tag).performClick(); rule.waitForIdle() }
 
     private fun openTab(name: String) { rule.onNodeWithTag(Tags.tab(name)).performScrollTo().performClick() }
     private fun click(tag: String) { rule.onNodeWithTag(tag).performScrollTo().performClick() }
@@ -80,13 +65,20 @@ class EditorTest {
     @Test fun typingRedShowsTheMessageAndDisablesSend() {
         val state = EditorState(DesignSettings())
         show(state)
+        goTo(Destination.SEND)
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled()
+        goTo(Destination.DESIGN)
         rule.onNodeWithTag(Tags.ACCENT_FIELD).performScrollTo().performTextReplacement("red")
         rule.onNodeWithTag(Tags.error(Tags.ACCENT_FIELD)).assertIsDisplayed()
+        rule.onNodeWithTag(Tags.field("design_send")).assertIsNotEnabled()
+        goTo(Destination.SEND)
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsNotEnabled()
         rule.onNodeWithTag(Tags.SEND_VALIDATION).assertTextContains("accent", substring = true)
         // fixing it re-enables sending
+        goTo(Destination.DESIGN)
         rule.onNodeWithTag(Tags.ACCENT_FIELD).performScrollTo().performTextReplacement("#FFE22B07")
+        rule.onNodeWithTag(Tags.field("design_send")).assertIsEnabled()
+        goTo(Destination.SEND)
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled()
     }
 
@@ -98,7 +90,9 @@ class EditorTest {
         rule.waitForIdle()
         assertEquals(8, state.complicationCount)
         rule.onNodeWithTag(Tags.CAP_INDICATOR).assertTextContains("8 of 8", substring = true)
+        goTo(Destination.SEND)
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled()
+        goTo(Destination.DESIGN)
         // a fifth slot would break the cap: the editor refuses to add it
         openTab("complications")
         click(Tags.field("slot_add"))
@@ -134,6 +128,7 @@ class EditorTest {
         show(state)
         val before = previewCentreOffset(state)
         assertNotEquals(parseArgb(neon.accent), before)
+        goTo(Destination.LIBRARY)
         openTab("templates")
         click(Tags.template("Neon"))
         rule.waitForIdle()
@@ -148,7 +143,8 @@ class EditorTest {
         rule.onNodeWithTag(Tags.field("replace_confirm")).performClick()
         rule.waitForIdle()
         assertEquals(neon, state.design)
-        // the preview follows: the cap now carries Neon's accent
+        // the preview follows: the cap now carries Neon's accent (the preview lives on the Design destination)
+        goTo(Destination.DESIGN)
         rule.waitUntil(10_000) { val b = state.lastPreview; b != null && b.getPixel(b.width / 2 + b.width * 7 / 450, b.height / 2) == parseArgb(neon.accent) }
         assertNotEquals(before, previewCentreOffset(state))
         assertEquals(parseArgb(neon.accent), previewCentreOffset(state))
@@ -157,25 +153,31 @@ class EditorTest {
     @Test fun aHugeBadAccentNeverLocksTheEditor() {
         val state = EditorState(DesignSettings(accent = "x".repeat(2_000)))
         show(state)
+        rule.onNodeWithTag(Tags.ACCENT_FIELD).assertIsDisplayed() // the Colours section keeps its room
+        rule.onNodeWithTag(Tags.tab("colours")).assertIsDisplayed()
+        rule.onNodeWithTag(Tags.field("design_send")).assertIsDisplayed().assertIsNotEnabled()
+        goTo(Destination.SEND)
         rule.onNodeWithTag(Tags.SEND_VALIDATION).assertIsDisplayed()
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsDisplayed().assertIsNotEnabled()
-        rule.onNodeWithTag(Tags.ACCENT_FIELD).assertIsDisplayed() // the Colours tab keeps its room
-        rule.onNodeWithTag(Tags.tab("colours")).assertIsDisplayed()
         // and the user can fix it
+        goTo(Destination.DESIGN)
         rule.onNodeWithTag(Tags.ACCENT_FIELD).performTextReplacement("#FFE22B07")
+        goTo(Destination.SEND)
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled()
     }
 
-    @Test fun aHugeBadAccentWithLittleRoomLeftStillShowsTheTabAndSend() {
-        // roughly a phone with the keyboard open: 440 dp for the whole editor
+    @Test fun aHugeBadAccentWithLittleRoomLeftStillReachesSend() {
+        // roughly a phone with the keyboard open: 440 dp for the whole app
         val state = EditorState(DesignSettings(accent = "x".repeat(2_000), slots = DesignSettings().slots.map { it.copy(name = "n".repeat(900)) }))
-        val dir = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
-        val store = Store(FakeKv(), File(dir, "editor-test-${System.nanoTime()}.jpg"))
-        val send = SendController(FaceBuilder { _, _ -> error("not called") }, FaceSender { emptyFlow() }, store, CoroutineScope(Dispatchers.Default))
-        rule.setContent { androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.height(440.dp)) { EditorScreen(state, store, send) } }
-        rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsDisplayed()
-        rule.onNodeWithTag(Tags.SEND_VALIDATION).assertIsDisplayed()
-        rule.onNodeWithTag(Tags.ACCENT_FIELD).assertIsDisplayed()
+        val store = testStore()
+        val send = testSend(store)
+        rule.setContent {
+            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.height(440.dp)) { AppShell(state, store, send, watchReady, null) {} }
+        }
+        rule.onNodeWithTag(Tags.ACCENT_FIELD).performScrollTo().assertIsDisplayed()
+        goTo(Destination.SEND)
+        rule.onNodeWithTag(Tags.SEND_VALIDATION).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag(Tags.SEND_BUTTON).performScrollTo().assertIsDisplayed()
     }
 
     @Test fun aTwentyThousandColourRingDoesNotHangTheEditor() {
@@ -185,9 +187,13 @@ class EditorTest {
         show(state)
         openTab("rings")
         rule.onNodeWithTag(Tags.field("ring_colours_more")).performScrollTo().assertIsDisplayed()
+        goTo(Destination.SEND)
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsDisplayed().assertIsNotEnabled()
+        goTo(Destination.DESIGN)
+        openTab("rings") // leaving the Design destination forgets its section
         click(Tags.field("ring_reset_colours"))
         assertEquals(4, state.design.ring.colors.size)
+        goTo(Destination.SEND)
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled()
     }
 
@@ -195,6 +201,7 @@ class EditorTest {
         val target = Templates.all.first { it.name == "Midnight" }
         val state = EditorState(DesignSettings())
         show(state)
+        goTo(Destination.LIBRARY)
         openTab("share")
         rule.onNodeWithTag(Tags.SHARE_LINK_FIELD).performScrollTo().performTextInput(DesignJson.shareLink(target))
         click(Tags.SHARE_LOAD_BUTTON)

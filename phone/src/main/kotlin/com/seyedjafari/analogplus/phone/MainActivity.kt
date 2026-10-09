@@ -8,14 +8,16 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -32,6 +34,16 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Modifier
+import com.seyedjafari.analogplus.phone.ui.account.AccountScreen
+import com.seyedjafari.analogplus.phone.ui.design.DesignScreen
+import com.seyedjafari.analogplus.phone.ui.library.LibraryScreen
+import com.seyedjafari.analogplus.phone.ui.nav.AppNav
+import com.seyedjafari.analogplus.phone.ui.nav.Destination
+import com.seyedjafari.analogplus.phone.ui.send.SendScreen
+import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
+import com.seyedjafari.analogplus.phone.ui.send.gmsWatchStatusChecker
+import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
 
 /** Lives across rotation: the design being edited, its store and the running send. */
 class AppModel(app: Application) : AndroidViewModel(app) {
@@ -109,17 +121,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         if (savedInstanceState == null) loadFromIntent(intent)
         setContent {
-            AnalogPlusTheme {
-                EditorScreen(model.state, model.store, model.send)
-                model.pendingLinkDesign?.let { incoming ->
-                    AlertDialog(
-                        onDismissRequest = { model.pendingLinkDesign = null },
-                        title = { Text("Load shared design?") },
-                        text = { Text("\"${dialogName(incoming.name)}\" will replace the design you are editing.") },
-                        confirmButton = { TextButton(onClick = { model.state.replace(incoming); model.pendingLinkDesign = null }) { Text("Load") } },
-                        dismissButton = { TextButton(onClick = { model.pendingLinkDesign = null }) { Text("Keep mine") } },
-                    )
-                }
+            AppShell(model.state, model.store, model.send, gmsWatchStatusChecker(applicationContext), model.pendingLinkDesign) {
+                model.pendingLinkDesign = null
             }
         }
     }
@@ -144,7 +147,40 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * The whole app: the four destinations under the bottom bar, and the "Load shared design?" dialog on top of whichever one
+ * is showing. A link ([pendingLink]) never replaces the design on its own; both buttons call [onPendingLinkResolved].
+ */
 @Composable
-fun AnalogPlusTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme(), content = content)
+fun AppShell(
+    state: EditorState,
+    store: Store,
+    send: SendController,
+    watch: WatchStatusChecker,
+    pendingLink: DesignSettings?,
+    onPendingLinkResolved: () -> Unit,
+) {
+    val sendUi by send.state.collectAsState()
+    AnalogTheme {
+        // insets: edge-to-edge is enforced on Android 15, and the keyboard must not cover the field being edited
+        Surface(Modifier.fillMaxSize().systemBarsPadding().imePadding(), color = MaterialTheme.colorScheme.background) {
+            AppNav(content = { destination, navigateTo ->
+                when (destination) {
+                    Destination.DESIGN -> DesignScreen(state, onSend = { send.send(state.design); navigateTo(Destination.SEND) }, sendBusy = sendUi.isBusy)
+                    Destination.LIBRARY -> LibraryScreen(state, store)
+                    Destination.SEND -> SendScreen(state, send, watch)
+                    Destination.ACCOUNT -> AccountScreen()
+                }
+            })
+        }
+        pendingLink?.let { incoming ->
+            AlertDialog(
+                onDismissRequest = onPendingLinkResolved,
+                title = { Text("Load shared design?") },
+                text = { Text("\"${dialogName(incoming.name)}\" will replace the design you are editing.") },
+                confirmButton = { TextButton(onClick = { state.replace(incoming); onPendingLinkResolved() }) { Text("Load") } },
+                dismissButton = { TextButton(onClick = onPendingLinkResolved) { Text("Keep mine") } },
+            )
+        }
+    }
 }

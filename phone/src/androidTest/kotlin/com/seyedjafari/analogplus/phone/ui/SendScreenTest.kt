@@ -13,25 +13,22 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.EditorState
 import com.seyedjafari.analogplus.phone.FaceBuilder
 import com.seyedjafari.analogplus.phone.FaceSender
-import com.seyedjafari.analogplus.phone.KeyValueStore
 import com.seyedjafari.analogplus.phone.NOT_INSTALLED_TEXT
 import com.seyedjafari.analogplus.phone.NO_WATCH_TEXT
 import com.seyedjafari.analogplus.phone.SendController
-import com.seyedjafari.analogplus.phone.SendUi.Building
-import com.seyedjafari.analogplus.phone.SendUi.Error
+import com.seyedjafari.analogplus.phone.SendUi
 import com.seyedjafari.analogplus.phone.Store
+import com.seyedjafari.analogplus.phone.testStore
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.ui.send.CheckStatus
 import com.seyedjafari.analogplus.phone.ui.send.SendScreen
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatus
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
-import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
@@ -61,18 +58,7 @@ class SendScreenTest {
 
     private fun newScope() = CoroutineScope(Dispatchers.Default).also { scopes += it }
 
-    private class FakeKv : KeyValueStore {
-        private val m = HashMap<String, Any>()
-        override fun getString(key: String) = m[key] as String?
-        override fun getLong(key: String, default: Long) = (m[key] as Long?) ?: default
-        override fun putString(key: String, value: String) { m[key] = value }
-        override fun putLong(key: String, value: Long) { m[key] = value }
-    }
-
-    private fun store(): Store {
-        val dir = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
-        return Store(FakeKv(), File(dir, "send-screen-test-${System.nanoTime()}.jpg"))
-    }
+    private fun store(): Store = testStore()
 
     private fun idleController(): SendController =
         SendController(FaceBuilder { _, _ -> error("not called") }, FaceSender { emptyFlow() }, store(), newScope())
@@ -108,7 +94,7 @@ class SendScreenTest {
             AnalogTheme { if (shown) SendScreen(state, controller, { WatchStatus(CheckStatus.OK, CheckStatus.OK) }) }
         }
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled().performClick()
-        rule.waitUntil(5_000) { controller.state.value is Building }
+        rule.waitUntil(5_000) { controller.state.value is SendUi.Building }
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsNotEnabled()
         // leave the destination and come back: the same send is still shown
         shown = false
@@ -120,7 +106,7 @@ class SendScreenTest {
         // the Design shortcut calls the same controller: it must not start a second send
         assertFalse(controller.send(state.design))
         release.countDown()
-        rule.waitUntil(5_000) { controller.state.value is Error }
+        rule.waitUntil(5_000) { controller.state.value is SendUi.Error }
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled()
     }
 }
