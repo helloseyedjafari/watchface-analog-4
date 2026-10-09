@@ -32,7 +32,7 @@ adb -s <watch-serial> install -r watch/build/outputs/apk/debug/watch-debug.apk
 inside it) when you switch away, rotate the phone or the system restarts the app.
 
 - **Design** is the editor: the preview stays pinned at the top, a row of section chips sits under it (Colours, Dial,
-  Hands, Background, Complications, Rings), and **Send to watch** is always at the bottom.
+  Hands, Background, Complications, Rings), and **Send to watch** is always at the bottom (except while the keyboard is open).
 - **Library** has three sections: **Templates**, **My designs** and **Share** (the old Templates and Share tabs; saving a
   design under a name is in My designs).
 - **Send** shows the watch status (paired, Analog Plus installed) and the progress of a send. Pressing **Send to watch**
