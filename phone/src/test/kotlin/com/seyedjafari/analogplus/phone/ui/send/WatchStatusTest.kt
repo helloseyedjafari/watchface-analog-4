@@ -4,7 +4,16 @@ import com.seyedjafari.analogplus.phone.WatchNode
 import com.seyedjafari.analogplus.phone.WatchTransport
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.fail
 import org.junit.Test
@@ -12,9 +21,9 @@ import org.junit.Test
 class WatchStatusTest {
     private class FakeTransport(
         val withApp: List<WatchNode> = emptyList(), val connected: List<String> = emptyList(), val fail: Boolean = false,
-        val cancel: Boolean = false,
+        val cancel: Boolean = false, val hang: Boolean = false,
     ) : WatchTransport {
-        override suspend fun nodesWithApp(): List<WatchNode> = if (cancel) throw CancellationException("cancelled") else if (fail) error("gms down") else withApp
+        override suspend fun nodesWithApp(): List<WatchNode> = if (hang) awaitCancellation() else if (cancel) throw CancellationException("cancelled") else if (fail) error("gms down") else withApp
         override suspend fun connectedNodeIds(): List<String> = if (fail) error("gms down") else connected
         override suspend fun sendFile(nodeId: String, path: String, file: File) = error("unused")
         override suspend fun sendMessage(nodeId: String, path: String, data: ByteArray) = error("unused")
@@ -36,4 +45,24 @@ class WatchStatusTest {
     }
 
     @Test fun transportFailureIsUnknownNotNegative() = assertEquals(WatchStatus(CheckStatus.UNKNOWN, CheckStatus.UNKNOWN), check(FakeTransport(fail = true)))
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun aTransportThatNeverAnswersIsUnknownAfterTheTimeout() = runTest {
+        val result = async { TransportWatchStatusChecker(FakeTransport(hang = true)).check() }
+        advanceTimeBy(4_999)
+        runCurrent()
+        assertFalse("still waiting just before the timeout", result.isCompleted)
+        advanceTimeBy(2)
+        runCurrent()
+        assertTrue(result.isCompleted)
+        assertEquals(WatchStatus(CheckStatus.UNKNOWN, CheckStatus.UNKNOWN), result.await())
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun cancellingTheCallerDuringTheWaitStillCancels() = runTest {
+        val result = async { TransportWatchStatusChecker(FakeTransport(hang = true)).check() }
+        advanceTimeBy(1_000)
+        result.cancelAndJoin()
+        assertTrue(result.isCancelled)
+    }
 }

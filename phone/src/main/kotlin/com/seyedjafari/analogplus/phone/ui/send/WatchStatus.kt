@@ -4,6 +4,7 @@ import android.content.Context
 import com.seyedjafari.analogplus.phone.GmsTransport
 import com.seyedjafari.analogplus.phone.WatchTransport
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class CheckStatus { CHECKING, OK, ACTION_NEEDED, UNKNOWN }
 
@@ -13,17 +14,23 @@ data class WatchStatus(val paired: CheckStatus, val appInstalled: CheckStatus) {
 
 fun interface WatchStatusChecker { suspend fun check(): WatchStatus }
 
+/** How long the transport calls may take before the answer is "could not check". */
+internal const val WATCH_CHECK_TIMEOUT_MS = 5_000L
+
 class TransportWatchStatusChecker(private val transport: WatchTransport) : WatchStatusChecker {
+    /** Never hangs: a transport that does not answer within [WATCH_CHECK_TIMEOUT_MS] is [CheckStatus.UNKNOWN], not "checking" forever. */
     override suspend fun check(): WatchStatus = try {
-        when {
-            transport.nodesWithApp().isNotEmpty() -> WatchStatus(CheckStatus.OK, CheckStatus.OK)
-            transport.connectedNodeIds().isNotEmpty() -> WatchStatus(CheckStatus.OK, CheckStatus.ACTION_NEEDED)
-            else -> WatchStatus(CheckStatus.ACTION_NEEDED, CheckStatus.UNKNOWN)
-        }
+        withTimeoutOrNull(WATCH_CHECK_TIMEOUT_MS) { query() } ?: WatchStatus(CheckStatus.UNKNOWN, CheckStatus.UNKNOWN)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         WatchStatus(CheckStatus.UNKNOWN, CheckStatus.UNKNOWN)
+    }
+
+    private suspend fun query(): WatchStatus = when {
+        transport.nodesWithApp().isNotEmpty() -> WatchStatus(CheckStatus.OK, CheckStatus.OK)
+        transport.connectedNodeIds().isNotEmpty() -> WatchStatus(CheckStatus.OK, CheckStatus.ACTION_NEEDED)
+        else -> WatchStatus(CheckStatus.ACTION_NEEDED, CheckStatus.UNKNOWN)
     }
 }
 
