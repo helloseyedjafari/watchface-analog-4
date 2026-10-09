@@ -41,6 +41,7 @@ import com.seyedjafari.analogplus.phone.ui.design.ComplicationsSection
 import com.seyedjafari.analogplus.phone.ui.design.DialSection
 import com.seyedjafari.analogplus.phone.ui.design.HandsSection
 import com.seyedjafari.analogplus.phone.ui.design.RingSection
+import com.seyedjafari.analogplus.phone.ui.send.sendStatusText
 
 /** The tabs in order; the tab tag is `Tags.tab(name.lowercase())`. */
 private val TABS = listOf("Colours", "Dial", "Hands", "Background", "Complications", "Rings", "Templates", "Share")
@@ -150,16 +151,3 @@ private fun SendPanel(state: EditorState, send: SendController) {
     }
 }
 
-internal fun sendStatusText(ui: SendUi): String = when (ui) {
-    SendUi.Idle -> "Ready to send."
-    SendUi.Building -> "Building the face..."
-    is SendUi.Sending -> when (val s = ui.state) {
-        SendState.Connecting -> "Looking for the watch..."
-        is SendState.SendingFile -> "Sending the face to the watch" + (s.percent?.let { " ($it%)" } ?: "") + "..."
-        SendState.Applying -> "The watch is installing the face..."
-        is SendState.Done -> "The watch answered."
-        is SendState.Failed -> s.text
-    }
-    is SendUi.Success -> "Sent. The watch now has version ${ui.version}."
-    is SendUi.Error -> ui.text
-}

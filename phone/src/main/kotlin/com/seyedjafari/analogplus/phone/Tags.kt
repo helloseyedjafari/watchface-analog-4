@@ -29,6 +29,10 @@ object Tags {
     const val RESET_KEY_BUTTON = "reset_key_button"
     const val RESET_KEY_CONFIRM = "reset_key_confirm"
     const val RESET_KEY_NOTICE = "reset_key_notice"
+    const val WATCH_PAIRED = "watch_paired"
+    const val WATCH_APP = "watch_app"
+    const val WATCH_CHECK_AGAIN = "watch_check_again"
+    const val SEND_SUCCESS = "send_success"
     fun saved(name: String) = "saved_$name"
     fun savedDelete(name: String) = "saved_delete_$name"
 }
