@@ -194,7 +194,7 @@ class EditorTest {
         goTo(Destination.SEND)
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsDisplayed().assertIsNotEnabled()
         goTo(Destination.DESIGN)
-        openTab("rings") // leaving the Design destination forgets its section
+        openTab("rings") // the Design destination keeps its section; the tap makes sure Rings is showing
         click(Tags.field("ring_reset_colours"))
         assertEquals(4, state.design.ring.colors.size)
         goTo(Destination.SEND)

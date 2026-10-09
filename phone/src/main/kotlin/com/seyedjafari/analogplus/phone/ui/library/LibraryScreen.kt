@@ -31,7 +31,7 @@ import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 enum class LibrarySection(val label: String) { TEMPLATES("Templates"), MY_DESIGNS("My designs"), SHARE("Share") }
 
 /** Chip tag: `tab_templates`, `tab_mydesigns`, `tab_share`. */
-fun LibrarySection.tag() = "tab_" + label.lowercase().replace(" ", "")
+fun LibrarySection.tag() = Tags.tab(label.lowercase().replace(" ", ""))
 
 /** A design waiting for the user's yes: [name] is what the dialog calls it. */
 internal class PendingReplace(val name: String, val design: DesignSettings)

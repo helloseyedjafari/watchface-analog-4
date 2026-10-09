@@ -95,7 +95,7 @@ internal fun DesignSettings.fixFirstText(errors: List<DesignError>): String {
 internal fun normaliseColourInput(raw: String): String = raw.trim()
 
 /**
- * Column for a tab body. Scrolls itself when the host gives it a bounded height; when the host already scrolls
+ * Column for a section body. Scrolls itself when the host gives it a bounded height; when the host already scrolls
  * (unbounded height) it does not add a second scroll, which would crash.
  */
 @Composable
@@ -203,7 +203,7 @@ fun IntField(
     }
 }
 
-/** Hand and inlay colour fields; [prefix] keeps the tags of the Colours and Hands tabs apart. */
+/** Hand and inlay colour fields; [prefix] keeps the tags of the Colours and Hands sections apart. */
 @Composable
 fun HandColourFields(state: EditorState, prefix: String = "") {
     val d = state.design

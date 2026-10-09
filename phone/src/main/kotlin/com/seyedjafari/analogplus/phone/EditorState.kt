@@ -13,7 +13,7 @@ import com.seyedjafari.analogplus.facegen.design.validate
 enum class PhotoLoad { LOADING, READY }
 
 /**
- * The design being edited. Every tab reads [design] and changes it through [update]; nothing else holds design state.
+ * The design being edited. Every section reads [design] and changes it through [update]; nothing else holds design state.
  * The design may be invalid while the user types: [errors] says what is wrong and Send is disabled until it is empty.
  */
 class EditorState(initial: DesignSettings = DesignSettings(), photoLoad: PhotoLoad = PhotoLoad.READY) {

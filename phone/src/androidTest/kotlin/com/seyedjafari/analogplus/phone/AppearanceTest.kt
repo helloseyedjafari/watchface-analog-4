@@ -265,7 +265,7 @@ class AppearanceTest {
         rule.waitUntil(15_000) {
             rule.onAllNodesWithTagCount(Tags.field("background_thumb")) + rule.onAllNodesWithTagCount(Tags.field("background_thumb_unavailable")) == 1
         }
-        // bytes that are no image: the preview says so, the rest of the tab keeps working
+        // bytes that are no image: the preview says so, the rest of the section keeps working
         state.update { it.copy(background = it.background.copy(photoJpeg = ByteArray(50) { 3 })) }
         rule.waitUntil(15_000) { rule.onAllNodesWithTagCount(Tags.field("background_thumb_unavailable")) == 1 }
         rule.onNodeWithTag(Tags.field("background_thumb_unavailable")).performScrollTo().assertTextEquals("Preview unavailable")
