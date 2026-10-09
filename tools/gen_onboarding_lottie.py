@@ -116,7 +116,7 @@ def layer(ind, name, shapes, op, pos=(C, C), scale_anim=None, pos_anim=None, rot
         "s": scale_anim or vec(SCALE * 100, SCALE * 100, 100),
     }
     return {"ddd": 0, "ind": ind, "ty": 4, "nm": name, "sr": 1, "ks": ks, "ao": 0, "shapes": shapes,
-            "ip": 0, "op": op, "st": 0, "bm": 0}
+            "ip": 0, "op": op + 1, "st": 0, "bm": 0}     # +1: Lottie hides a layer from its op frame on, and progress 1.0 is the composition op
 
 
 def composition(name, op, layers):
