@@ -104,6 +104,9 @@ class AnimatorScaleRule(private val scale: String) : TestWatcher() {
 
     override fun starting(description: Description) {
         original = shell("settings get global animator_duration_scale").trim()
+        // The value this rule is about to set can only already be there if an earlier run died before `finished` put the
+        // setting back (a leak); "restoring" that would keep the emulator stuck, so the default is restored instead.
+        if (original == scale) original = "null"
         shell("settings put global animator_duration_scale $scale")
     }
 
