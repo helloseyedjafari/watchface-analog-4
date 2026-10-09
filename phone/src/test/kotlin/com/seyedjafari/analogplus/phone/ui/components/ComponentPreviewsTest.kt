@@ -17,4 +17,13 @@ class ComponentPreviewsTest {
         }
         assertTrue("component files without a private @LightDarkPreview function: ${missing.map { it.name }}", missing.isEmpty())
     }
+
+    /** The components are the layer under the screens: a preview must not pull a screen's types in (a dependency cycle). */
+    @Test fun componentsDoNotImportFromTheScreens() {
+        val screens = listOf("design", "library", "send", "account", "nav")
+        val offenders = dir.listFiles { f -> f.extension == "kt" }!!.flatMap { f ->
+            f.readLines().filter { l -> screens.any { l.trim().startsWith("import com.seyedjafari.analogplus.phone.ui.$it.") } }.map { "${f.name}: ${it.trim()}" }
+        }
+        assertTrue("components importing from the screens: $offenders", offenders.isEmpty())
+    }
 }

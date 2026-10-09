@@ -3,8 +3,8 @@ package com.seyedjafari.analogplus.phone.ui.components
 import com.seyedjafari.analogplus.phone.ui.theme.LightDarkPreview
 import com.seyedjafari.analogplus.phone.ui.theme.PreviewFrame
 import androidx.compose.ui.res.stringResource
-import com.seyedjafari.analogplus.phone.ui.design.DesignSection
-import com.seyedjafari.analogplus.phone.ui.design.tag
+import androidx.annotation.StringRes
+import com.seyedjafari.analogplus.phone.R
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -42,8 +42,14 @@ fun <T> SectionChips(items: List<T>, selected: T, onSelect: (T) -> Unit, label: 
     }
 }
 
+/** Sample chips for the preview, so that this file does not depend on a screen's own section type. */
+private enum class SampleChip(@StringRes val labelRes: Int) {
+    ONE(R.string.design_section_colours), TWO(R.string.design_section_dial), THREE(R.string.design_section_hands),
+    FOUR(R.string.design_section_background), FIVE(R.string.design_section_complications),
+}
+
 @LightDarkPreview
 @Composable
 private fun SectionChipsPreview() = PreviewFrame {
-    SectionChips(DesignSection.entries, DesignSection.DIAL, {}, { stringResource(it.labelRes) }, { it.tag() })
+    SectionChips(SampleChip.entries, SampleChip.TWO, {}, { stringResource(it.labelRes) }, { it.name })
 }
