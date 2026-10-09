@@ -28,15 +28,29 @@ adb -s <watch-serial> install -r watch/build/outputs/apk/debug/watch-debug.apk
 
 ## Using it
 
-**Phone, editor.** Tabs: Colours, Dial, Hands, Background, Complications, Rings, Templates, Share. Colours are typed as
-`#AARRGGBB` (for example `#FF1E6BFF`); a wrong value shows a message and disables **Send to watch**. The preview updates
-as you type. Complications: choose 4 or 6 slots, tap a slot to edit it, drag it to move it (slots cannot overlap each
-other or the hand centre). At most 8 complication slots in total; each ring segment counts as one. Rings: pick a layout
-(full, halves, thirds, quarters). Templates: start from a built-in design or save your own. Share: copy a link
+**Phone navigation.** A bar at the bottom has four destinations; the phone remembers the one you were on (and the section
+inside it) when you switch away, rotate the phone or the system restarts the app.
+
+- **Design** is the editor: the preview stays pinned at the top, a row of section chips sits under it (Colours, Dial,
+  Hands, Background, Complications, Rings), and **Send to watch** is always at the bottom.
+- **Library** has three sections: **Templates**, **My designs** and **Share** (the old Templates and Share tabs; saving a
+  design under a name is in My designs).
+- **Send** shows the watch status (paired, Analog Plus installed) and the progress of a send. Pressing **Send to watch**
+  in Design starts the send and opens this destination. A send keeps running if you switch destination.
+- **Account** shows the app version, the (not yet available) sign-in, and **Reset signing key**, which used to be in the
+  Share tab.
+
+Design sections. Colours are typed as `#AARRGGBB` (for example `#FF1E6BFF`); a wrong value shows a message and disables
+**Send to watch**. The preview updates as you type. Complications: choose 4 or 6 slots, tap a slot to edit it, drag it to
+move it (slots cannot overlap each other or the hand centre). At most 8 complication slots in total; each ring segment
+counts as one. Rings: pick a layout (full, halves, thirds, quarters). Library > Templates: start from a built-in design
+(Classic, Midnight, Neon, Minimal) or save your own under My designs. Library > Share: copy a link
 (`analogplus://design?d=...`), load one from a link, or show the design as a QR code and scan someone else's. A tapped
 link, a scanned QR code, a template or a saved design asks before it replaces the design you are editing; a link pasted
-into the Share tab and loaded with **Load design** replaces it at once. Templates:
-Classic, Midnight, Neon, Minimal.
+into Share and loaded with **Load design** replaces it at once. A tapped link shows its question over whichever destination is open.
+
+Screenshots of every destination (light and dark, font scale 1.0 and 2.0) are in `docs/poc/screens/`
+(`<destination>-<theme>-<scale>.png`).
 
 **Always-on mode.** The background is hidden (black) and the dial is dimmed. Dark hands, ticks and numerals switch to
 light grey there, and the editor shows a hint when that happens; dark slot text stays dim.
@@ -67,7 +81,7 @@ battery, the second the step count as text, the others start empty; pick provide
   face package stays). Remove it with
   `adb -s <watch-serial> shell pm uninstall com.seyedjafari.analogplus.watchfacepush.analog`; then send again and, if the
   watch app's one-shot activation is used up, pick Analog Plus in the face picker. (Not tried on a real watch.) The app
-  never removes a face itself. The Share tab has "Reset signing key" for a damaged key; it only helps after the old face
+  never removes a face itself. Account has "Reset signing key" for a damaged key; it only helps after the old face
   is gone from the watch.**
   Do not uninstall the phone app during the test.
 - Photo backgrounds are resized and compressed to fit Bluetooth (350 KB cap); the build fails with a message if it
@@ -82,10 +96,10 @@ battery, the second the step count as text, the others start empty; pick provide
 1. Pair phone and watch, install both apps (above), allow the watch permissions.
 2. Phone: open Analog Plus, leave the default design, press **Send to watch**. Wait for the success message with the version.
 3. Watch: open Analog Plus, check "Face: version N", press **Activate face**. The face appears and looks like the Classic face.
-4. Phone: Colours tab, set the accent to `#FF1E6BFF`, press **Send to watch** again.
+4. Phone: Design > Colours, set the accent to `#FF1E6BFF`, press **Send to watch** again.
 5. Watch: the face turns blue in place. No activation, no second face in the picker, the status shows the new version.
-6. Phone: Complications tab, drag one slot to another position, send. Check the slot moved on the watch.
-7. Phone: Rings tab, choose quarters, send. Check four arcs around the dial and the slot cap indicator.
+6. Phone: Design > Complications, drag one slot to another position, send. Check the slot moved on the watch.
+7. Phone: Design > Rings, choose quarters, send. Check four arcs around the dial and the slot cap indicator.
 8. Long-press the face, *Customize*, and pick a provider for a ring segment; check the arc fills.
 9. Write down anything that fails (message on the phone, status on the watch).
 

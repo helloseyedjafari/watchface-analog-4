@@ -12,16 +12,22 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.seyedjafari.analogplus.phone.ui.theme.Motion
 import com.seyedjafari.analogplus.phone.ui.theme.motionSpec
+
+private const val NAV_MAX_FONT_SCALE = 1.3f
 
 @Composable
 fun AppNav(
@@ -30,27 +36,33 @@ fun AppNav(
     modifier: Modifier = Modifier,
 ) {
     var selected by rememberSaveable { mutableStateOf(startAt) }
+    // AnimatedContent drops a destination's rememberSaveable state when it leaves composition; keep it per destination.
+    val stateHolder = rememberSaveableStateHolder()
     BackHandler(enabled = selected.backTarget() != null) { selected.backTarget()?.let { selected = it } }
     val enter = fadeIn(motionSpec(Motion.MEDIUM))
     val exit = fadeOut(motionSpec(Motion.SHORT))
     Scaffold(
         modifier = modifier,
         bottomBar = {
-            NavigationBar {
-                Destination.entries.forEach { d ->
-                    NavigationBarItem(
-                        selected = d == selected, onClick = { selected = d },
-                        icon = { Icon(d.icon(), contentDescription = null) },
-                        label = { Text(d.label) },
-                        alwaysShowLabel = true,
-                        modifier = Modifier.testTag(d.tag).semantics { contentDescription = d.label },
-                    )
+            // four labels share the width: at the largest font scales "Account" would break mid-word, so the bar stops growing at 1.3x
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = minOf(density.fontScale, NAV_MAX_FONT_SCALE))) {
+                NavigationBar {
+                    Destination.entries.forEach { d ->
+                        NavigationBarItem(
+                            selected = d == selected, onClick = { selected = d },
+                            icon = { Icon(d.icon(), contentDescription = null) },
+                            label = { Text(d.label, maxLines = 1) },
+                            alwaysShowLabel = true,
+                            modifier = Modifier.testTag(d.tag).semantics { contentDescription = d.label },
+                        )
+                    }
                 }
             }
         },
     ) { padding ->
         AnimatedContent(selected, Modifier.padding(padding), transitionSpec = { enter togetherWith exit }, label = "destination") { d ->
-            content(d) { selected = it }
+            stateHolder.SaveableStateProvider(d.name) { content(d) { selected = it } }
         }
     }
 }

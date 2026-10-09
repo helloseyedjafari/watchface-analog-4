@@ -1,6 +1,7 @@
 package com.seyedjafari.analogplus.phone.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -10,6 +11,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 
 enum class StatusKind(val prefix: String) {
@@ -26,9 +28,12 @@ fun StatusPill(text: String, kind: StatusKind, modifier: Modifier = Modifier) {
         StatusKind.ERROR -> scheme.error to scheme.onError
         StatusKind.NEUTRAL, StatusKind.BUSY -> scheme.surfaceVariant to scheme.onSurfaceVariant
     }
+    // the muted kinds share the card colour: an outline keeps the pill visible on a card as well as on the page
+    val outline = if (bg == scheme.surfaceVariant) Modifier.border(1.dp, scheme.outline, MaterialTheme.shapes.large) else Modifier
     Text(
         kind.prefix + text, color = fg, style = MaterialTheme.typography.labelMedium,
-        modifier = modifier.clip(MaterialTheme.shapes.large).background(bg).padding(horizontal = Spacing.md, vertical = Spacing.xs),
+        modifier = modifier.clip(MaterialTheme.shapes.large).background(bg).then(outline)
+            .padding(horizontal = Spacing.md, vertical = Spacing.xs),
     )
 }
 

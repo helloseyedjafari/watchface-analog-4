@@ -32,4 +32,7 @@ Keep chat answers **very short**; do the work and ask decisions in batches. Glob
 ## Layout
 
 `app/` existing face · `tools/` generators (geometry reference) · `tests/` · `scripts/` · `docs/superpowers/{specs,plans}` ·
-`docs/handoff` · `docs/research` · `docs/poc/spike` (throwaway spike sources, not built)
+`docs/handoff` · `docs/research` · `docs/poc/spike` (throwaway spike sources, not built) · `docs/poc/screens` (phone app screenshots)
+
+Phone app UI (`phone/.../ui/`): `nav/` (`AppNav`, four destinations: Design, Library, Send, Account) · `design/` · `library/` ·
+`send/` · `account/` · `components/` · `theme/`. The old eight-tab editor is gone.

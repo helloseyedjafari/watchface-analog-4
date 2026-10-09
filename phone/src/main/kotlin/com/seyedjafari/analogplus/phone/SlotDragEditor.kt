@@ -167,6 +167,8 @@ private fun DrawScope.drawDial(
     fun p(v: Int) = v * k
     val centre = Offset(size.width / 2, size.height / 2)
     drawCircle(Color(0xFF141414), radius = size.width / 2, center = centre)
+    // a rim, so the dial stays visible on a dark page
+    drawCircle(Color(0xFF8A8A8A), radius = size.width / 2 - 1.5f, center = centre, style = Stroke(3f))
 
     // ring band, roughly as the face draws it: segments with gaps, clockwise from 12 o'clock plus the start angle
     val n = SlotGeometry.ringSegments(d.ring.layout)
