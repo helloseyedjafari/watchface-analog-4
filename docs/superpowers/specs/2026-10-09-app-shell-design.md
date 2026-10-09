@@ -16,7 +16,9 @@ look deliberate.
 
 ## Navigation
 
-Bottom navigation, four destinations (replaces the eight-tab `EditorScreen`):
+Bottom navigation, four destinations (replaces the eight-tab `EditorScreen`). In short windows (phone landscape) the
+bottom bar becomes a side navigation rail with the same four items, and Design lays the preview beside the editor
+(owner decision 2026-10-09):
 
 | Destination | Contains | Replaces |
 |---|---|---|
