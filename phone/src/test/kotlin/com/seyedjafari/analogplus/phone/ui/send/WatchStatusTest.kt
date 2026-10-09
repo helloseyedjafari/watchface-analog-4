@@ -8,6 +8,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -58,5 +59,29 @@ class WatchStatusTest {
         advanceTimeBy(1_000)
         result.cancelAndJoin()
         assertTrue(result.isCancelled)
+    }
+
+    /** The transport throws a CancellationException of its own while the caller is active: UNKNOWN, and the caller carries on. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun aTransportsOwnCancellationLetsTheActiveCallerCarryOn() = runTest {
+        var result: WatchStatus? = null
+        var after = false
+        val job = launch { result = TransportWatchStatusChecker(FakeTransport(cancel = true)).check(); after = true }
+        advanceTimeBy(1_000)
+        runCurrent()
+        job.join()
+        assertEquals(WatchStatus(CheckStatus.UNKNOWN, CheckStatus.UNKNOWN), result)
+        assertTrue("the caller ran on after the check", after)
+    }
+
+    /** The CALLER is cancelled mid-call: the check must not return normally, so nothing after it runs. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun aCallerCancelledMidCallDoesNotRunOnAfterTheCheck() = runTest {
+        var after = false
+        val job = launch { TransportWatchStatusChecker(FakeTransport(hang = true)).check(); after = true }
+        advanceTimeBy(1_000)
+        job.cancelAndJoin()
+        assertTrue(job.isCancelled)
+        assertFalse("the check returned normally to a cancelled caller", after)
     }
 }
