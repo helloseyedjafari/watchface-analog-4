@@ -3,15 +3,18 @@ package com.seyedjafari.analogplus.phone.ui.send
 import com.seyedjafari.analogplus.phone.WatchNode
 import com.seyedjafari.analogplus.phone.WatchTransport
 import java.io.File
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.fail
 import org.junit.Test
 
 class WatchStatusTest {
     private class FakeTransport(
         val withApp: List<WatchNode> = emptyList(), val connected: List<String> = emptyList(), val fail: Boolean = false,
+        val cancel: Boolean = false,
     ) : WatchTransport {
-        override suspend fun nodesWithApp(): List<WatchNode> = if (fail) error("gms down") else withApp
+        override suspend fun nodesWithApp(): List<WatchNode> = if (cancel) throw CancellationException("cancelled") else if (fail) error("gms down") else withApp
         override suspend fun connectedNodeIds(): List<String> = if (fail) error("gms down") else connected
         override suspend fun sendFile(nodeId: String, path: String, file: File) = error("unused")
         override suspend fun sendMessage(nodeId: String, path: String, data: ByteArray) = error("unused")
@@ -23,5 +26,14 @@ class WatchStatusTest {
     @Test fun appFound() = assertEquals(WatchStatus(CheckStatus.OK, CheckStatus.OK), check(FakeTransport(withApp = listOf(WatchNode("w", true)))))
     @Test fun pairedButNoApp() = assertEquals(WatchStatus(CheckStatus.OK, CheckStatus.ACTION_NEEDED), check(FakeTransport(connected = listOf("w"))))
     @Test fun noWatchAtAll() = assertEquals(WatchStatus(CheckStatus.ACTION_NEEDED, CheckStatus.UNKNOWN), check(FakeTransport()))
+    @Test fun cancellationPropagatesInsteadOfBecomingUnknown() {
+        try {
+            check(FakeTransport(cancel = true))
+            fail("CancellationException must propagate, not be mapped to a WatchStatus")
+        } catch (e: CancellationException) {
+            assertEquals("cancelled", e.message)
+        }
+    }
+
     @Test fun transportFailureIsUnknownNotNegative() = assertEquals(WatchStatus(CheckStatus.UNKNOWN, CheckStatus.UNKNOWN), check(FakeTransport(fail = true)))
 }

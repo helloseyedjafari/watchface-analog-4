@@ -22,6 +22,8 @@ import com.seyedjafari.analogplus.phone.KeyValueStore
 import com.seyedjafari.analogplus.phone.NOT_INSTALLED_TEXT
 import com.seyedjafari.analogplus.phone.NO_WATCH_TEXT
 import com.seyedjafari.analogplus.phone.SendController
+import com.seyedjafari.analogplus.phone.SendUi.Building
+import com.seyedjafari.analogplus.phone.SendUi.Error
 import com.seyedjafari.analogplus.phone.Store
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.ui.send.CheckStatus
@@ -34,9 +36,11 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.emptyFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,6 +49,17 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class SendScreenTest {
     @get:Rule val rule = createComposeRule()
+
+    /** Scopes and the build latch are cleaned up even when an assertion fails, so no build thread stays blocked. */
+    private val scopes = mutableListOf<CoroutineScope>()
+    private val release = CountDownLatch(1)
+
+    @After fun cleanUp() {
+        release.countDown()
+        scopes.forEach { it.cancel() }
+    }
+
+    private fun newScope() = CoroutineScope(Dispatchers.Default).also { scopes += it }
 
     private class FakeKv : KeyValueStore {
         private val m = HashMap<String, Any>()
@@ -60,7 +75,7 @@ class SendScreenTest {
     }
 
     private fun idleController(): SendController =
-        SendController(FaceBuilder { _, _ -> error("not called") }, FaceSender { emptyFlow() }, store(), CoroutineScope(Dispatchers.Default))
+        SendController(FaceBuilder { _, _ -> error("not called") }, FaceSender { emptyFlow() }, store(), newScope())
 
     @Test fun noWatchShowsActionNeededAndAdviceAndCheckAgainReruns() {
         val calls = AtomicInteger()
@@ -83,10 +98,9 @@ class SendScreenTest {
     }
 
     @Test fun aSendInFlightSurvivesLeavingAndReturningAndASecondStartIsIgnored() {
-        val release = CountDownLatch(1)
         val controller = SendController(
             FaceBuilder { _, _ -> release.await(); error("done waiting") }, FaceSender { emptyFlow() }, store(),
-            CoroutineScope(Dispatchers.Default),
+            newScope(),
         )
         val state = EditorState(DesignSettings())
         var shown by mutableStateOf(true)
@@ -94,7 +108,7 @@ class SendScreenTest {
             AnalogTheme { if (shown) SendScreen(state, controller, { WatchStatus(CheckStatus.OK, CheckStatus.OK) }) }
         }
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled().performClick()
-        rule.waitUntil(5_000) { controller.state.value is com.seyedjafari.analogplus.phone.SendUi.Building }
+        rule.waitUntil(5_000) { controller.state.value is Building }
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsNotEnabled()
         // leave the destination and come back: the same send is still shown
         shown = false
@@ -106,7 +120,7 @@ class SendScreenTest {
         // the Design shortcut calls the same controller: it must not start a second send
         assertFalse(controller.send(state.design))
         release.countDown()
-        rule.waitUntil(5_000) { controller.state.value is com.seyedjafari.analogplus.phone.SendUi.Error }
+        rule.waitUntil(5_000) { controller.state.value is Error }
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled()
     }
 }
