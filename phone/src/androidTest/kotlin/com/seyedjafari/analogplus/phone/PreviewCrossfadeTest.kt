@@ -3,7 +3,9 @@ package com.seyedjafari.analogplus.phone
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -56,5 +58,53 @@ class PreviewCrossfadeTest {
 
         rule.mainClock.advanceTimeBy(600)
         assertEquals("after the crossfade only the new render is left", 1, images())
+    }
+
+    /** Mean per-channel difference (0..255) over the pixels where [b] is opaque (the render has a transparent surround; the capture does not). */
+    private fun meanAbsoluteDifference(a: android.graphics.Bitmap, b: android.graphics.Bitmap): Double {
+        val pa = IntArray(a.width * a.height).also { a.getPixels(it, 0, a.width, 0, 0, a.width, a.height) }
+        val pb = IntArray(b.width * b.height).also { b.getPixels(it, 0, b.width, 0, 0, b.width, b.height) }
+        var sum = 0L
+        var counted = 0
+        for (i in pa.indices) {
+            if ((pb[i] ushr 24) != 0xFF) continue
+            counted++
+            for (shift in intArrayOf(0, 8, 16)) sum += kotlin.math.abs(((pa[i] shr shift) and 0xFF) - ((pb[i] shr shift) and 0xFF))
+        }
+        return sum.toDouble() / (counted * 3)
+    }
+
+    @Test fun twentyQuickRendersNeverKeepMoreThanTwoImagesAndTheLastOneWins() {
+        val state = EditorState()
+        rule.mainClock.autoAdvance = false
+        rule.setContent {
+            CompositionLocalProvider(LocalAnimationScale provides 1f) { AnalogTheme { PreviewPane(state, Modifier.size(300.dp)) } }
+        }
+        advanceUntil("the first render") { state.lastPreview != null && images() == 1 }
+        val initial = state.lastPreview!!
+        var most = images()
+        // each new design is rendered while the fade of the previous render is still running (a slider or slot drag)
+        repeat(20) { i ->
+            val before = state.lastPreview
+            state.update { it.copy(accent = "#FF" + "%02X".format(20 + i * 10) + "6BFF") }
+            advanceUntil("render $i") {
+                most = maxOf(most, images())
+                state.lastPreview !== before
+            }
+            rule.mainClock.advanceTimeByFrame()
+            most = maxOf(most, images())
+            assertTrue("at most two preview layers at any time, saw $most", most <= 2)
+        }
+        rule.mainClock.advanceTimeBy(600)
+        assertEquals("settled: one image", 1, images())
+        assertTrue("never more than two layers, saw $most", most <= 2)
+        // the image on screen is the render of the last design
+        val shown = rule.onNodeWithTag(Tags.PREVIEW_IMAGE).captureToImage().asAndroidBitmap()
+        val last = state.lastPreview!!
+        assertEquals(last.width, shown.width)
+        val diff = meanAbsoluteDifference(shown, last)
+        assertTrue("the settled image is the last render (mean difference $diff)", diff < 1.0)
+        val staleDiff = meanAbsoluteDifference(shown, initial)
+        assertTrue("and not the first one (differences: last $diff, first $staleDiff)", staleDiff > diff)
     }
 }
