@@ -35,7 +35,12 @@ class NavigationTest {
         show()
         rule.onNodeWithTag(Destination.SEND.tag).performClick()
         rule.waitForIdle() // lets the BackHandler's side effect enable the callback before Back is dispatched
+        rule.onNodeWithTag(Destination.SEND.tag).assertIsSelected()
+        rule.onNodeWithText("screen SEND").assertExists()
         rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        rule.waitForIdle()
+        rule.onNodeWithTag(Destination.DESIGN.tag).assertIsSelected()
         rule.onNodeWithText("screen DESIGN").assertExists()
+        rule.onNodeWithText("screen SEND").assertDoesNotExist()
     }
 }

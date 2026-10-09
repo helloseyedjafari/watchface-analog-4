@@ -1,9 +1,9 @@
 package com.seyedjafari.analogplus.phone.ui.nav
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.ui.graphics.vector.ImageVector
 
@@ -20,6 +20,6 @@ fun Destination.backTarget(): Destination? = if (this == Destination.DESIGN) nul
 fun Destination.icon(): ImageVector = when (this) {
     Destination.DESIGN -> Icons.Filled.Edit
     Destination.LIBRARY -> Icons.Filled.Star
-    Destination.SEND -> Icons.Filled.Send
+    Destination.SEND -> Icons.AutoMirrored.Filled.Send
     Destination.ACCOUNT -> Icons.Filled.Person
 }
