@@ -53,7 +53,7 @@ class FakeRemoteStoreTest {
         val store = FakeRemoteStore()
         put(store, "a")
         runBlocking { store.putCurrent("u", "{}", "dev", "Pixel") }
-        runBlocking { store.putBackup("u", sealedWith("fp"), BackupPrecondition.NoBackup) }
+        runBlocking { store.putBackup("u", sealedWith("fp"), "w1", BackupPrecondition.NoBackup) }
         runBlocking { store.deleteAllUserData("u") }
         assertEquals("u", store.deletedAllFor)
         assertEquals(emptyMap<String, RemoteDesign>(), store.designsOf("u"))
@@ -65,51 +65,59 @@ class FakeRemoteStoreTest {
     // ---- backup writes are conditional (the production store must do the same inside a transaction) ----------------------
 
     private fun sealedWith(fingerprint: String) = SealedKey(1, "pbkdf2", 1, ByteArray(16), ByteArray(12), ByteArray(48), fingerprint)
-    private fun putBackup(store: FakeRemoteStore, fp: String, replacing: BackupPrecondition) =
-        runBlocking { store.putBackup("u", sealedWith(fp), replacing) }
+    private fun putBackup(store: FakeRemoteStore, fp: String, writeId: String, replacing: BackupPrecondition) =
+        runBlocking { store.putBackup("u", sealedWith(fp), writeId, replacing) }
     private fun deleteBackup(store: FakeRemoteStore, replacing: BackupPrecondition) =
         runBlocking { store.deleteBackup("u", replacing) }
 
     @Test fun aBackupMayBeCreatedOnlyWhereThereIsNone() {
         val store = FakeRemoteStore()
-        val first = putBackup(store, "a", BackupPrecondition.NoBackup) as BackupWrite.Written
+        val first = putBackup(store, "a", "w1", BackupPrecondition.NoBackup) as BackupWrite.Written
         assertEquals(first.backup, store.backupOf("u"))
-        assertEquals(BackupWrite.Conflict(CloudBackup.Present("a")), putBackup(store, "b", BackupPrecondition.NoBackup))
+        assertEquals("w1", first.backup.writeId)                      // stored with the id the caller chose
+        assertEquals(BackupWrite.Conflict(CloudBackup.Present("a", "w1")), putBackup(store, "b", "w2", BackupPrecondition.NoBackup))
         assertEquals("a", store.backupOf("u")!!.sealed.keyFingerprint)
     }
 
     @Test fun aBackupMayBeReplacedOnlyWhileItIsTheVersionTheCallerSaw() {
         val store = FakeRemoteStore()
-        val v1 = (putBackup(store, "a", BackupPrecondition.NoBackup) as BackupWrite.Written).backup
-        val v2 = (putBackup(store, "b", BackupPrecondition.Version(v1.createdAtMs)) as BackupWrite.Written).backup
-        assertTrue(v2.createdAtMs > v1.createdAtMs)
-        // the old version no longer matches, even though a later write could carry the same key fingerprint
-        assertEquals(BackupWrite.Conflict(CloudBackup.Present("b")), putBackup(store, "c", BackupPrecondition.Version(v1.createdAtMs)))
+        val v1 = (putBackup(store, "a", "w1", BackupPrecondition.NoBackup) as BackupWrite.Written).backup
+        val v2 = (putBackup(store, "b", "w2", BackupPrecondition.Version(v1.writeId)) as BackupWrite.Written).backup
+        assertEquals("w2", v2.writeId)
+        // the old version no longer matches, even if a later write carried the same key fingerprint
+        assertEquals(BackupWrite.Conflict(CloudBackup.Present("b", "w2")), putBackup(store, "c", "w3", BackupPrecondition.Version("w1")))
         assertEquals(v2, store.backupOf("u"))
+    }
+
+    @Test fun twoWritesOfTheSameKeyAreToldApartByTheirWriteId() {
+        val store = FakeRemoteStore()
+        putBackup(store, "same-key", "w1", BackupPrecondition.NoBackup)
+        putBackup(store, "same-key", "w2", BackupPrecondition.Version("w1"))
+        assertEquals(BackupRemoval.Conflict(CloudBackup.Present("same-key", "w2")), deleteBackup(store, BackupPrecondition.Version("w1")))
     }
 
     @Test fun replacingABackupThatIsGoneIsAConflictReportedAsAbsent() {
         val store = FakeRemoteStore()
-        assertEquals(BackupWrite.Conflict(CloudBackup.Absent), putBackup(store, "a", BackupPrecondition.Version(5)))
+        assertEquals(BackupWrite.Conflict(CloudBackup.Absent), putBackup(store, "a", "w1", BackupPrecondition.Version("w0")))
         assertNull(store.backupOf("u"))
     }
 
     @Test fun aBackupMayBeDeletedOnlyWhileItIsTheVersionTheCallerSaw() {
         val store = FakeRemoteStore()
-        val v1 = (putBackup(store, "a", BackupPrecondition.NoBackup) as BackupWrite.Written).backup
-        assertEquals(BackupRemoval.Conflict(CloudBackup.Present("a")), deleteBackup(store, BackupPrecondition.Version(v1.createdAtMs + 1)))
-        assertEquals(BackupRemoval.Conflict(CloudBackup.Present("a")), deleteBackup(store, BackupPrecondition.NoBackup))
+        val v1 = (putBackup(store, "a", "w1", BackupPrecondition.NoBackup) as BackupWrite.Written).backup
+        assertEquals(BackupRemoval.Conflict(CloudBackup.Present("a", "w1")), deleteBackup(store, BackupPrecondition.Version("other")))
+        assertEquals(BackupRemoval.Conflict(CloudBackup.Present("a", "w1")), deleteBackup(store, BackupPrecondition.NoBackup))
         assertEquals(v1, store.backupOf("u"))
-        assertEquals(BackupRemoval.Removed, deleteBackup(store, BackupPrecondition.Version(v1.createdAtMs)))
+        assertEquals(BackupRemoval.Removed, deleteBackup(store, BackupPrecondition.Version("w1")))
         assertNull(store.backupOf("u"))
         assertEquals(BackupRemoval.Removed, deleteBackup(store, BackupPrecondition.NoBackup))                 // nothing there, nothing expected
-        assertEquals(BackupRemoval.Conflict(CloudBackup.Absent), deleteBackup(store, BackupPrecondition.Version(v1.createdAtMs)))
+        assertEquals(BackupRemoval.Conflict(CloudBackup.Absent), deleteBackup(store, BackupPrecondition.Version("w1")))
     }
 
     @Test fun failWithAlsoStopsConditionalBackupWrites() {
         val store = FakeRemoteStore()
         store.failWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
-        try { putBackup(store, "a", BackupPrecondition.NoBackup); fail("expected an exception") } catch (e: RemoteException) { assertEquals(RemoteErrorKind.OFFLINE, e.kind) }
+        try { putBackup(store, "a", "w1", BackupPrecondition.NoBackup); fail("expected an exception") } catch (e: RemoteException) { assertEquals(RemoteErrorKind.OFFLINE, e.kind) }
         try { deleteBackup(store, BackupPrecondition.NoBackup); fail("expected an exception") } catch (e: RemoteException) { assertEquals(RemoteErrorKind.OFFLINE, e.kind) }
     }
 }

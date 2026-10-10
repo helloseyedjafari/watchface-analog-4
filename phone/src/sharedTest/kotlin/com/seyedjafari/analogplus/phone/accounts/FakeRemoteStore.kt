@@ -58,10 +58,10 @@ class FakeRemoteStore(var serverNow: Long = 1_000_000) : RemoteStore {
 
     override suspend fun getBackup(uid: String): RemoteBackup? { check(); return backups[uid] }
 
-    override suspend fun putBackup(uid: String, sealed: SealedKey, replacing: BackupPrecondition): BackupWrite {
+    override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
         check()
         if (!holds(replacing, backups[uid])) return BackupWrite.Conflict(cloudOf(backups[uid]))
-        return BackupWrite.Written(RemoteBackup(sealed, stamp()).also { backups[uid] = it; backupWrites += it })
+        return BackupWrite.Written(RemoteBackup(sealed, stamp(), writeId).also { backups[uid] = it; backupWrites += it })
     }
 
     override suspend fun deleteBackup(uid: String, replacing: BackupPrecondition): BackupRemoval {
@@ -73,11 +73,11 @@ class FakeRemoteStore(var serverNow: Long = 1_000_000) : RemoteStore {
 
     private fun holds(replacing: BackupPrecondition, held: RemoteBackup?): Boolean = when (replacing) {
         BackupPrecondition.NoBackup -> held == null
-        is BackupPrecondition.Version -> held != null && held.createdAtMs == replacing.createdAtMs
+        is BackupPrecondition.Version -> held != null && held.writeId == replacing.writeId
     }
 
     private fun cloudOf(held: RemoteBackup?): CloudBackup =
-        if (held == null) CloudBackup.Absent else CloudBackup.Present(held.sealed.keyFingerprint)
+        if (held == null) CloudBackup.Absent else CloudBackup.Present(held.sealed.keyFingerprint, held.writeId)
 
     override suspend fun deleteAllUserData(uid: String) {
         failDeleteAll?.let { throw it }

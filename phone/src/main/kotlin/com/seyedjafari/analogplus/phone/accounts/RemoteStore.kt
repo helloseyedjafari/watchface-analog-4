@@ -14,15 +14,17 @@ data class RemoteDesign(
 data class RemoteCurrent(val designJson: String, val updatedAtMs: Long, val deviceId: String, val deviceLabel: String)
 
 /**
- * `users/{uid}/backup/signingKey`. [createdAtMs] is the server time of the document's last write; it is also the
- * document's version for [BackupPrecondition.Version]: every write gets a new one.
+ * `users/{uid}/backup/signingKey`. [writeId] is the document's version: an opaque id that the CALLER generates (a random
+ * UUID) and passes to [RemoteStore.putBackup], so it is known before the write and stored in the document with it. It is
+ * what [BackupPrecondition.Version] compares. [createdAtMs] is the server time of the write and is for display only: the
+ * Firestore SDK does not hand a commit time back from a write, so it can not serve as a token the writer knows.
  */
-data class RemoteBackup(val sealed: SealedKey, val createdAtMs: Long)
+data class RemoteBackup(val sealed: SealedKey, val createdAtMs: Long, val writeId: String)
 
-/** What the cloud holds as the signing-key backup, by fingerprint of the key inside. */
+/** What the cloud holds as the signing-key backup: the fingerprint of the key inside and the document's [writeId]. */
 sealed interface CloudBackup {
     data object Absent : CloudBackup
-    data class Present(val fingerprint: String) : CloudBackup
+    data class Present(val fingerprint: String, val writeId: String) : CloudBackup
 }
 
 /**
@@ -33,8 +35,8 @@ sealed interface BackupPrecondition {
     /** There must be no backup. */
     data object NoBackup : BackupPrecondition
 
-    /** The backup must be the one whose [RemoteBackup.createdAtMs] is [createdAtMs]. */
-    data class Version(val createdAtMs: Long) : BackupPrecondition
+    /** The backup must be the one whose [RemoteBackup.writeId] is [writeId]. */
+    data class Version(val writeId: String) : BackupPrecondition
 }
 
 sealed interface BackupWrite {
@@ -103,14 +105,18 @@ interface RemoteStore {
     suspend fun getBackup(uid: String): RemoteBackup?
 
     /**
-     * Writes the backup with the server's timestamp if the cloud holds what [replacing] says, and reports a
-     * [BackupWrite.Conflict] without writing otherwise. This is what keeps two phones, or an upload and its own
-     * rollback, from overwriting each other's backup.
-     * The production implementation MUST do the read, the comparison and the write in one Firestore transaction, so it
-     * works only online (a transaction fails offline: [RemoteErrorKind.OFFLINE]); a plain read followed by a write
-     * would only narrow the race.
+     * Writes the backup, stored together with [writeId] (the caller's new version id, unique per call: a random UUID),
+     * and with the server's timestamp, if the cloud holds what [replacing] says; otherwise reports a
+     * [BackupWrite.Conflict] without writing. This is what keeps two phones, or an upload and its own rollback, from
+     * overwriting each other's backup.
+     * The production implementation MUST do the read, the comparison and the write in one Firestore transaction: the
+     * transaction reads the document, compares its stored write id with [replacing] and, if that holds, sets the new
+     * document with [writeId] in the same commit. It works only online (a transaction fails offline:
+     * [RemoteErrorKind.OFFLINE]); a plain read followed by a write would only narrow the race. Because [writeId] is
+     * known to the caller before the call, a call that fails or is cancelled with an unknown outcome can still be undone
+     * with `Version(writeId)`.
      */
-    suspend fun putBackup(uid: String, sealed: SealedKey, replacing: BackupPrecondition): BackupWrite
+    suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite
 
     /** Deletes the backup if the cloud holds what [replacing] says; same transaction rule as [putBackup]. */
     suspend fun deleteBackup(uid: String, replacing: BackupPrecondition): BackupRemoval

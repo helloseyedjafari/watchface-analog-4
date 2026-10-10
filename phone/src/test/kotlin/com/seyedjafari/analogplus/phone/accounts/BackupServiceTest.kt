@@ -38,6 +38,10 @@ class BackupServiceTest {
 
     private fun service(keys: KeySource, store: RemoteStore = remote) = BackupService(store, vault, keys, limiter, Dispatchers.Unconfined)
     private fun <T> run(block: suspend () -> T): T = runBlocking { block() }
+
+    /** What the cloud holds for "u1" now, as the service reports it (the key of [pem] and the document's write id). */
+    private fun held(pem: String, uid: String = "u1") = CloudBackup.Present(keyFingerprint(pem), remote.backupOf(uid)!!.writeId)
+    private fun writeIdOf(uid: String = "u1") = remote.backupOf(uid)!!.writeId
     private fun corrupt(sealed: SealedKey) = SealedKey(
         sealed.version, sealed.kdf, sealed.iterations, sealed.salt, sealed.iv,
         sealed.ciphertext.copyOf().also { it[0] = (it[0].toInt() xor 1).toByte() }, sealed.keyFingerprint,
@@ -85,9 +89,9 @@ class BackupServiceTest {
         // a store that corrupts what it keeps
         val corrupting = object : RemoteStore by remote {
             private var writes = 0
-            override suspend fun putBackup(uid: String, sealed: SealedKey, replacing: BackupPrecondition): BackupWrite {
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
                 writes++
-                return remote.putBackup(uid, if (writes == 1) corrupt(sealed) else sealed, replacing)
+                return remote.putBackup(uid, if (writes == 1) corrupt(sealed) else sealed, writeId, replacing)
             }
         }
         val r = run { BackupService(corrupting, vault, keys, limiter, Dispatchers.Unconfined).upload("u1", "another passphrase 99", SameKey) }
@@ -97,7 +101,7 @@ class BackupServiceTest {
 
     @Test fun aFirstBackupThatDoesNotReadBackIsNotLeftBehindAsIfItWereGood() {
         val corrupting = object : RemoteStore by remote {
-            override suspend fun putBackup(uid: String, sealed: SealedKey, replacing: BackupPrecondition): BackupWrite = remote.putBackup(uid, corrupt(sealed), replacing)
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite = remote.putBackup(uid, corrupt(sealed), writeId, replacing)
         }
         assertEquals(UploadResult.SelfTestFailed, run { service(FakeKeySource(pemA), corrupting).upload("u1", passphrase, SameKey) })
         assertNull(remote.backupOf("u1"))
@@ -259,7 +263,7 @@ class BackupServiceTest {
         // sealed under the right passphrase but claiming another key's fingerprint is impossible to forge (it is in the
         // authenticated data), so build the mismatch honestly: seal pemB while stating pemA's fingerprint
         val sealed = vault.seal(pemB, passphrase, keyFingerprint(pemA))
-        remote.seedBackup("u1", RemoteBackup(sealed, 5))
+        remote.seedBackup("u1", RemoteBackup(sealed, 5, "seed"))
         val phone = FakeKeySource(null)
         val s = service(phone)
         assertEquals(RestoreResult.FingerprintMismatch, run { s.restore("u1", passphrase, s.plan("u1")) })
@@ -356,7 +360,7 @@ class BackupServiceTest {
     @Test fun anUnsupportedBackupDoesNotCountAsAWrongGuess() {
         val sealed = vault.seal(pemA, passphrase, keyFingerprint(pemA))
         val newer = SealedKey(2, sealed.kdf, sealed.iterations, sealed.salt, sealed.iv, sealed.ciphertext, sealed.keyFingerprint)
-        remote.seedBackup("u1", RemoteBackup(newer, 5))
+        remote.seedBackup("u1", RemoteBackup(newer, 5, "seed"))
         val s = service(FakeKeySource(null))
         val plan = run { s.plan("u1") }
         repeat(5) { assertTrue(run { s.restore("u1", passphrase, plan) } is RestoreResult.Unsupported) }
@@ -380,7 +384,7 @@ class BackupServiceTest {
         val s = service(phone)
         val plan = run { s.plan("u1") }                              // InstallNew(A)
         // another phone replaced the backup with key C, sealed with the same passphrase
-        remote.seedBackup("u1", RemoteBackup(vault.seal(pemC, passphrase, keyFingerprint(pemC)), 9))
+        remote.seedBackup("u1", RemoteBackup(vault.seal(pemC, passphrase, keyFingerprint(pemC)), 9, "other-phone"))
         assertEquals(RestoreResult.BackupChanged, run { s.restore("u1", passphrase, plan) })
         assertEquals(0, phone.installs)
         assertFalse(phone.hasKey())
@@ -388,7 +392,7 @@ class BackupServiceTest {
 
     @Test fun everyInstallingPlanIsComparedWithTheBackupFetchedAtRestoreTime() {
         run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
-        remote.seedBackup("u1", RemoteBackup(vault.seal(pemC, passphrase, keyFingerprint(pemC)), 9))
+        remote.seedBackup("u1", RemoteBackup(vault.seal(pemC, passphrase, keyFingerprint(pemC)), 9, "other-phone"))
         val stale = keyFingerprint(pemA)
         val cases = listOf(
             FakeKeySource(null) to RestorePlan.InstallNew(stale),
@@ -409,7 +413,7 @@ class BackupServiceTest {
         val before = remote.backupOf("u1")
         val fresh = FakeKeySource(null)
         val r = run { service(fresh).upload("u1", "another passphrase 99", SameKey) }
-        assertEquals(UploadResult.BackupDiffers(CloudBackup.Present(keyFingerprint(pemA)), KeyOnPhone.None), r)
+        assertEquals(UploadResult.BackupDiffers(held(pemA), KeyOnPhone.None), r)
         assertFalse(fresh.hasKey())                                 // no key was generated either
         assertEquals(before, remote.backupOf("u1"))
     }
@@ -418,7 +422,7 @@ class BackupServiceTest {
         run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
         val before = remote.backupOf("u1")
         val r = run { service(FakeKeySource(pemB)).upload("u1", "another passphrase 99", SameKey) }
-        assertEquals(UploadResult.BackupDiffers(CloudBackup.Present(keyFingerprint(pemA)), KeyOnPhone.Present(keyFingerprint(pemB))), r)
+        assertEquals(UploadResult.BackupDiffers(held(pemA), KeyOnPhone.Present(keyFingerprint(pemB))), r)
         assertEquals(before, remote.backupOf("u1"))
     }
 
@@ -426,7 +430,7 @@ class BackupServiceTest {
         run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
         val before = remote.backupOf("u1")
         val r = run { service(FakeKeySource(pemA).apply { damaged = true }).upload("u1", "another passphrase 99", SameKey) }
-        assertEquals(UploadResult.BackupDiffers(CloudBackup.Present(keyFingerprint(pemA)), KeyOnPhone.Damaged), r)
+        assertEquals(UploadResult.BackupDiffers(held(pemA), KeyOnPhone.Damaged), r)
         assertEquals(before, remote.backupOf("u1"))
     }
 
@@ -448,10 +452,10 @@ class BackupServiceTest {
 
     @Test fun aBackupThatChangedSinceTheConfirmationIsNotOverwritten() {
         run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
-        remote.seedBackup("u1", RemoteBackup(vault.seal(pemC, passphrase, keyFingerprint(pemC)), 9))   // another phone, meanwhile
+        remote.seedBackup("u1", RemoteBackup(vault.seal(pemC, passphrase, keyFingerprint(pemC)), 9, "other-phone"))   // another phone, meanwhile
         val before = remote.backupOf("u1")
         val r = run { service(FakeKeySource(pemB)).upload("u1", passphrase, BackupExpectation.Key(keyFingerprint(pemA), keyFingerprint(pemB))) }
-        assertEquals(UploadResult.BackupDiffers(CloudBackup.Present(keyFingerprint(pemC)), KeyOnPhone.Present(keyFingerprint(pemB))), r)
+        assertEquals(UploadResult.BackupDiffers(held(pemC), KeyOnPhone.Present(keyFingerprint(pemB))), r)
         assertEquals(before, remote.backupOf("u1"))
     }
 
@@ -462,13 +466,13 @@ class BackupServiceTest {
             override suspend fun getBackup(uid: String): RemoteBackup? {
                 val seen = remote.getBackup(uid)
                 // the first read passes the check; before the second (after sealing) another phone replaces the backup
-                if (++reads == 1) remote.seedBackup("u1", RemoteBackup(vault.seal(pemC, passphrase, keyFingerprint(pemC)), 9))
+                if (++reads == 1) remote.seedBackup("u1", RemoteBackup(vault.seal(pemC, passphrase, keyFingerprint(pemC)), 9, "other-phone"))
                 return seen
             }
         }
         val phone = FakeKeySource(pemA)
         val r = run { service(phone, racing).upload("u1", "another passphrase 99", SameKey) }
-        assertEquals(UploadResult.BackupDiffers(CloudBackup.Present(keyFingerprint(pemC)), KeyOnPhone.Present(keyFingerprint(pemA))), r)
+        assertEquals(UploadResult.BackupDiffers(held(pemC), KeyOnPhone.Present(keyFingerprint(pemA))), r)
         assertEquals(keyFingerprint(pemC), remote.backupOf("u1")!!.sealed.keyFingerprint)
     }
 
@@ -476,7 +480,7 @@ class BackupServiceTest {
         val phone = FakeKeySource(pemA)
         assertEquals(UploadResult.Ok(keyFingerprint(pemA)), run { service(phone).upload("u1", passphrase, BackupExpectation.None) })
         assertEquals(
-            UploadResult.BackupDiffers(CloudBackup.Present(keyFingerprint(pemA)), KeyOnPhone.Present(keyFingerprint(pemA))),
+            UploadResult.BackupDiffers(held(pemA), KeyOnPhone.Present(keyFingerprint(pemA))),
             run { service(phone).upload("u1", passphrase, BackupExpectation.None) },
         )
     }
@@ -493,7 +497,7 @@ class BackupServiceTest {
         val fresh = FakeKeySource(null)
         // the person confirmed replacing A's backup while the phone held B; the phone has no key now (reset, new install)
         val r = run { service(fresh).upload("u1", "another passphrase 99", BackupExpectation.Key(keyFingerprint(pemA), keyFingerprint(pemB))) }
-        assertEquals(UploadResult.BackupDiffers(CloudBackup.Present(keyFingerprint(pemA)), KeyOnPhone.None), r)
+        assertEquals(UploadResult.BackupDiffers(held(pemA), KeyOnPhone.None), r)
         assertFalse(fresh.hasKey())                                 // no key generated
         assertEquals(before, remote.backupOf("u1"))
     }
@@ -503,7 +507,7 @@ class BackupServiceTest {
         val before = remote.backupOf("u1")
         // confirmed: B replaces A's backup. The phone's key is C now.
         val r = run { service(FakeKeySource(pemC)).upload("u1", "another passphrase 99", BackupExpectation.Key(keyFingerprint(pemA), keyFingerprint(pemB))) }
-        assertEquals(UploadResult.BackupDiffers(CloudBackup.Present(keyFingerprint(pemA)), KeyOnPhone.Present(keyFingerprint(pemC))), r)
+        assertEquals(UploadResult.BackupDiffers(held(pemA), KeyOnPhone.Present(keyFingerprint(pemC))), r)
         assertEquals(before, remote.backupOf("u1"))
     }
 
@@ -514,7 +518,7 @@ class BackupServiceTest {
             service(FakeKeySource(pemB).apply { damaged = true })
                 .upload("u1", "another passphrase 99", BackupExpectation.Key(keyFingerprint(pemA), keyFingerprint(pemB)))
         }
-        assertEquals(UploadResult.BackupDiffers(CloudBackup.Present(keyFingerprint(pemA)), KeyOnPhone.Damaged), r)
+        assertEquals(UploadResult.BackupDiffers(held(pemA), KeyOnPhone.Damaged), r)
         assertEquals(before, remote.backupOf("u1"))
     }
 
@@ -528,7 +532,7 @@ class BackupServiceTest {
             override fun state(): LocalKeyState = phone.state().also { if (++looks == 1) phone.installPem(pemC) }
         }
         val r = run { service(changing).upload("u1", "another passphrase 99", BackupExpectation.Key(keyFingerprint(pemA), keyFingerprint(pemB))) }
-        assertEquals(UploadResult.BackupDiffers(CloudBackup.Present(keyFingerprint(pemA)), KeyOnPhone.Present(keyFingerprint(pemC))), r)
+        assertEquals(UploadResult.BackupDiffers(held(pemA), KeyOnPhone.Present(keyFingerprint(pemC))), r)
         assertEquals(before, remote.backupOf("u1"))
     }
 
@@ -559,7 +563,7 @@ class BackupServiceTest {
     @Test fun aFailedUploadDoesNotEndTheRestoreDelay() {
         repeat(4) { limiter.recordFailure() }
         val corrupting = object : RemoteStore by remote {
-            override suspend fun putBackup(uid: String, sealed: SealedKey, replacing: BackupPrecondition): BackupWrite = remote.putBackup(uid, corrupt(sealed), replacing)
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite = remote.putBackup(uid, corrupt(sealed), writeId, replacing)
         }
         assertEquals(UploadResult.SelfTestFailed, run { service(FakeKeySource(pemA), corrupting).upload("u1", passphrase, SameKey) })
         assertTrue(limiter.waitMs() > 0)
@@ -578,8 +582,8 @@ class BackupServiceTest {
         run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
         var writes = 0
         val brokenRollback = object : RemoteStore by remote {
-            override suspend fun putBackup(uid: String, sealed: SealedKey, replacing: BackupPrecondition): BackupWrite {
-                if (++writes == 1) return remote.putBackup(uid, corrupt(sealed), replacing)
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
+                if (++writes == 1) return remote.putBackup(uid, corrupt(sealed), writeId, replacing)
                 throw RemoteException(RemoteErrorKind.OFFLINE, "gone")                 // the rollback write fails
             }
         }
@@ -589,7 +593,7 @@ class BackupServiceTest {
 
     @Test fun aFirstBackupWhoseRemovalFailsTooStillReturnsItsResultAndThrowsNothing() {
         val brokenRollback = object : RemoteStore by remote {
-            override suspend fun putBackup(uid: String, sealed: SealedKey, replacing: BackupPrecondition): BackupWrite = remote.putBackup(uid, corrupt(sealed), replacing)
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite = remote.putBackup(uid, corrupt(sealed), writeId, replacing)
             override suspend fun deleteBackup(uid: String, replacing: BackupPrecondition): BackupRemoval = throw RemoteException(RemoteErrorKind.AUTH, "token")
         }
         assertEquals(UploadResult.SelfTestFailed, run { service(FakeKeySource(pemA), brokenRollback).upload("u1", passphrase, SameKey) })
@@ -603,9 +607,9 @@ class BackupServiceTest {
                 if (++reads == 3) throw RemoteException(RemoteErrorKind.OFFLINE, "gone")      // the read-back (reads: gate, re-check, read-back)
                 return remote.getBackup(uid)
             }
-            override suspend fun putBackup(uid: String, sealed: SealedKey, replacing: BackupPrecondition): BackupWrite {
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
                 if (reads >= 3) throw RemoteException(RemoteErrorKind.OFFLINE, "gone")      // the rollback write fails too
-                return remote.putBackup(uid, sealed, replacing)
+                return remote.putBackup(uid, sealed, writeId, replacing)
             }
         }
         val r = run { service(FakeKeySource(pemA), gone).upload("u1", "another passphrase 99", SameKey) }
@@ -678,31 +682,51 @@ class BackupServiceTest {
 
     @Test fun discardDeletesTheBackupTheOneShownAndReportsFailures() {
         run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
-        assertEquals(DiscardResult.Deleted, run { service(FakeKeySource(null)).discard("u1", keyFingerprint(pemA)) })
+        assertEquals(DiscardResult.Deleted, run { service(FakeKeySource(null)).discard("u1", writeIdOf()) })
         assertNull(remote.backupOf("u1"))
         run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
+        val seen = writeIdOf()
         remote.failWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
-        assertEquals(DiscardResult.Failed(RemoteErrorKind.OFFLINE, "offline"), run { service(FakeKeySource(null)).discard("u1", keyFingerprint(pemA)) })
+        assertEquals(DiscardResult.Failed(RemoteErrorKind.OFFLINE, "offline"), run { service(FakeKeySource(null)).discard("u1", seen) })
         remote.failWith = RemoteException(RemoteErrorKind.AUTH, "token")
-        assertEquals(DiscardResult.Failed(RemoteErrorKind.AUTH, "token"), run { service(FakeKeySource(null)).discard("u1", keyFingerprint(pemA)) })
+        assertEquals(DiscardResult.Failed(RemoteErrorKind.AUTH, "token"), run { service(FakeKeySource(null)).discard("u1", seen) })
     }
 
     @Test fun discardNeverDeletesABackupThatIsNotTheOneThePersonWasLookingAt() {
         run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
-        remote.seedBackup("u1", RemoteBackup(vault.seal(pemC, passphrase, keyFingerprint(pemC)), 9))      // another phone, meanwhile
+        val seen = (run { service(FakeKeySource(pemA)).status("u1") } as BackupStatus.BackedUp).writeId
+        remote.seedBackup("u1", RemoteBackup(vault.seal(pemC, passphrase, keyFingerprint(pemC)), 9, "other-phone"))      // another phone, meanwhile
         val before = remote.backupOf("u1")
-        assertEquals(
-            DiscardResult.BackupChanged(CloudBackup.Present(keyFingerprint(pemC))),
-            run { service(FakeKeySource(null)).discard("u1", keyFingerprint(pemA)) },
-        )
+        val r = run { service(FakeKeySource(null)).discard("u1", seen) }
+        assertEquals(DiscardResult.BackupChanged(held(pemC)), r)
         assertEquals(before, remote.backupOf("u1"))
-        assertEquals(DiscardResult.BackupChanged(CloudBackup.Absent), run { service(FakeKeySource(null)).discard("nobody", keyFingerprint(pemA)) })
+        assertEquals(DiscardResult.BackupChanged(CloudBackup.Absent), run { service(FakeKeySource(null)).discard("nobody", seen) })
+    }
+
+    @Test fun discardIsPinnedToTheVersionSeenNotToTheKey() {
+        // the same key re-sealed under a new passphrase by another phone is a different, usable backup: it must survive
+        val phone = FakeKeySource(pemA)
+        run { service(phone).upload("u1", passphrase, SameKey) }
+        val seen = (run { service(phone).status("u1") } as BackupStatus.BackedUp).writeId
+        assertTrue(run { service(FakeKeySource(pemA)).upload("u1", "another passphrase 99", SameKey) } is UploadResult.Ok)
+        val after = remote.backupOf("u1")!!
+        assertEquals(DiscardResult.BackupChanged(held(pemA)), run { service(FakeKeySource(null)).discard("u1", seen) })
+        assertEquals(after, remote.backupOf("u1"))
+        val fresh = service(FakeKeySource(null))
+        assertTrue(run { fresh.restore("u1", "another passphrase 99", fresh.plan("u1")) } is RestoreResult.Restored)
+    }
+
+    @Test fun statusCarriesTheVersionOfTheBackupItDescribes() {
+        run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
+        val status = run { service(FakeKeySource(pemA)).status("u1") } as BackupStatus.BackedUp
+        assertEquals(writeIdOf(), status.writeId)
+        assertEquals(remote.backupOf("u1")!!.createdAtMs, status.createdAtMs)
     }
 
     @Test fun discardLeavesThisPhonesKeyAlone() {
         val phone = FakeKeySource(pemA)
         run { service(phone).upload("u1", passphrase, SameKey) }
-        run { service(phone).discard("u1", keyFingerprint(pemA)) }
+        run { service(phone).discard("u1", writeIdOf()) }
         assertEquals(pemA, phone.pem())
         assertEquals(0, phone.installs)
     }
@@ -710,7 +734,7 @@ class BackupServiceTest {
     // ---- a write is conditional on what the cloud holds: rollbacks and races ----------------------------------------------
 
     private fun otherPhoneWrites(uid: String = "u1") =
-        remote.seedBackup(uid, RemoteBackup(vault.seal(pemC, passphrase, keyFingerprint(pemC)), 99))
+        remote.seedBackup(uid, RemoteBackup(vault.seal(pemC, passphrase, keyFingerprint(pemC)), 99, "other-phone"))
 
     @Test fun aRollbackNeverOverwritesABackupAnotherPhoneWroteDuringTheReadBack() {
         run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
@@ -722,7 +746,7 @@ class BackupServiceTest {
             }
         }
         val r = run { service(FakeKeySource(pemA), racing).upload("u1", "another passphrase 99", SameKey) }
-        assertEquals(UploadResult.BackupDiffers(CloudBackup.Present(keyFingerprint(pemC)), KeyOnPhone.Present(keyFingerprint(pemA))), r)
+        assertEquals(UploadResult.BackupDiffers(held(pemC), KeyOnPhone.Present(keyFingerprint(pemA))), r)
         assertEquals(keyFingerprint(pemC), remote.backupOf("u1")!!.sealed.keyFingerprint)       // it is still there, not rolled back
     }
 
@@ -754,7 +778,7 @@ class BackupServiceTest {
             }
         }
         val r = run { service(FakeKeySource(pemA), racing).upload("u1", "another passphrase 99", SameKey) }
-        assertEquals(UploadResult.BackupDiffers(CloudBackup.Present(keyFingerprint(pemC)), KeyOnPhone.Present(keyFingerprint(pemA))), r)
+        assertEquals(UploadResult.BackupDiffers(held(pemC), KeyOnPhone.Present(keyFingerprint(pemA))), r)
         assertEquals(keyFingerprint(pemC), remote.backupOf("u1")!!.sealed.keyFingerprint)
     }
 
@@ -768,7 +792,7 @@ class BackupServiceTest {
             }
         }
         val r = run { service(FakeKeySource(pemA), racing).upload("u1", passphrase, SameKey) }
-        assertEquals(UploadResult.BackupDiffers(CloudBackup.Present(keyFingerprint(pemC)), KeyOnPhone.Present(keyFingerprint(pemA))), r)
+        assertEquals(UploadResult.BackupDiffers(held(pemC), KeyOnPhone.Present(keyFingerprint(pemA))), r)
         assertEquals(keyFingerprint(pemC), remote.backupOf("u1")!!.sealed.keyFingerprint)
     }
 
@@ -783,7 +807,7 @@ class BackupServiceTest {
             }
         }
         val r = run { service(FakeKeySource(pemA), racing).upload("u1", "another passphrase 99", SameKey) }
-        assertEquals(UploadResult.BackupDiffers(CloudBackup.Present(keyFingerprint(pemC)), KeyOnPhone.Present(keyFingerprint(pemA))), r)
+        assertEquals(UploadResult.BackupDiffers(held(pemC), KeyOnPhone.Present(keyFingerprint(pemA))), r)
         assertEquals(keyFingerprint(pemC), remote.backupOf("u1")!!.sealed.keyFingerprint)
     }
 
@@ -792,10 +816,10 @@ class BackupServiceTest {
         val good = remote.backupOf("u1")!!.sealed
         val corrupting = object : RemoteStore by remote {
             private var first = true
-            override suspend fun putBackup(uid: String, sealed: SealedKey, replacing: BackupPrecondition): BackupWrite {
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
                 val toWrite = if (first) corrupt(sealed) else sealed
                 first = false
-                return remote.putBackup(uid, toWrite, replacing)
+                return remote.putBackup(uid, toWrite, writeId, replacing)
             }
         }
         assertEquals(UploadResult.SelfTestFailed, run { service(FakeKeySource(pemA), corrupting).upload("u1", "another passphrase 99", SameKey) })
@@ -810,7 +834,7 @@ class BackupServiceTest {
         val phone = FakeKeySource(null)
         val s = service(phone)
         val plan = run { s.plan("u1") }                                       // InstallNew(A)
-        remote.seedBackup("u1", RemoteBackup(vault.seal(pemC, passphrase, keyFingerprint(pemC)), 9))   // the backup is replaced
+        remote.seedBackup("u1", RemoteBackup(vault.seal(pemC, passphrase, keyFingerprint(pemC)), 9, "other-phone"))   // the backup is replaced
         repeat(3) { assertEquals(RestoreResult.BackupChanged, run { s.restore("u1", "bad passphrase $it xx", plan) }) }
         assertEquals(0, limiter.waitMs())
         assertFalse(phone.hasKey())
@@ -837,5 +861,137 @@ class BackupServiceTest {
         // a wrong passphrase would be a WrongPassphrase (and a spent guess) if the passphrase were tried first
         assertEquals(RestoreResult.LocalKeyChanged, run { s.restore("u1", "bad passphrase 1 xx", plan) })
         assertEquals(0, limiter.waitMs())
+    }
+
+    // ---- a write whose outcome is unknown is still taken back (the write id is ours, known before the call) -------------
+
+    @Test fun aWriteThatThrowsAfterLandingIsTakenBack() {
+        run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
+        val good = remote.backupOf("u1")!!
+        val timingOut = object : RemoteStore by remote {
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
+                if (replacing is BackupPrecondition.Version && replacing.writeId == good.writeId) {
+                    remote.putBackup(uid, sealed, writeId, replacing)                       // it lands ...
+                    throw RemoteException(RemoteErrorKind.OFFLINE, "timed out")            // ... but the answer never comes
+                }
+                return remote.putBackup(uid, sealed, writeId, replacing)
+            }
+        }
+        val r = run { service(FakeKeySource(pemA), timingOut).upload("u1", "another passphrase 99", SameKey) }
+        assertEquals(UploadResult.Failed(RemoteErrorKind.OFFLINE, "timed out"), r)
+        assertEquals(good.sealed, remote.backupOf("u1")!!.sealed)             // the person's old passphrase still opens it
+        assertEquals(good.writeId, remote.backupOf("u1")!!.writeId)
+    }
+
+    @Test fun aFirstWriteThatThrowsAfterLandingIsRemoved() {
+        val timingOut = object : RemoteStore by remote {
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
+                if (replacing == BackupPrecondition.NoBackup) {
+                    remote.putBackup(uid, sealed, writeId, replacing)
+                    throw RemoteException(RemoteErrorKind.OFFLINE, "timed out")
+                }
+                return remote.putBackup(uid, sealed, writeId, replacing)
+            }
+        }
+        assertEquals(UploadResult.Failed(RemoteErrorKind.OFFLINE, "timed out"), run { service(FakeKeySource(pemA), timingOut).upload("u1", passphrase, SameKey) })
+        assertNull(remote.backupOf("u1"))
+    }
+
+    @Test fun aWriteThatThrowsWithoutLandingLeavesTheCloudExactlyAsItWasAndWritesNothingMore() {
+        run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
+        val good = remote.backupOf("u1")!!
+        val writesBefore = remote.backupWrites.size
+        var attempts = 0
+        val failing = object : RemoteStore by remote {
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
+                if (++attempts == 1) throw RemoteException(RemoteErrorKind.OFFLINE, "no network")      // never reached the server
+                return remote.putBackup(uid, sealed, writeId, replacing)
+            }
+        }
+        val r = run { service(FakeKeySource(pemA), failing).upload("u1", "another passphrase 99", SameKey) }
+        assertEquals(UploadResult.Failed(RemoteErrorKind.OFFLINE, "no network"), r)
+        assertEquals(good, remote.backupOf("u1"))                              // not even re-stamped
+        assertEquals(writesBefore, remote.backupWrites.size)
+    }
+
+    @Test fun aWriteThatNeverLandedOnAnEmptyCloudLeavesItEmpty() {
+        val failing = object : RemoteStore by remote {
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite =
+                throw RemoteException(RemoteErrorKind.OFFLINE, "no network")
+        }
+        assertEquals(UploadResult.Failed(RemoteErrorKind.OFFLINE, "no network"), run { service(FakeKeySource(pemA), failing).upload("u1", passphrase, SameKey) })
+        assertNull(remote.backupOf("u1"))
+    }
+
+    @Test fun aWriteCancelledAfterLandingIsTakenBack() {
+        run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
+        val good = remote.backupOf("u1")!!
+        val reached = CompletableDeferred<Unit>()
+        val hanging = object : RemoteStore by remote {
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
+                if (replacing is BackupPrecondition.Version && replacing.writeId == good.writeId) {
+                    remote.putBackup(uid, sealed, writeId, replacing)
+                    reached.complete(Unit)
+                    awaitCancellation()
+                }
+                return remote.putBackup(uid, sealed, writeId, replacing)
+            }
+        }
+        runBlocking {
+            val job = launch { service(FakeKeySource(pemA), hanging).upload("u1", "another passphrase 99", SameKey) }
+            reached.await()
+            job.cancelAndJoin()
+        }
+        assertEquals(good.sealed, remote.backupOf("u1")!!.sealed)
+        assertEquals(good.writeId, remote.backupOf("u1")!!.writeId)
+    }
+
+    @Test fun aWriteOfOursThatDidNotLandDoesNotUndoAnotherPhonesBackupEither() {
+        run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
+        var attempts = 0
+        val failing = object : RemoteStore by remote {
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
+                if (++attempts == 1) { otherPhoneWrites(); throw RemoteException(RemoteErrorKind.OFFLINE, "no network") }   // another phone wrote, ours did not land
+                return remote.putBackup(uid, sealed, writeId, replacing)
+            }
+        }
+        val r = run { service(FakeKeySource(pemA), failing).upload("u1", "another passphrase 99", SameKey) }
+        assertEquals(UploadResult.BackupDiffers(held(pemC), KeyOnPhone.Present(keyFingerprint(pemA))), r)
+        assertEquals(keyFingerprint(pemC), remote.backupOf("u1")!!.sealed.keyFingerprint)
+    }
+
+    // ---- AlreadyHaveThisKey is checked before and after the key derivation ------------------------------------------------
+
+    @Test fun aKeyResetDuringTheDerivationIsNotReportedAsRestored() {
+        run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
+        val phone = FakeKeySource(pemA)
+        val plan = run { service(phone).plan("u1") }                       // AlreadyHaveThisKey(A)
+        val installsBefore = phone.installs
+        val armed = object : KeySource by phone {
+            private var looks = 0
+            override fun state(): LocalKeyState = phone.state().also { if (++looks == 1) phone.installPem(pemB) }
+        }
+        assertEquals(RestoreResult.LocalKeyChanged, run { service(armed).restore("u1", passphrase, plan) })
+        assertEquals(installsBefore + 1, phone.installs)                   // only the replacement made by the test itself
+        assertEquals(pemB, phone.pem())
+    }
+
+    // ---- Key expectation: the key is read, never generated ------------------------------------------------------------------
+
+    @Test fun aKeyResetBetweenTheGateAndTheReadNeverGeneratesAKeyForAConfirmedReplacement() {
+        run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
+        val before = remote.backupOf("u1")
+        val phone = FakeKeySource(pemB)
+        var looks = 0
+        val resetting = object : KeySource by phone {
+            override fun state(): LocalKeyState {
+                if (++looks == 1) return LocalKeyState.Present(pemB)         // the gate sees the confirmed key ...
+                return LocalKeyState.None                                     // ... and it is gone when the key is read
+            }
+            override fun pem(): String = throw AssertionError("pem() would make a key: a confirmed replacement must only read")
+        }
+        val r = run { service(resetting).upload("u1", "another passphrase 99", BackupExpectation.Key(keyFingerprint(pemA), keyFingerprint(pemB))) }
+        assertEquals(UploadResult.BackupDiffers(held(pemA), KeyOnPhone.None), r)
+        assertEquals(before, remote.backupOf("u1"))
     }
 }
