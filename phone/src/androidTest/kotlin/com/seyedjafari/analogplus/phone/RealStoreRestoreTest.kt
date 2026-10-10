@@ -106,6 +106,50 @@ class RealStoreRestoreTest {
         SetupSkippedRule().apply(object : Statement() { override fun evaluate() = body() }, description).evaluate()
     }
 
+    /** The rule over throwaway files: it marks setup as skipped in [tmpPrefs], and what the test does there is what an activity does to the real store. */
+    private fun runRuleOverThrowawayFiles(body: () -> Unit) {
+        val rule = SetupSkippedRule(snapshot()) { tmpPrefs.edit().putString("onboarding_state", OnboardingState.Skipped.encode()).commit() }
+        val description = Description.createTestDescription(RealStoreRestoreTest::class.java, "x")
+        rule.apply(object : Statement() { override fun evaluate() = body() }, description).evaluate()
+    }
+
+    @Test fun theSetupSkippedRulePutsTheWholeStoreBackNotOnlyTheOnboardingKey() {
+        // a new install's first real launch: nothing stored. The activity autosaves the default design, and the test may save more.
+        var during: Map<String, Any?> = emptyMap()
+        runRuleOverThrowawayFiles {
+            tmpPrefs.edit().putString("current_design", "autosaved default").putString("saved_designs", "[x]").putLong("version_counter", 7L).commit()
+            tmpPhoto.writeText("a template's photo")
+            during = tmpPrefs.all
+        }
+        assertEquals("the test saw the skipped state and its own writes", "SKIPPED", during["onboarding_state"])
+        assertEquals("a new install is a new install again: nothing is left behind", emptyMap<String, Any?>(), tmpPrefs.all)
+        assertFalse(tmpPhoto.exists())
+    }
+
+    @Test fun theSetupSkippedRuleKeepsWhatWasThereIncludingTheCurrentDesignAndThePhoto() {
+        tmpPrefs.edit().putString("current_design", "mine").putString("saved_designs", "[a, b]").putLong("version_counter", 41L)
+            .putString("onboarding_state", "COMPLETED").commit()
+        tmpPhoto.writeText("my photo")
+        runRuleOverThrowawayFiles {
+            tmpPrefs.edit().putString("current_design", "autosaved").putLong("version_counter", 1L).commit()
+            tmpPhoto.delete()
+        }
+        assertEquals(
+            mapOf("current_design" to "mine", "saved_designs" to "[a, b]", "version_counter" to 41L, "onboarding_state" to "COMPLETED"),
+            tmpPrefs.all,
+        )
+        assertEquals("my photo", tmpPhoto.readText())
+    }
+
+    @Test fun theSetupSkippedRuleRestoresEvenWhenTheTestFails() {
+        tmpPrefs.edit().putLong("version_counter", 41L).commit()
+        try {
+            runRuleOverThrowawayFiles { throw IllegalStateException("the test failed") }
+        } catch (expected: IllegalStateException) {
+        }
+        assertEquals(mapOf("version_counter" to 41L), tmpPrefs.all)
+    }
+
     @Test fun theSetupSkippedRuleSkipsDuringTheTestAndPutsTheStoredValueBack() {
         val original = real.getString(RealStoreSnapshot.KEY_ONBOARDING, null)
         try {

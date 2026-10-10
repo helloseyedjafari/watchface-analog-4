@@ -153,26 +153,34 @@ class AnimatorScaleRule(private val scale: String) : TestWatcher() {
 
 /**
  * Tests that start the real `MainActivity` use the app's real storage, where a new install would show onboarding. They are
- * about the app after setup, so this rule marks setup as skipped first (the way an update from the POC lands), and puts the
- * stored onboarding value back as it was when the test is over (absent: removed), so a device is not left in a state the user
- * never chose. The onboarding tests that want the first run build their own state.
+ * about the app after setup, so this rule empties the real store like [RealStoreSnapshot] does and marks setup as skipped (the
+ * way an update from the POC lands), and puts the WHOLE store back as it was when the test is over: preferences (the onboarding
+ * value, the current design the activity autosaves, saved designs, the version counter) and the background photo. Restoring
+ * only the onboarding key would leave the autosaved default design behind, and on a new install the next real launch would
+ * then see prior use and skip onboarding. The onboarding tests that want the first run build their own state.
+ * [snapshot] and [markSkipped] are parameters so a test can run the rule over throwaway files.
  */
-class SetupSkippedRule : TestWatcher() {
-    private val context = InstrumentationRegistry.getInstrumentation().targetContext
-    private val prefs = context.getSharedPreferences(RealStoreSnapshot.PREFS, Context.MODE_PRIVATE)
-    private var before: String? = null
+class SetupSkippedRule internal constructor(
+    private val snapshot: RealStoreSnapshot,
+    private val markSkipped: () -> Unit,
+) : TestWatcher() {
+    constructor() : this(
+        RealStoreSnapshot(InstrumentationRegistry.getInstrumentation().targetContext),
+        { Store(InstrumentationRegistry.getInstrumentation().targetContext).saveOnboardingState(OnboardingState.Skipped) },
+    )
 
     override fun starting(description: Description) {
-        before = prefs.getString(RealStoreSnapshot.KEY_ONBOARDING, null)
-        Store(context).saveOnboardingState(OnboardingState.Skipped)
+        snapshot.backUp()
+        markSkipped()
     }
 
     override fun finished(description: Description) {
-        // the activity's flush on close may still be running; it writes the design, never this key, but wait so nothing is in flight
-        runBlocking { AppModel.awaitPendingSaves() }
-        val edit = prefs.edit()
-        before?.let { edit.putString(RealStoreSnapshot.KEY_ONBOARDING, it) } ?: edit.remove(RealStoreSnapshot.KEY_ONBOARDING)
-        edit.commit()
+        // the activity's flush on close may still be running and writes the design: wait for it, or it would land on top of the restore
+        try {
+            runBlocking { AppModel.awaitPendingSaves() }
+        } finally {
+            snapshot.restore()
+        }
     }
 }
 
