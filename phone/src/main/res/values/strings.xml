@@ -321,4 +321,21 @@
     <string name="onboarding_template_title">Pick a starting point</string>
     <string name="onboarding_template_body">Everything can be changed later. Your own edits are never replaced without asking.</string>
     <string name="onboarding_template_selected">Selected</string>
+    <!-- Onboarding: welcome page -->
+    <string name="onboarding_welcome_title">Make a watch face that is yours</string>
+    <string name="onboarding_welcome_body">Choose colours, move the complications, and put it on your watch in a minute.</string>
+    <!-- Onboarding: permission page -->
+    <string name="onboarding_permission_title">Allow the face once</string>
+    <string name="onboarding_permission_step_allow">The first time a face arrives, your watch asks for permission to switch to it. Tap Allow.</string>
+    <string name="onboarding_permission_step_deny">It asks only once. If you tap Deny nothing breaks: press and hold the watch face and pick Analog Plus.</string>
+    <string name="onboarding_permission_step_later">After that, new designs change the face in place and never ask again.</string>
+    <!-- Onboarding: backup page (hidden until accounts ship) -->
+    <string name="onboarding_backup_title">Backup and sync</string>
+    <string name="onboarding_backup_placeholder_body">Sign-in is coming. Your designs are saved on this phone.</string>
+    <string name="onboarding_backup_not_now">Not now</string>
+    <!-- Onboarding: navigation (the primary button and the progress line) -->
+    <string name="onboarding_nav_get_started">Get started</string>
+    <string name="onboarding_nav_continue">Continue</string>
+    <string name="onboarding_nav_finish">Finish</string>
+    <string name="onboarding_nav_step_of">Step %1$d of %2$d</string>
 </resources>

@@ -52,4 +52,7 @@ object Tags {
     fun pairRow(id: PairRowId) = "pair_row_${id.tagId}"
     /** One template choice on the onboarding template page; [name] is the template's name. */
     fun onboardingTemplate(name: String) = "onboarding_template_$name"
+    /** One onboarding page; [name] is the lowercase page name ("welcome", "pair", "permission", "template", "backup"). */
+    fun onboardingPage(name: String) = "onboarding_page_$name"
+    const val BACKUP_PLACEHOLDER_DONE = "onboarding_backup_done"
 }
