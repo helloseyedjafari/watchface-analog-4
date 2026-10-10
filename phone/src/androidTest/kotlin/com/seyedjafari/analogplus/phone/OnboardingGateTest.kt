@@ -1,6 +1,10 @@
 package com.seyedjafari.analogplus.phone
 
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
@@ -36,9 +40,9 @@ class OnboardingGateTest {
 
     private fun show(
         f: ShellFixture = ShellFixture(), watch: ControllableWatch = ControllableWatch(ready),
-        pending: DesignSettings? = null, onResolved: () -> Unit = {}, window: WindowDp = PHONE_PORTRAIT,
+        pending: DesignSettings? = null, onResolved: () -> Unit = {}, window: WindowDp = PHONE_PORTRAIT, fontScale: Float? = null,
     ): ShellFixture {
-        f.show(rule, watch = watch, window = window, pendingLink = pending, onPendingLinkResolved = onResolved)
+        f.show(rule, watch = watch, window = window, pendingLink = pending, onPendingLinkResolved = onResolved, fontScale = fontScale)
         return f
     }
 
@@ -260,4 +264,57 @@ class OnboardingGateTest {
         rule.onNodeWithTag(Tags.ONBOARDING_TIP_DISMISS).assertIsDisplayed().performClick()
         rule.onNodeWithTag(Tags.ONBOARDING_TIP).assertDoesNotExist()
     }
+
+    // --- the tip is over once the user has used Send ---
+
+    @Test fun openingSendFromTheBarEndsTheTip() {
+        show()
+        finishWithTheWatchFound()
+        rule.onNodeWithTag(Tags.ONBOARDING_TIP).assertExists()
+        rule.onNodeWithTag(Destination.SEND.tag).performClick(); rule.waitForIdle()
+        rule.onNodeWithTag(Destination.DESIGN.tag).performClick(); rule.waitForIdle()
+        rule.onNodeWithTag(Tags.ONBOARDING_TIP).assertDoesNotExist()
+    }
+
+    @Test fun sendingFromTheDesignScreenEndsTheTip() {
+        val f = show()
+        finishWithTheWatchFound()
+        rule.onNodeWithTag(Tags.field("design_send")).performClick(); rule.waitForIdle()
+        rule.onNodeWithTag(Destination.SEND.tag).assertIsSelected()
+        rule.onNodeWithTag(Destination.DESIGN.tag).performClick(); rule.waitForIdle()
+        rule.onNodeWithTag(Tags.ONBOARDING_TIP).assertDoesNotExist()
+        assertFalse(f.controller.sendTipVisible.value)
+    }
+
+    @Test fun visitingOtherDestinationsKeepsTheTip() {
+        show()
+        finishWithTheWatchFound()
+        rule.onNodeWithTag(Destination.LIBRARY.tag).performClick(); rule.waitForIdle()
+        rule.onNodeWithTag(Destination.ACCOUNT.tag).performClick(); rule.waitForIdle()
+        rule.onNodeWithTag(Destination.DESIGN.tag).performClick(); rule.waitForIdle()
+        rule.onNodeWithTag(Tags.ONBOARDING_TIP).assertExists()
+    }
+
+    @Test fun theTipIsAPoliteLiveRegion() {
+        show()
+        finishWithTheWatchFound()
+        rule.onNodeWithText("Your watch is ready. Open Send to put this face on it.")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+    }
+
+    private fun tipIsWholeAndReachable(window: WindowDp) {
+        show(ShellFixture(), window = window, fontScale = 2f)
+        finishWithTheWatchFound()
+        val screen = rule.onNodeWithTag(SHELL_WINDOW_TAG).fetchSemanticsNode().boundsInRoot
+        listOf(Tags.ONBOARDING_TIP, Tags.ONBOARDING_TIP_SEND, Tags.ONBOARDING_TIP_DISMISS).forEach { tag ->
+            val b = rule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+            assertTrue("$tag fully inside the window at font scale 2 in $window: $b in $screen", b.top >= screen.top - 0.5f && b.bottom <= screen.bottom + 0.5f && b.left >= screen.left - 0.5f && b.right <= screen.right + 0.5f)
+        }
+        rule.onNodeWithText("Your watch is ready. Open Send to put this face on it.").assertIsDisplayed()
+        rule.onNodeWithTag(Tags.ONBOARDING_TIP_DISMISS).performClick()
+        rule.onNodeWithTag(Tags.ONBOARDING_TIP).assertDoesNotExist()
+    }
+
+    @Test fun atFontScaleTwoTheTipAndItsButtonsAreWholeAndReachable() = tipIsWholeAndReachable(PHONE_PORTRAIT)
+    @Test fun inAShortWideWindowAtFontScaleTwoTheTipAndItsButtonsAreWholeAndReachable() = tipIsWholeAndReachable(PHONE_LANDSCAPE)
 }

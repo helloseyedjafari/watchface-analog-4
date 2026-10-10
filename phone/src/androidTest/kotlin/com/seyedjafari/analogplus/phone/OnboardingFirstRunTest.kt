@@ -15,6 +15,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.seyedjafari.analogplus.facegen.design.Templates
 import com.seyedjafari.analogplus.phone.ui.nav.Destination
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -26,35 +27,33 @@ import org.junit.runner.RunWith
 /**
  * The real activity over the app's real storage: a new install and an update from the POC. The first-run decision is made
  * when the view model is built, before the autosave of the default design that follows a first launch, so that autosave
- * cannot turn a new user into an "existing" one. The test empties the store, and puts back exactly what it found.
+ * cannot turn a new user into an "existing" one. The test empties the store, and puts back exactly what it found (see [RealStoreSnapshot]).
  */
 @RunWith(AndroidJUnit4::class)
 class OnboardingFirstRunTest {
     @get:Rule val rule = createEmptyComposeRule()
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
-    private val prefs = context.getSharedPreferences("analogplus_store", Context.MODE_PRIVATE)
-    private var saved: Map<String, Any?> = emptyMap()
+    private val prefs = context.getSharedPreferences(RealStoreSnapshot.PREFS, Context.MODE_PRIVATE)
+    private val snapshot = RealStoreSnapshot(context)
     private var scenario: ActivityScenario<MainActivity>? = null
 
     @Before fun emptyTheStore() {
-        saved = prefs.all.toMap()
-        assertTrue(prefs.edit().clear().commit())
+        snapshot.backUp()
     }
 
+    /**
+     * Closing the activity flushes its design to the store on a process-wide background scope (and the autosave may still be
+     * in flight), so the store is put back only after [AppModel.awaitPendingSaves], or that late write would land on top of
+     * what was restored. The restore is in a `finally`: the version counter that `emptyTheStore` cleared must come back whatever fails.
+     */
     @After fun putTheStoreBack() {
-        scenario?.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
-        scenario?.close()
-        val edit = prefs.edit().clear()
-        saved.forEach { (k, v) ->
-            when (v) {
-                is String -> edit.putString(k, v)
-                is Long -> edit.putLong(k, v)
-                is Int -> edit.putInt(k, v)
-                is Boolean -> edit.putBoolean(k, v)
-                is Float -> edit.putFloat(k, v)
-            }
+        try {
+            scenario?.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
+            scenario?.close()
+            runBlocking { AppModel.awaitPendingSaves() }
+        } finally {
+            snapshot.restore()
         }
-        assertTrue(edit.commit())
     }
 
     private fun designIsAutosaved() = prefs.getString("current_design", null) != null

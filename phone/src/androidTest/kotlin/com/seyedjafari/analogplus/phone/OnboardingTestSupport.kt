@@ -1,7 +1,13 @@
 package com.seyedjafari.analogplus.phone
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.os.ParcelFileDescriptor
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -21,6 +27,7 @@ import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
 import com.seyedjafari.analogplus.phone.ui.theme.LocalAnimationScale
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.runBlocking
 import org.junit.rules.TestWatcher
 import org.junit.runner.Description
 
@@ -56,6 +63,9 @@ internal class TestLifecycle(initial: Lifecycle.State = Lifecycle.State.RESUMED)
     fun moveTo(state: Lifecycle.State) { registry.currentState = state }
 }
 
+/** The tag of the box that is exactly the pinned window in [ShellFixture.show]. */
+internal const val SHELL_WINDOW_TAG = "shell_window"
+
 /**
  * The pieces `AppShell` needs, built over an in-memory store. [startAt] is written to the store before the controller
  * is created, like a state left behind by an earlier run of the app. [show] renders the real `AppShell` with the
@@ -89,11 +99,14 @@ internal class ShellFixture(
             val base = LocalDensity.current
             CompositionLocalProvider(LocalAnimationScale provides animationScale, LocalDensity provides Density(base.density, fontScale ?: base.fontScale)) {
                 PinnedWindow(window) {
-                    AppShell(
-                        state, store, send, watch, pendingLink,
-                        if (backupPage == null) OnboardingHost(controller) else OnboardingHost(controller, backupPage),
-                        onPendingLinkResolved,
-                    )
+                    // the tagged box is exactly the pinned window: a test that wants "inside the window" compares with it, not with the (larger) compose view
+                    Box(Modifier.fillMaxSize().testTag(SHELL_WINDOW_TAG)) {
+                        AppShell(
+                            state, store, send, watch, pendingLink,
+                            if (backupPage == null) OnboardingHost(controller) else OnboardingHost(controller, backupPage),
+                            onPendingLinkResolved,
+                        )
+                    }
                 }
             }
         }
@@ -138,11 +151,70 @@ class AnimatorScaleRule(private val scale: String) : TestWatcher() {
 
 /**
  * Tests that start the real `MainActivity` use the app's real storage, where a new install would show onboarding. They are
- * about the app after setup, so this rule marks setup as skipped first (the way an update from the POC lands). The
- * onboarding tests that want the first run build their own state.
+ * about the app after setup, so this rule marks setup as skipped first (the way an update from the POC lands), and puts the
+ * stored onboarding value back as it was when the test is over (absent: removed), so a device is not left in a state the user
+ * never chose. The onboarding tests that want the first run build their own state.
  */
 class SetupSkippedRule : TestWatcher() {
+    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val prefs = context.getSharedPreferences(RealStoreSnapshot.PREFS, Context.MODE_PRIVATE)
+    private var before: String? = null
+
     override fun starting(description: Description) {
-        Store(InstrumentationRegistry.getInstrumentation().targetContext).saveOnboardingState(OnboardingState.Skipped)
+        before = prefs.getString(RealStoreSnapshot.KEY_ONBOARDING, null)
+        Store(context).saveOnboardingState(OnboardingState.Skipped)
+    }
+
+    override fun finished(description: Description) {
+        // the activity's flush on close may still be running; it writes the design, never this key, but wait so nothing is in flight
+        runBlocking { AppModel.awaitPendingSaves() }
+        val edit = prefs.edit()
+        before?.let { edit.putString(RealStoreSnapshot.KEY_ONBOARDING, it) } ?: edit.remove(RealStoreSnapshot.KEY_ONBOARDING)
+        edit.commit()
+    }
+}
+
+/**
+ * Empties the app's real preferences for a test that needs a new install, and puts back exactly what was there, version counter
+ * included (a face's versionCode must only ever increase on a device). The copy is kept in a second preferences file, not only in
+ * memory, so a run that died before [restore] is repaired by the next [backUp]. Both calls are idempotent.
+ */
+internal class RealStoreSnapshot(context: Context, prefsName: String = PREFS, backupName: String = "analogplus_store_test_backup") {
+    private val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+    private val backup = context.getSharedPreferences(backupName, Context.MODE_PRIVATE)
+
+    /** Copies the real preferences aside (unless an earlier run left its copy, which is the truth) and empties them. */
+    fun backUp() {
+        if (!backup.getBoolean(MARKER, false)) {
+            check(backup.edit().apply { clear(); put(this, prefs.all); putBoolean(MARKER, true) }.commit())
+        }
+        check(prefs.edit().clear().commit())
+    }
+
+    /** Puts the copy back, then forgets it. */
+    fun restore() {
+        if (!backup.getBoolean(MARKER, false)) return
+        val saved = backup.all.filterKeys { it != MARKER }
+        check(prefs.edit().apply { clear(); put(this, saved) }.commit())
+        check(backup.edit().clear().commit())
+    }
+
+    private fun put(edit: SharedPreferences.Editor, values: Map<String, Any?>) {
+        values.forEach { (k, v) ->
+            when (v) {
+                is String -> edit.putString(k, v)
+                is Long -> edit.putLong(k, v)
+                is Int -> edit.putInt(k, v)
+                is Boolean -> edit.putBoolean(k, v)
+                is Float -> edit.putFloat(k, v)
+                else -> error("unexpected preference type for $k")
+            }
+        }
+    }
+
+    companion object {
+        const val PREFS = "analogplus_store"
+        const val KEY_ONBOARDING = "onboarding_state"
+        private const val MARKER = "__snapshot_present"
     }
 }

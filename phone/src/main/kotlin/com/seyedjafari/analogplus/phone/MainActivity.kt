@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -101,15 +102,22 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private companion object {
-        const val SAVE_DELAY_MS = 400L
+    companion object {
+        private const val SAVE_DELAY_MS = 400L
 
         /** Saves run one at a time in the order they were requested, so an old design never overwrites a newer one. */
         @OptIn(ExperimentalCoroutinesApi::class)
-        val saveDispatcher = Dispatchers.IO.limitedParallelism(1)
+        private val saveDispatcher = Dispatchers.IO.limitedParallelism(1)
 
         /** Outlives the view model, so the save from onStop finishes even when the screen is being torn down. */
-        val flushScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private val flushScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        /**
+         * Returns once every save requested before the call (the autosave and the flush from onStop) has been written: the saves share
+         * one single-threaded dispatcher in request order, so an empty task queued behind them runs after them. For tests that put
+         * the real storage back and must not race a late flush.
+         */
+        internal suspend fun awaitPendingSaves() = withContext(saveDispatcher) {}
     }
 }
 
@@ -216,7 +224,11 @@ private fun MainContent(state: EditorState, store: Store, send: SendController, 
                 DesignScreen(state, onSend = { send.send(state.design); navigateTo(Destination.SEND) }, sendBusy = sendUi.isBusy, modifier = Modifier.weight(1f))
             }
             Destination.LIBRARY -> LibraryScreen(state, store)
-            Destination.SEND -> SendScreen(state, send, watch)
+            Destination.SEND -> {
+                // the tip points here: once the user has opened Send (bar, tip or the Design button) it has done its job
+                LaunchedEffect(Unit) { controller?.dismissTip() }
+                SendScreen(state, send, watch)
+            }
             Destination.ACCOUNT -> AccountScreen(onRunSetupAgain = runSetupAgain)
         }
     })

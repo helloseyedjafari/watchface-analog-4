@@ -11,7 +11,6 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -313,8 +312,9 @@ class OnboardingScreenTest {
         next().assertIsDisplayed()
         if (p != OnboardingPage.WELCOME) rule.onNodeWithTag(Tags.ONBOARDING_BACK).assertIsDisplayed()
         page(p).assertIsDisplayed()
-        // assertIsDisplayed also passes for a partly visible node: the buttons sit outside the scrolling page and must be whole
-        val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
+        // assertIsDisplayed also passes for a partly visible node: the buttons sit outside the scrolling page and must be whole.
+        // The window is the screen's own root node (the pinned window), not the whole compose view, which is larger than it.
+        val root = rule.onNodeWithTag(Tags.ONBOARDING_ROOT).fetchSemanticsNode().boundsInRoot
         val whole = listOfNotNull(
             Tags.ONBOARDING_SKIP, Tags.ONBOARDING_NEXT, if (p != OnboardingPage.WELCOME) Tags.ONBOARDING_BACK else null,
         )
@@ -334,6 +334,7 @@ class OnboardingScreenTest {
         assertEquals(OnboardingState.Completed, f.controller.state.value)
     }
 
+    @Test fun inAnUprightPhoneTheButtonsStayOnEveryPage() = everyPageHasItsControls(PHONE_PORTRAIT, 1f)
     @Test fun inAShortWideWindowTheButtonsStayOnEveryPage() = everyPageHasItsControls(PHONE_LANDSCAPE, 1f)
     @Test fun atFontScaleTwoTheButtonsStayOnEveryPage() = everyPageHasItsControls(PHONE_PORTRAIT, 2f)
     @Test fun inAShortWideWindowAtFontScaleTwoTheButtonsStayOnEveryPage() = everyPageHasItsControls(PHONE_LANDSCAPE, 2f)
