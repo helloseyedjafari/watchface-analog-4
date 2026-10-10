@@ -54,7 +54,7 @@ into Share and loaded with **Load design** replaces it at once. A tapped link sh
 Screenshots of every destination (light and dark, font scale 1.0 and 2.0) are in `docs/poc/screens/`
 (`<destination>-<theme>-<scale>.png`). Onboarding is in `onboarding-<page>-<theme>-<portrait|landscape>[-2x].png` (rendered
 by the instrumented test `OnboardingScreenshotTest` in a 360x800 / 800x360 dp window with animations off, 40 pictures; re-take them all with
-`scripts/pull_onboarding_screens.sh`, which installs the app, runs that class and copies the pictures here; they show five steps
+`scripts/pull_onboarding_screens.sh`, which installs the app, runs that class (it is skipped in the normal suite, only a run with the runner argument `screenshots=true` renders them) and copies the pictures here; they show five steps
 because the test turns the fifth page on, and the pair page shows a ready watch) plus real-app captures on the emulator: `onboarding-pair-nowatch-*` (no watch, "Could not
 check"; the light landscape ones show Check again in view and, at font scale 2, the fade where the page continues) and `onboarding-welcome-real-dark-landscape.png`.
 
