@@ -5,7 +5,9 @@ import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.ChangeOrigin
+import com.seyedjafari.analogplus.phone.SavedChange
 import com.seyedjafari.analogplus.phone.Store
+import com.seyedjafari.analogplus.phone.StoreObserver
 import java.io.File
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CompletableDeferred
@@ -962,6 +964,24 @@ class SyncEngineTest {
     }
 
     // ---- fix round 2 ---------------------------------------------------------------------------------------------------------
+
+    /** H: the user saves the name of a design that is just arriving from the cloud, between the store write and the journal mark. */
+    @Test fun aNameTheUserSavesWhileTheCloudCopyIsBeingRecordedStaysDirtyAndIsPushed() = runTest {
+        val remote = FakeRemoteStore()
+        remote.seedDesign("u1", RemoteDesign(designId("Zed"), "Zed", DesignJson.toJson(day), 9_000_000, DesignState.LIVE, 1))
+        val a = phone(remote, "a")
+        val edited = day.copy(accent = "#FF999999")
+        var done = false
+        a.store.addObserver(object : StoreObserver {
+            override fun onSavedDesignChanged(change: SavedChange, origin: ChangeOrigin) {
+                if (origin == ChangeOrigin.SYNC && change == SavedChange.Saved("Zed") && !done) { done = true; a.store.saveNamed("Zed", edited) }
+            }
+        })
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(2_000); runCurrent()
+        assertEquals(edited, DesignJson.fromJson(remote.designsOf("u1").getValue(designId("Zed")).designJson))
+        assertEquals(edited, a.store.savedDesigns().single().design)
+    }
 
     /** D: the editor's design of the account that was signed out of must not be pushed to the next one. */
     @Test fun aCurrentDesignPushThatDiesWithTheSessionIsNotPutBackForTheNextAccount() = runTest {

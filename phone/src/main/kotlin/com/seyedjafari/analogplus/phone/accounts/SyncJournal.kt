@@ -170,6 +170,23 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
     }
 
     /**
+     * The engine saved a design that is new from the cloud (this phone had no entry for it). Conditional on that: if the user
+     * saved the same name in the meantime an entry exists; it keeps the user's change, stays dirty and only learns the cloud
+     * time (so the next pass pushes the user's version over the cloud copy it was typed over), and this returns false.
+     */
+    fun markAppliedIfAbsent(id: String, name: String, state: EntryState, remoteAtMs: Long): Boolean = synchronized(lock) {
+        val d = read()
+        d.entries[id]?.let {
+            d.entries[id] = it.copy(baseRemoteAtMs = remoteAtMs, mark = SyncMark.DIRTY)
+            write(d)
+            return false
+        }
+        d.entries[id] = JournalEntry(name, clock(), state, remoteAtMs, SyncMark.CLEAN)
+        write(d)
+        true
+    }
+
+    /**
      * A design that the engine saved locally as the kept copy of a conflict has been pushed ([remoteAtMs]). Such a design has
      * no entry until now; if the user touched it meanwhile an entry exists and keeps that change (dirty, with the cloud time).
      */

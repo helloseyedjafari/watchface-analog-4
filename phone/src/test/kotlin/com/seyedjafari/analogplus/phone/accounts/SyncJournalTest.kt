@@ -76,6 +76,16 @@ class SyncJournalTest {
         assertTrue(j.entries()[id]!!.modifiedAtMs > first + 1)
     }
 
+    @Test fun aDesignNewFromTheCloudIsRecordedCleanOnlyIfTheUserDidNotSaveItsNameMeanwhile() {
+        val j = journal()
+        assertTrue(j.markAppliedIfAbsent(id, "Night", EntryState.LIVE, 50))
+        assertEquals(JournalEntry("Night", 1_000, EntryState.LIVE, 50, SyncMark.CLEAN), j.entries()[id])
+        val other = designId("Day")
+        j.onSavedDesignChanged(SavedChange.Saved("Day"), ChangeOrigin.USER)               // the user saved that name first
+        assertFalse(j.markAppliedIfAbsent(other, "Day", EntryState.LIVE, 60))
+        assertEquals(JournalEntry("Day", 1_000, EntryState.LIVE, 60, SyncMark.DIRTY), j.entries()[other])   // still the user's, now with the cloud time
+    }
+
     @Test fun markAppliedWithoutAnExpectedTimeStaysUnconditional() {
         val j = journal()
         j.onSavedDesignChanged(SavedChange.Saved("Night"), ChangeOrigin.USER)

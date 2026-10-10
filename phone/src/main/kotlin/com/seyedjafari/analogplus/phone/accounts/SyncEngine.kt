@@ -348,8 +348,8 @@ class SyncEngine(
      * True when the phone's record of design [id] is still what the plan was made from (the user did not touch it since).
      *
      * This is a check followed by the store write, not one atomic step: an edit that lands in the few microseconds between
-     * the check and the store write is overwritten by the cloud copy. What follows the write is conditional ([SyncJournal.markApplied]
-     * with the planned time), so an edit after the write is never marked as synced. The store has no compare-and-set to close
+     * the check and the store write is overwritten by the cloud copy. What follows the write is conditional ([markApplied]:
+     * the planned edit time, or "still no entry" for a design new from the cloud), so an edit after the write is never marked as synced. The store has no compare-and-set to close
      * the first window completely; it is accepted.
      */
     private fun unchangedSince(id: String, planned: LocalDesignEntry?): Boolean {
@@ -386,7 +386,7 @@ class SyncEngine(
                 val applied = withContext(io) {
                     if (!unchangedSince(action.id, local)) return@withContext false
                     store.saveNamed(action.remote.name, design, ChangeOrigin.SYNC)
-                    journal.markApplied(action.id, action.remote.name, EntryState.LIVE, action.remote.updatedAtMs, local?.modifiedAtMs)
+                    markApplied(action.id, action.remote.name, EntryState.LIVE, action.remote.updatedAtMs, local)
                 }
                 if (!applied) return Outcome.LOCAL_CHANGED
                 withoutPhoto.remove(action.id)
@@ -395,7 +395,7 @@ class SyncEngine(
                 val applied = withContext(io) {
                     if (!unchangedSince(action.id, local)) return@withContext false
                     store.deleteNamed(action.remote.name, ChangeOrigin.SYNC)
-                    journal.markApplied(action.id, action.remote.name, EntryState.TOMBSTONE, action.remote.updatedAtMs, local?.modifiedAtMs)
+                    markApplied(action.id, action.remote.name, EntryState.TOMBSTONE, action.remote.updatedAtMs, local)
                 }
                 if (!applied) return Outcome.LOCAL_CHANGED
                 withoutPhoto.remove(action.id)
@@ -430,6 +430,15 @@ class SyncEngine(
         }
         return Outcome.DONE
     }
+
+    /**
+     * Records that the phone now matches the cloud copy, on the condition that the user did not touch the design since the
+     * plan: when [planned] is null the phone had no entry and still must not have one, otherwise the entry must have the
+     * planned edit time.
+     */
+    private fun markApplied(id: String, name: String, state: EntryState, remoteAtMs: Long, planned: LocalDesignEntry?): Boolean =
+        if (planned == null) journal.markAppliedIfAbsent(id, name, state, remoteAtMs)
+        else journal.markApplied(id, name, state, remoteAtMs, planned.modifiedAtMs)
 
     /** The rules cap a design name at [MAX_DESIGN_NAME_CHARS] characters; asking would only get the whole write refused. */
     private fun nameTooLong(name: String) = name.codePointCount(0, name.length) > MAX_DESIGN_NAME_CHARS
