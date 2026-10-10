@@ -79,6 +79,35 @@ class PhotoDownscalerTest {
         assertTrue(maxOf(size(out).first, size(out).second) <= SYNC_PHOTO_MAX_SIDE)
     }
 
+    @Test fun shrinkingAnAlreadyShrunkPhotoReturnsTheSameBytes() {
+        for (original in listOf(noiseJpeg(4000, 3000), noiseJpeg(3000, 4000), noiseJpeg(16_000, 500, quality = 90), noiseJpeg(300, 200))) {
+            val once = AndroidPhotoDownscaler().downscale(original)!!
+            val twice = AndroidPhotoDownscaler().downscale(once)!!
+            assertTrue("a second pass changed ${once.size} bytes into ${twice.size}", once.contentEquals(twice))
+        }
+    }
+
+    @Test fun aJpegWithinBothLimitsComesBackUnchanged() {
+        val ok = noiseJpeg(256, 128, quality = 60)
+        assertTrue(ok.size <= 300_000)
+        assertTrue(ok.contentEquals(AndroidPhotoDownscaler().downscale(ok)!!))
+    }
+
+    @Test fun aSmallJpegOverTheSizeCapIsStillRecompressed() {
+        val heavy = noiseJpeg(512, 512, quality = 100)
+        assertTrue("test photo should be over the cap, was ${heavy.size}", heavy.size > 300_000)
+        val out = AndroidPhotoDownscaler().downscale(heavy)!!
+        assertTrue("was ${out.size}", out.size < heavy.size)
+    }
+
+    @Test fun anImageOverTheSideLimitIsNotReturnedUnchangedEvenWhenSmallInBytes() {
+        val wide = Bitmap.createBitmap(2000, 100, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
+        val jpeg = ByteArrayOutputStream().also { wide.compress(Bitmap.CompressFormat.JPEG, 80, it) }.toByteArray()
+        assertTrue(jpeg.size < 300_000)
+        val (w, h) = size(AndroidPhotoDownscaler().downscale(jpeg)!!)
+        assertTrue("${w}x$h", maxOf(w, h) <= SYNC_PHOTO_MAX_SIDE)
+    }
+
     @Test fun garbageIsNullNotACrash() {
         assertNull(AndroidPhotoDownscaler().downscale(ByteArray(1000) { 9 }))
         assertNull(AndroidPhotoDownscaler().downscale(ByteArray(0)))
