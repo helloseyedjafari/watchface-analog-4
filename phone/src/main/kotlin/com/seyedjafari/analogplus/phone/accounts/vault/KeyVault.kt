@@ -36,33 +36,45 @@ sealed interface OpenResult {
  * plan. The passphrase rules ([checkPassphrase]) carry the rest of the strength, and `version`/`kdf` stored with every
  * backup allow adding Argon2id later without losing old backups.
  *
- * [minAcceptedIterations] and [maxAcceptedIterations] bound what [open] accepts from the cloud: a tampered record must
- * not make the phone hang (too high) or hand an attacker a cheaper target through us (too low).
+ * The accepted range (100 000 to 5 000 000 iterations) bounds what [open] takes from the cloud: a tampered record must
+ * not make the phone hang (too high) or hand an attacker a cheaper target through us (too low). The primary constructor
+ * that lets tests lower the cost and the range is `internal`, so production code can only build a vault with the defaults.
  *
  * The plain PEM and the passphrase are never logged or put in an exception message here.
  */
-class KeyVault(
+class KeyVault internal constructor(
     private val random: SecureRandom = SecureRandom(),
     private val iterations: Int = DEFAULT_ITERATIONS,
     private val minAcceptedIterations: Int = MIN_ACCEPTED_ITERATIONS,
     private val maxAcceptedIterations: Int = MAX_ACCEPTED_ITERATIONS,
 ) {
+    /** The production vault: 600 000 iterations, and it opens only backups of 100 000 to 5 000 000 iterations. */
+    constructor() : this(SecureRandom())
+
+    /** The production vault with its own source of randomness. */
+    constructor(random: SecureRandom) : this(random, DEFAULT_ITERATIONS, MIN_ACCEPTED_ITERATIONS, MAX_ACCEPTED_ITERATIONS)
+
     init {
         require(iterations in minAcceptedIterations..maxAcceptedIterations) { "iterations outside the accepted range" }
     }
 
-    /** CPU-heavy (about half a second at the default cost): call off the main thread. */
+    /** CPU-heavy (about a second at the default cost on the Pixel 8 API 33 emulator): call off the main thread. */
     fun seal(pem: String, passphrase: String, keyFingerprint: String): SealedKey {
         require(pem.isNotEmpty()) { "nothing to seal" }
         val salt = ByteArray(SALT_BYTES).also(random::nextBytes)
         val iv = ByteArray(IV_BYTES).also(random::nextBytes)
         val key = deriveKey(passphrase, salt, iterations)
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_BITS, iv))
-        cipher.updateAAD(aad(VERSION, KDF_PBKDF2, iterations, salt, keyFingerprint))
-        val ciphertext = cipher.doFinal(pem.toByteArray(Charsets.UTF_8))
-        key.fill(0)
-        return SealedKey(VERSION, KDF_PBKDF2, iterations, salt, iv, ciphertext, keyFingerprint)
+        val plain = pem.toByteArray(Charsets.UTF_8)
+        try {
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_BITS, iv))
+            cipher.updateAAD(aad(VERSION, KDF_PBKDF2, iterations, salt, keyFingerprint))
+            val ciphertext = cipher.doFinal(plain)
+            return SealedKey(VERSION, KDF_PBKDF2, iterations, salt, iv, ciphertext, keyFingerprint)
+        } finally {
+            key.fill(0)
+            plain.fill(0) // our own copy of the key bytes; the caller's String is theirs to manage
+        }
     }
 
     /** CPU-heavy: call off the main thread. Never throws for bad input; see [OpenResult]. */
@@ -80,7 +92,12 @@ class KeyVault(
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_BITS, sealed.iv))
             cipher.updateAAD(aad(sealed.version, sealed.kdf, sealed.iterations, sealed.salt, sealed.keyFingerprint))
-            OpenResult.Opened(String(cipher.doFinal(sealed.ciphertext), Charsets.UTF_8))
+            val plain = cipher.doFinal(sealed.ciphertext)
+            try {
+                OpenResult.Opened(String(plain, Charsets.UTF_8))
+            } finally {
+                plain.fill(0)
+            }
         } catch (e: GeneralSecurityException) {
             OpenResult.WrongPassphraseOrDamaged
         } finally {
