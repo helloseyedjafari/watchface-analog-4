@@ -1,0 +1,77 @@
+rules_version = '2';
+
+// Analog Plus: each signed-in user reads and writes only users/{their uid}/**.
+// Three document shapes exist; anything else is denied, including every other top-level path.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function isText(v, minLen, maxLen) {
+      return v is string && v.size() >= minLen && v.size() <= maxLen;
+    }
+
+    // `updatedAt` must be the server's clock: a client cannot forge last-write-wins ordering.
+    function stampedNow(data) {
+      return data.updatedAt is timestamp && data.updatedAt == request.time;
+    }
+
+    function validDesign(data) {
+      return data.keys().hasOnly(['name', 'design', 'updatedAt', 'deleted', 'schema'])
+        && data.keys().hasAll(['name', 'design', 'updatedAt', 'deleted', 'schema'])
+        && isText(data.name, 1, 100)
+        && isText(data.design, 0, 950000)
+        && data.deleted is bool
+        && data.schema is int && data.schema >= 1 && data.schema <= 1000
+        && stampedNow(data)
+        // a live design carries its JSON; only a tombstone may have an empty one
+        && (data.deleted || data.design.size() > 0);
+    }
+
+    function validCurrent(data) {
+      return data.keys().hasOnly(['design', 'updatedAt', 'deviceId', 'deviceLabel', 'schema'])
+        && data.keys().hasAll(['design', 'updatedAt', 'deviceId', 'deviceLabel', 'schema'])
+        && isText(data.design, 1, 950000)
+        && isText(data.deviceId, 1, 64)
+        && isText(data.deviceLabel, 0, 80)
+        && data.schema is int && data.schema >= 1 && data.schema <= 1000
+        && stampedNow(data);
+    }
+
+    function validBackup(data) {
+      return data.keys().hasOnly(['sealed', 'kdf', 'iterations', 'salt', 'iv', 'version', 'createdAt', 'keyFingerprint'])
+        && data.keys().hasAll(['sealed', 'kdf', 'iterations', 'salt', 'iv', 'version', 'createdAt', 'keyFingerprint'])
+        && isText(data.sealed, 1, 16384)
+        && data.kdf in ['pbkdf2-hmac-sha256']
+        && data.iterations is int && data.iterations >= 100000 && data.iterations <= 5000000
+        && isText(data.salt, 16, 128)
+        && isText(data.iv, 16, 64)
+        && data.version is int && data.version >= 1 && data.version <= 1000
+        && isText(data.keyFingerprint, 16, 16)
+        && data.createdAt is timestamp && data.createdAt == request.time;
+    }
+
+    match /users/{uid}/designs/{designId} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && designId.matches('[0-9a-f]{32}')
+        && validDesign(request.resource.data);
+    }
+
+    match /users/{uid}/state/{docId} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && docId == 'current'
+        && validCurrent(request.resource.data);
+    }
+
+    match /users/{uid}/backup/{docId} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && docId == 'signingKey'
+        && validBackup(request.resource.data);
+    }
+  }
+}

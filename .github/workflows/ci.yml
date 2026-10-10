@@ -54,3 +54,27 @@ jobs:
         with:
           name: AnalogPlus-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+
+  firestore-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: firebase/package-lock.json
+
+      - name: Set up JDK 21 (the Firestore emulator needs it)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Firestore rules tests (emulator)
+        working-directory: firebase
+        run: |
+          npm ci
+          npm test
