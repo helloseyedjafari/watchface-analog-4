@@ -63,7 +63,7 @@ fun OnboardingAnimation(
     // a file that does not parse (a licensed drop-in under the same name) must not just render blank
     LaunchedEffect(result.error) {
         reportAnimationError(
-            context.resources.getResourceEntryName(resId), result.error,
+            { nameOrId(resId) { context.resources.getResourceEntryName(resId) } }, result.error,
             debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0,
             log = { message, error -> Log.e(TAG, message, error) },
         )
@@ -97,11 +97,16 @@ private const val TAG = "OnboardingAnimation"
  * What a composition that failed to load does: nothing when [error] is null; otherwise it is logged with the resource name, and
  * a debuggable build also throws, so a broken file is found while developing and not as a blank space on a release.
  */
-internal fun reportAnimationError(resName: String, error: Throwable?, debuggable: Boolean, log: (String, Throwable) -> Unit) {
-    if (error == null) return
-    log(loadFailure(resName), error)
-    if (debuggable) throw IllegalStateException(loadFailure(resName), error)
+internal fun reportAnimationError(resName: () -> String, error: Throwable?, debuggable: Boolean, log: (String, Throwable) -> Unit) {
+    if (error == null) return                  // the name is looked up only when there is something to report
+    val message = loadFailure(resName())
+    log(message, error)
+    if (debuggable) throw IllegalStateException(message, error)
 }
+
+/** The resource name from [lookup], or the id when the lookup itself fails (a bad id must not hide the real error behind a NotFoundException). */
+internal fun nameOrId(resId: Int, lookup: () -> String): String =
+    try { lookup() } catch (e: Exception) { "resource #$resId" }
 
 /** A developer-facing log line (not shown to the user). */
 private fun loadFailure(resName: String) = "the animation $resName could not be loaded"
