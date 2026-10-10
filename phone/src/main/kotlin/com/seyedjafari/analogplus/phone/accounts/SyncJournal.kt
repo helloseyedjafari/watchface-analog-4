@@ -31,9 +31,28 @@ data class JournalEntry(
 enum class BindResult { SAME_ACCOUNT, NEW_ACCOUNT }
 
 /**
+ * How long a deletion that the cloud has confirmed stays in the journal. After that [SyncJournal.reconcileWithStore]
+ * forgets it, which keeps the journal bounded. This is safe for [planSync]: with no local entry, a cloud tombstone needs
+ * no action and a cloud copy that comes back to life is applied, exactly as with the entry. It is not done at once
+ * because the entry's base (the cloud time of the deletion) is what makes a later re-save of the same name win over that
+ * deletion even when this phone's clock is behind the server's.
+ */
+const val TOMBSTONE_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
+
+/**
  * The durable record of local changes, kept even while signed out so that offline edits and deletions reach the cloud
  * later. It listens to the [com.seyedjafari.analogplus.phone.Store] (user changes only; the sync engine records its own
- * changes with [markApplied]) and holds no Firebase types. Stored as one JSON object under `sync_journal_v1`.
+ * changes with [markApplied]) and holds no Firebase types. Stored as one JSON object under `sync_journal_v1`, written
+ * with the same durable `commit()` as the rest of the store.
+ *
+ * Known crash window, accepted: the store writes first and the journal right after, both synchronously on the calling
+ * thread, and there is no way to make the two writes one. If the process dies in between, a saved design without an
+ * entry is adopted as new by [reconcileWithStore] (nothing is lost), but a deletion whose tombstone was not yet
+ * written is forgotten, so the design comes back once from the cloud at the next sync. The journal write stays
+ * synchronous: a delayed write would widen that window.
+ *
+ * A damaged journal restarts empty; a single malformed entry (for example a value written by a newer app version) is
+ * skipped on its own and the rest is kept.
  */
 class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long = System::currentTimeMillis) : StoreObserver {
     private val lock = Any()
@@ -80,7 +99,8 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
 
     /**
      * Makes the journal match the store's names: a saved design without an entry (made before sync existed) becomes a
-     * dirty live entry stamped now; a live entry whose design is gone is removed.
+     * dirty live entry stamped now; a live entry whose design is gone is removed; a deletion the cloud confirmed
+     * (CLEAN, with a base) older than [TOMBSTONE_RETENTION_MS] is forgotten.
      */
     fun reconcileWithStore(names: Collection<String>) = synchronized(lock) {
         val d = read()
@@ -89,7 +109,13 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
         for ((id, name) in ids) if (id !in d.entries) {
             d.entries[id] = JournalEntry(name, clock(), EntryState.LIVE, null, SyncMark.DIRTY); changed = true
         }
-        for ((id, e) in d.entries.toMap()) if (e.state == EntryState.LIVE && id !in ids) { d.entries.remove(id); changed = true }
+        val now = clock()
+        for ((id, e) in d.entries.toMap()) {
+            val vanished = e.state == EntryState.LIVE && id !in ids
+            val settledDeletion = e.state == EntryState.TOMBSTONE && e.mark == SyncMark.CLEAN && e.baseRemoteAtMs != null &&
+                now - e.modifiedAtMs > TOMBSTONE_RETENTION_MS
+            if (vanished || settledDeletion) { d.entries.remove(id); changed = true }
+        }
         if (changed) write(d)
     }
 
@@ -140,21 +166,23 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
                 boundUid = o["boundUid"]?.jsonPrimitive?.contentOrNull,
                 currentSeenRemoteAtMs = o["currentSeenRemoteAtMs"]?.jsonPrimitive?.longOrNull ?: 0,
             )
-            for ((id, v) in o["entries"]?.jsonObject ?: JsonObject(emptyMap())) {
-                val e = v.jsonObject
-                data.entries[id] = JournalEntry(
-                    name = e.getValue("name").jsonPrimitive.content,
-                    modifiedAtMs = e.getValue("modifiedAtMs").jsonPrimitive.content.toLong(),
-                    state = EntryState.valueOf(e.getValue("state").jsonPrimitive.content),
-                    baseRemoteAtMs = e["baseRemoteAtMs"]?.jsonPrimitive?.longOrNull,
-                    mark = SyncMark.valueOf(e.getValue("mark").jsonPrimitive.content),
-                )
+            val entries = o["entries"] as? JsonObject ?: JsonObject(emptyMap())
+            for ((id, v) in entries) {
+                try { data.entries[id] = readEntry(v.jsonObject) } catch (e: Exception) { /* skip this entry only */ }
             }
             data
         } catch (e: Exception) {
             Data() // a damaged journal restarts empty: every design then counts as new and is merged, never lost
         }
     }
+
+    private fun readEntry(e: JsonObject) = JournalEntry(
+        name = e.getValue("name").jsonPrimitive.content,
+        modifiedAtMs = e.getValue("modifiedAtMs").jsonPrimitive.content.toLong(),
+        state = EntryState.valueOf(e.getValue("state").jsonPrimitive.content),
+        baseRemoteAtMs = e["baseRemoteAtMs"]?.jsonPrimitive?.longOrNull,
+        mark = SyncMark.valueOf(e.getValue("mark").jsonPrimitive.content),
+    )
 
     private fun write(d: Data) {
         val o = buildJsonObject {

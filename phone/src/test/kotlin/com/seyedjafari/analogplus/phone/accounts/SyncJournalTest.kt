@@ -113,6 +113,57 @@ class SyncJournalTest {
         }
     }
 
+    @Test fun oneMalformedEntryIsSkippedAndTheRestOfTheJournalSurvives() {
+        kv.putString(
+            "sync_journal_v1",
+            """{"boundUid":"u1","currentSeenRemoteAtMs":42,"entries":{
+              "good1":{"name":"Night","modifiedAtMs":5,"state":"LIVE","baseRemoteAtMs":7,"mark":"CLEAN"},
+              "newer":{"name":"Future","modifiedAtMs":6,"state":"ARCHIVED","baseRemoteAtMs":null,"mark":"CLEAN"},
+              "noName":{"modifiedAtMs":6,"state":"LIVE","mark":"DIRTY"},
+              "notAnObject":"x",
+              "good2":{"name":"Day","modifiedAtMs":8,"state":"TOMBSTONE","baseRemoteAtMs":null,"mark":"DIRTY"}}}""",
+        )
+        val j = journal()
+        assertEquals("u1", j.boundUid())
+        assertEquals(42L, j.currentSeenRemoteAtMs())
+        assertEquals(setOf("good1", "good2"), j.entries().keys)
+        assertEquals(JournalEntry("Night", 5, EntryState.LIVE, 7, SyncMark.CLEAN), j.entries()["good1"])
+    }
+
+    @Test fun aValueOfTheWrongTypeUnderTheJournalKeyReadsAsNoJournal() {
+        kv.map["sync_journal_v1"] = 5L
+        assertTrue(journal().entries().isEmpty())
+    }
+
+    @Test fun cleanTombstonesAreForgottenAfterTheRetentionPeriodSoTheJournalStaysBounded() {
+        val j = journal()
+        for (i in 1..50) {                                   // 50 designs deleted on this phone and confirmed by the cloud
+            val n = "Design $i"
+            j.markApplied(designId(n), n, EntryState.LIVE, 10L + i)
+            j.onSavedDesignChanged(SavedChange.Deleted(n), ChangeOrigin.USER)
+            j.markPushed(designId(n), expectedModifiedAtMs = now, remoteAtMs = 100L + i)
+        }
+        j.onSavedDesignChanged(SavedChange.Deleted("Unsent"), ChangeOrigin.USER)    // still DIRTY: must be kept
+        j.reconcileWithStore(emptyList())
+        assertEquals(51, j.entries().size)                                           // within the retention period nothing goes
+        now += TOMBSTONE_RETENTION_MS - 1
+        j.reconcileWithStore(emptyList())
+        assertEquals(51, j.entries().size)
+        now += 2
+        j.reconcileWithStore(listOf("Alive"))
+        assertEquals(setOf(designId("Unsent"), designId("Alive")), j.entries().keys)
+        assertEquals(SyncMark.DIRTY, j.entries()[designId("Unsent")]!!.mark)
+    }
+
+    @Test fun aTombstoneWithoutAConfirmedBaseIsNeverPruned() {
+        val j = journal()
+        j.markApplied(id, "Night", EntryState.TOMBSTONE, 5)
+        j.bindTo("u1")                                       // a new account: base forgotten, dirty again
+        now += 10 * TOMBSTONE_RETENTION_MS
+        j.reconcileWithStore(emptyList())
+        assertEquals(EntryState.TOMBSTONE, j.entries()[id]!!.state)
+    }
+
     @Test fun aDamagedJournalRestartsEmptyInsteadOfThrowing() {
         kv.putString("sync_journal_v1", "{not json")
         val j = journal()
