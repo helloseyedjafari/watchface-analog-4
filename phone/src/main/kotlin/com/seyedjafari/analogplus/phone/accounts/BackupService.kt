@@ -234,7 +234,10 @@ class BackupService(
      * cloud call failed, also with an unknown outcome such as a timeout) or the upload is cancelled, the call takes its
      * own write back: the previous backup is written back, or the new one removed when there was none, but only while
      * the document still carries OUR id; a backup another phone wrote since is left as it is
-     * ([UploadResult.BackupDiffers]). A write that never landed leaves the cloud as it was.
+     * ([UploadResult.BackupDiffers]). A write that never landed leaves the cloud as it was. A reply that the cloud holds
+     * a backup with our own id counts as written (a retried transaction, see [RemoteStore.putBackup]). This relies on
+     * the store's rule that a backup write ends only when its transaction has settled, also when cancelled: otherwise a
+     * write still running could land after the take-back has looked.
      *
      * A phone without a key gets one made, but only for [BackupExpectation.None] and [BackupExpectation.SameKey] and only
      * after the backup the account holds has been checked against [expecting]: it never overwrites another key's
@@ -271,8 +274,13 @@ class BackupService(
             attempted = true
             when (val write = remote.putBackup(uid, sealed, writeId, precondition)) {
                 // another phone wrote since the second look: nothing of ours is in the cloud, so there is nothing to take back
-                is BackupWrite.Conflict -> { attempted = false; return UploadResult.BackupDiffers(write.current, phoneNow) }
-                is BackupWrite.Written -> Unit
+                // (but not when the conflict names our own write id: Firestore retries a transaction whose answer was lost, the
+                // retry finds the document our first attempt wrote, and that is our write having landed: go on and prove it)
+                is BackupWrite.Conflict -> if (!isOurs(write.current, writeId)) {
+                    attempted = false
+                    return UploadResult.BackupDiffers(write.current, phoneNow)
+                }
+                BackupWrite.Written -> Unit
             }
             val readBack = remote.getBackup(uid)
             proven = readBack != null && readBack.sealed == sealed &&
@@ -393,7 +401,7 @@ class BackupService(
         val onlyOurs = BackupPrecondition.Version(ourWriteId)
         if (previous != null) when (val r = remote.putBackup(uid, previous.sealed, previous.writeId, onlyOurs)) {
             is BackupWrite.Conflict -> afterConflict(r.current, previous)
-            is BackupWrite.Written -> Undo.Finished
+            BackupWrite.Written -> Undo.Finished
         } else when (val r = remote.deleteBackup(uid, onlyOurs)) {
             is BackupRemoval.Conflict -> afterConflict(r.current, null)
             BackupRemoval.Removed -> Undo.Finished
@@ -408,6 +416,8 @@ class BackupService(
         previous != null && current is CloudBackup.Present && current.writeId == previous.writeId -> Undo.Finished
         else -> Undo.Overtaken(current)
     }
+
+    private fun isOurs(current: CloudBackup, writeId: String): Boolean = current is CloudBackup.Present && current.writeId == writeId
 
     private sealed interface KeyRead {
         data class Got(val pem: String) : KeyRead

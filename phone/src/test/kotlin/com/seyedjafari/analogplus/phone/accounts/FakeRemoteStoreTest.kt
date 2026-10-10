@@ -72,17 +72,17 @@ class FakeRemoteStoreTest {
 
     @Test fun aBackupMayBeCreatedOnlyWhereThereIsNone() {
         val store = FakeRemoteStore()
-        val first = putBackup(store, "a", "w1", BackupPrecondition.NoBackup) as BackupWrite.Written
-        assertEquals(first.backup, store.backupOf("u"))
-        assertEquals("w1", first.backup.writeId)                      // stored with the id the caller chose
+        assertEquals(BackupWrite.Written, putBackup(store, "a", "w1", BackupPrecondition.NoBackup))
+        assertEquals("w1", store.backupOf("u")!!.writeId)             // stored with the id the caller chose
         assertEquals(BackupWrite.Conflict(CloudBackup.Present("a", "w1")), putBackup(store, "b", "w2", BackupPrecondition.NoBackup))
         assertEquals("a", store.backupOf("u")!!.sealed.keyFingerprint)
     }
 
     @Test fun aBackupMayBeReplacedOnlyWhileItIsTheVersionTheCallerSaw() {
         val store = FakeRemoteStore()
-        val v1 = (putBackup(store, "a", "w1", BackupPrecondition.NoBackup) as BackupWrite.Written).backup
-        val v2 = (putBackup(store, "b", "w2", BackupPrecondition.Version(v1.writeId)) as BackupWrite.Written).backup
+        assertEquals(BackupWrite.Written, putBackup(store, "a", "w1", BackupPrecondition.NoBackup))
+        assertEquals(BackupWrite.Written, putBackup(store, "b", "w2", BackupPrecondition.Version("w1")))
+        val v2 = store.backupOf("u")!!
         assertEquals("w2", v2.writeId)
         // the old version no longer matches, even if a later write carried the same key fingerprint
         assertEquals(BackupWrite.Conflict(CloudBackup.Present("b", "w2")), putBackup(store, "c", "w3", BackupPrecondition.Version("w1")))
@@ -104,7 +104,8 @@ class FakeRemoteStoreTest {
 
     @Test fun aBackupMayBeDeletedOnlyWhileItIsTheVersionTheCallerSaw() {
         val store = FakeRemoteStore()
-        val v1 = (putBackup(store, "a", "w1", BackupPrecondition.NoBackup) as BackupWrite.Written).backup
+        assertEquals(BackupWrite.Written, putBackup(store, "a", "w1", BackupPrecondition.NoBackup))
+        val v1 = store.backupOf("u")!!
         assertEquals(BackupRemoval.Conflict(CloudBackup.Present("a", "w1")), deleteBackup(store, BackupPrecondition.Version("other")))
         assertEquals(BackupRemoval.Conflict(CloudBackup.Present("a", "w1")), deleteBackup(store, BackupPrecondition.NoBackup))
         assertEquals(v1, store.backupOf("u"))

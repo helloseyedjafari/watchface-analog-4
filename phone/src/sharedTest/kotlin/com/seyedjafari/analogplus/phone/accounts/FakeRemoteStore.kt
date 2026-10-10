@@ -61,7 +61,8 @@ class FakeRemoteStore(var serverNow: Long = 1_000_000) : RemoteStore {
     override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
         check()
         if (!holds(replacing, backups[uid])) return BackupWrite.Conflict(cloudOf(backups[uid]))
-        return BackupWrite.Written(RemoteBackup(sealed, stamp(), writeId).also { backups[uid] = it; backupWrites += it })
+        RemoteBackup(sealed, stamp(), writeId).also { backups[uid] = it; backupWrites += it }
+        return BackupWrite.Written
     }
 
     override suspend fun deleteBackup(uid: String, replacing: BackupPrecondition): BackupRemoval {

@@ -40,8 +40,11 @@ sealed interface BackupPrecondition {
 }
 
 sealed interface BackupWrite {
-    /** The document as the server stored it. */
-    data class Written(val backup: RemoteBackup) : BackupWrite
+    /**
+     * The write was done. It carries nothing: a transaction cannot hand back the commit time, and reading the document
+     * afterwards could return another phone's document. Callers that need the document read it ([RemoteStore.getBackup]).
+     */
+    data object Written : BackupWrite
 
     /** The precondition did not hold; nothing was written. [current] is what the cloud holds. */
     data class Conflict(val current: CloudBackup) : BackupWrite
@@ -105,16 +108,31 @@ interface RemoteStore {
     suspend fun getBackup(uid: String): RemoteBackup?
 
     /**
-     * Writes the backup, stored together with [writeId] (the caller's new version id, unique per call: a random UUID),
-     * and with the server's timestamp, if the cloud holds what [replacing] says; otherwise reports a
-     * [BackupWrite.Conflict] without writing. This is what keeps two phones, or an upload and its own rollback, from
-     * overwriting each other's backup.
+     * Writes the backup, stored together with [writeId] (the caller's version id for this document), and with the server's
+     * timestamp, if the cloud holds what [replacing] says; otherwise reports a [BackupWrite.Conflict] without writing.
+     * This is what keeps two phones, or an upload and its own rollback, from overwriting each other's backup.
+     *
+     * [writeId] is a random UUID per upload, but the store must NOT insist on uniqueness: when an upload is taken back,
+     * the previous document is written again under ITS OWN old id, so that it is byte-identical to what a person may
+     * already have seen (and can still discard), and the caller recognises "the cloud still holds what was there before".
+     *
      * The production implementation MUST do the read, the comparison and the write in one Firestore transaction: the
      * transaction reads the document, compares its stored write id with [replacing] and, if that holds, sets the new
      * document with [writeId] in the same commit. It works only online (a transaction fails offline:
-     * [RemoteErrorKind.OFFLINE]); a plain read followed by a write would only narrow the race. Because [writeId] is
-     * known to the caller before the call, a call that fails or is cancelled with an unknown outcome can still be undone
-     * with `Version(writeId)`.
+     * [RemoteErrorKind.OFFLINE]); a plain read followed by a write would only narrow the race.
+     *
+     * Firestore retries a transaction whose answer was lost. If the first attempt committed, the retry finds the
+     * document already carrying [writeId], so its precondition no longer holds and the call may return a
+     * [BackupWrite.Conflict] whose `current` names [writeId] itself. That is the caller's own write having landed, and
+     * the caller treats it as written. (A store may instead return [BackupWrite.Written] when the stored id already
+     * equals [writeId]; both are accepted.)
+     *
+     * EXCEPTION to the interface's "end promptly when cancelled" rule: this call (and [deleteBackup]) must not return
+     * before its transaction has settled, even if the caller is cancelled (wait for the transaction `Task` inside
+     * `withContext(NonCancellable)`; the wait is bounded by the SDK's own attempt limit), and must not add a timeout of
+     * its own. Otherwise a write that is still running could commit after the caller's rollback has already looked, and
+     * stay in place unproven. Backup writes are not part of the sync pass that the rule protects. A caller that is
+     * cancelled or gets an error with an unknown outcome can then undo its write with `Version(writeId)`.
      */
     suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite
 

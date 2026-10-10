@@ -994,4 +994,49 @@ class BackupServiceTest {
         assertEquals(UploadResult.BackupDiffers(held(pemA), KeyOnPhone.None), r)
         assertEquals(before, remote.backupOf("u1"))
     }
+
+    // ---- a retried transaction answers "conflict" with our own write id: that write landed ----------------------------------
+
+    @Test fun aConflictThatNamesOurOwnWriteIdCountsAsWrittenAndIsProvenLikeAnyWrite() {
+        val retried = object : RemoteStore by remote {
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
+                remote.putBackup(uid, sealed, writeId, replacing)                       // the first attempt commits, its answer is lost ...
+                return remote.putBackup(uid, sealed, writeId, replacing)               // ... the retry finds our document: Conflict(own id)
+            }
+        }
+        val r = run { service(FakeKeySource(pemA), retried).upload("u1", passphrase, SameKey) }
+        assertEquals(UploadResult.Ok(keyFingerprint(pemA)), r)
+        val s = service(FakeKeySource(null))
+        assertTrue(run { s.restore("u1", passphrase, s.plan("u1")) } is RestoreResult.Restored)
+    }
+
+    @Test fun aConflictThatNamesOurOwnWriteIdButFailsTheProofIsStillTakenBack() {
+        run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
+        val good = remote.backupOf("u1")!!
+        val retried = object : RemoteStore by remote {
+            private var first = true
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
+                if (!first) return remote.putBackup(uid, sealed, writeId, replacing)         // the take-back
+                first = false
+                remote.putBackup(uid, corrupt(sealed), writeId, replacing)                    // lands damaged, answer lost
+                return remote.putBackup(uid, corrupt(sealed), writeId, replacing)             // Conflict(own id)
+            }
+        }
+        val r = run { service(FakeKeySource(pemA), retried).upload("u1", "another passphrase 99", SameKey) }
+        assertEquals(UploadResult.SelfTestFailed, r)
+        assertEquals(good.sealed, remote.backupOf("u1")!!.sealed)
+        assertEquals(good.writeId, remote.backupOf("u1")!!.writeId)
+    }
+
+    @Test fun aConflictThatNamesAnotherWriteIdIsStillAnotherPhonesBackup() {
+        run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
+        val conflicting = object : RemoteStore by remote {
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
+                otherPhoneWrites()
+                return remote.putBackup(uid, sealed, writeId, replacing)
+            }
+        }
+        val r = run { service(FakeKeySource(pemA), conflicting).upload("u1", "another passphrase 99", SameKey) }
+        assertEquals(UploadResult.BackupDiffers(held(pemC), KeyOnPhone.Present(keyFingerprint(pemA))), r)
+    }
 }
