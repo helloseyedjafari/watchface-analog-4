@@ -3,6 +3,7 @@ package com.seyedjafari.analogplus.phone
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
@@ -25,6 +26,7 @@ import com.seyedjafari.analogplus.phone.ui.onboarding.OnboardingHost
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatus
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
 import com.seyedjafari.analogplus.phone.ui.theme.LocalAnimationScale
+import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
@@ -175,20 +177,42 @@ class SetupSkippedRule : TestWatcher() {
 }
 
 /**
- * Empties the app's real preferences for a test that needs a new install, and puts back exactly what was there, version counter
- * included (a face's versionCode must only ever increase on a device). The copy is kept in a second preferences file, not only in
- * memory, so a run that died before [restore] is repaired by the next [backUp]. Both calls are idempotent.
+ * Empties the app's real preferences and photo file for a test that needs a new install, and puts back exactly what was there,
+ * version counter included (a face's versionCode must only ever increase on a device) and the background photo (a test that
+ * picks a template saves a design without a photo, and that deletes the real file). The copy is kept in a second preferences
+ * file and the photo is renamed aside, so a run that died before [restore] is repaired by the next [backUp]. Both calls are
+ * idempotent.
+ *
+ * A copy left by a run that died is trusted only while the store is still in the state that run left (a launched app writes
+ * the current design and the onboarding state, nothing else). If the store holds the owner's own data since (saved designs,
+ * a version counter, the key fingerprint of a send), the old copy is older than that use and is discarded, with a log line,
+ * and a fresh copy of what is there is taken instead: restoring the old one would overwrite newer data.
  */
-internal class RealStoreSnapshot(context: Context, prefsName: String = PREFS, backupName: String = "analogplus_store_test_backup") {
+internal class RealStoreSnapshot(
+    context: Context,
+    prefsName: String = PREFS,
+    backupName: String = "analogplus_store_test_backup",
+    private val photoFile: File = File(context.filesDir, "background.jpg"),
+) {
     private val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
     private val backup = context.getSharedPreferences(backupName, Context.MODE_PRIVATE)
+    private val photoAside = File(photoFile.parentFile, photoFile.name + ".test-backup")
 
-    /** Copies the real preferences aside (unless an earlier run left its copy, which is the truth) and empties them. */
+    /** Copies the real preferences and photo aside (unless a run that died left its copy and the store is untouched since) and empties them. */
     fun backUp() {
+        val stale = backup.getBoolean(MARKER, false)
+        if (stale && prefs.all.keys.any { it in USER_DATA_KEYS }) {
+            Log.w(TAG, "discarding the backup left by a run that died: the store has been used since (${prefs.all.keys.filter { it in USER_DATA_KEYS }})")
+            check(backup.edit().clear().commit())
+            photoAside.delete()
+        }
         if (!backup.getBoolean(MARKER, false)) {
             check(backup.edit().apply { clear(); put(this, prefs.all); putBoolean(MARKER, true) }.commit())
+            photoAside.delete()
+            if (photoFile.isFile) check(photoFile.renameTo(photoAside)) { "could not move the photo aside" }
         }
         check(prefs.edit().clear().commit())
+        photoFile.delete()
     }
 
     /** Puts the copy back, then forgets it. */
@@ -196,6 +220,8 @@ internal class RealStoreSnapshot(context: Context, prefsName: String = PREFS, ba
         if (!backup.getBoolean(MARKER, false)) return
         val saved = backup.all.filterKeys { it != MARKER }
         check(prefs.edit().apply { clear(); put(this, saved) }.commit())
+        photoFile.delete()
+        if (photoAside.isFile) check(photoAside.renameTo(photoFile)) { "could not move the photo back" }
         check(backup.edit().clear().commit())
     }
 
@@ -216,5 +242,8 @@ internal class RealStoreSnapshot(context: Context, prefsName: String = PREFS, ba
         const val PREFS = "analogplus_store"
         const val KEY_ONBOARDING = "onboarding_state"
         private const val MARKER = "__snapshot_present"
+        private const val TAG = "RealStoreSnapshot"
+        /** What a launch of the app on an empty store never writes: the owner's saved designs, version counter and send fingerprint. */
+        private val USER_DATA_KEYS = setOf("saved_designs", "version_counter", "sent_key_fingerprint")
     }
 }
