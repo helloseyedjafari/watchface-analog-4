@@ -27,8 +27,10 @@ import kotlinx.coroutines.withTimeoutOrNull
  * [AccountManager] on Firebase Auth with a Google ID token from [tokens]. It only translates: which account is signed in
  * is Firebase Auth's business, tracked here as [state].
  *
- * Every text it hands back ([AccountState.Failed.message], `Failed(message)`) is the system's own exception text, kept as
- * data for a detail line; the words a person reads come from string resources chosen by the result type.
+ * Every text it hands back ([AccountState.Failed.message], `Failed(message)`) is detail data for a line next to the UI's own
+ * words (which come from string resources chosen by the result type): usually the exception's own message, or the message
+ * of our own exceptions ([NoGoogleAccountException], "The app is not on screen.", "Unexpected credential type ...") and
+ * the constant [NO_ANSWER].
  *
  * [reauthenticate] and [deleteUser] act only for the uid they are given. The check that the signed-in user is that uid
  * and the call on that very user object happen without a suspension point between them (for [deleteUser]), so a sign-in
@@ -45,26 +47,38 @@ import kotlinx.coroutines.withTimeoutOrNull
  * [signIn] / [reauthenticate] would wait with it, [signIn] would keep its lock, and a sign-out queued behind a running
  * action would wait too. The person closing the prompt ends it (a null token).
  *
- * Real Google sign-in is NOT VERIFIED here: tests use [EmulatorIdTokenSource] against the Auth emulator.
+ * **Lifetime.** The manager listens to Firebase Auth (a listener on the process-wide `FirebaseAuth`). [close] removes the
+ * listener; the owner calls it when it is done with the manager (`AccountsFactory` does when the controller's scope
+ * ends). A manager that is never closed keeps itself alive through that listener.
+ *
+ * Real Google sign-in is NOT VERIFIED here: tests use the emulator token source (`EmulatorSetup.tokenSource`, debug
+ * builds only) against the Auth emulator.
  */
 class FirebaseAccountManager(
     private val auth: FirebaseAuth,
     private val tokens: IdTokenSource,
     private val credentialManager: CredentialManager?,
     private val callTimeoutMs: Long = 30_000,
-) : AccountManager {
+) : AccountManager, AutoCloseable {
     private val _state = MutableStateFlow(stateOf(auth.currentUser))
     override val state: StateFlow<AccountState> = _state.asStateFlow()
 
     /** One chooser at a time: a second tap while the first is showing does nothing. */
     private val signInLock = Mutex()
 
+    private val authListener = FirebaseAuth.AuthStateListener { a ->
+        val user = a.currentUser
+        // a missing user ends SignedIn only; SigningIn and Failed belong to the call that set them
+        if (user != null) _state.value = stateOf(user) else _state.update { if (it is AccountState.SignedIn) AccountState.SignedOut else it }
+    }
+
     init {
-        auth.addAuthStateListener { a ->
-            val user = a.currentUser
-            // a missing user ends SignedIn only; SigningIn and Failed belong to the call that set them
-            if (user != null) _state.value = stateOf(user) else _state.update { if (it is AccountState.SignedIn) AccountState.SignedOut else it }
-        }
+        auth.addAuthStateListener(authListener)
+    }
+
+    /** Stops listening to Firebase Auth; [state] keeps its last value. Safe to call more than once. */
+    override fun close() {
+        auth.removeAuthStateListener(authListener)
     }
 
     override suspend fun signIn() {

@@ -8,8 +8,6 @@ import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 /** The person has no Google account on this phone. */
 class NoGoogleAccountException : Exception("No Google account found on this phone.")
@@ -47,21 +45,5 @@ class GoogleIdTokenSource(
             return GoogleIdTokenCredential.createFrom(credential.data).idToken
         }
         throw IllegalStateException("Unexpected credential type ${credential.type}")
-    }
-}
-
-/**
- * For the Firebase Auth emulator only: it accepts a JSON string as a Google ID token, so no Google account or chooser is
- * needed. [AccountsFactory][com.seyedjafari.analogplus.phone.accounts.AccountsFactory] hands this source out in emulator
- * mode, which release builds never have. The `sub` is the part of the address before the `@`, so one address is one account.
- */
-class EmulatorIdTokenSource(private val email: () -> String) : IdTokenSource {
-    override suspend fun fetchIdToken(): String? {
-        val address = email()
-        return buildJsonObject {
-            put("sub", address.substringBefore('@'))
-            put("email", address)
-            put("email_verified", true)
-        }.toString()
     }
 }

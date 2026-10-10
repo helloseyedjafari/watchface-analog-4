@@ -23,7 +23,10 @@ import com.seyedjafari.analogplus.phone.accounts.RemoteStore
 import com.seyedjafari.analogplus.phone.accounts.remoteErrorKind
 import com.seyedjafari.analogplus.phone.accounts.vault.SealedKey
 import com.seyedjafari.analogplus.phone.accounts.vault.SealedKeyFormatException
+import java.util.concurrent.Executor
+import java.util.concurrent.Executors
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -48,7 +51,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  * Therefore every suspending call is bounded and reports [RemoteErrorKind.OFFLINE] when the cloud does not answer in time:
  * reads and read-backs after [readTimeoutMs]; writes and each batch of the wipe after [writeTimeoutMs] (design and current
  * writes plus 20 ms per kilobyte of payload, the sync engine's own rule, which also bounds them from above). The wipe is a
- * bounded number of such steps (one read per collection, one commit per 400 documents). The cache is memory-only (see
+ * bounded number of such steps: it reads [wipePageSize] documents at a time and deletes them, so the bound is per page
+ * and not per account (a user with many photo designs would otherwise never finish one 20-second read of all of them).
+ * The cache is memory-only (see
  * [FirebaseProvider]), so a write issued while offline waits in memory and its `await()` would never finish; the journal
  * keeps the change and the engine pushes it again. The abandoned write stays queued in the SDK and is sent when the
  * connection returns; writes of one client are sent in order, so the later retry lands after it. Reads use
@@ -63,12 +68,26 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  * **Reads see our own unsettled writes as unsettled.** A document that still has a write of this client waiting has no
  * server time yet. [fetchDesigns] and [getCurrent] then fail with [RemoteErrorKind.OFFLINE] ("earlier writes are still
- * being sent") instead of returning a list from which that document is missing; the engine retries.
+ * being sent") instead of returning a list from which that document is missing; the engine retries. [getBackup] cannot
+ * use document metadata for this (a document with a pending delete is simply absent), so it first waits, within
+ * [readTimeoutMs], until all writes of this client are settled; a delete of the backup that is still on its way then does not
+ * read as "no backup" (a timeout is OFFLINE).
+ *
+ * **Read-backs are checked.** [putDesign] and [putCurrent] return the document as the server stored it, read right after
+ * the acknowledgement. If it is not what was written (another phone wrote in between) the call fails with
+ * [RemoteErrorKind.OFFLINE] so that the next pass fetches again, see `ReadBack.kt`.
+ *
+ * **Threads.** Snapshot listeners run on a private background thread, and the mapping of fetched documents runs on
+ * `Dispatchers.Default`, so decoding a large account never happens on the caller's (usually the main) thread.
  */
 class FirestoreRemoteStore(
     private val db: FirebaseFirestore,
     private val writeTimeoutMs: Long = 15_000,
     private val readTimeoutMs: Long = 20_000,
+    /** Documents per read and per delete batch of the wipe; a batch may hold 500 writes. */
+    private val wipePageSize: Long = 50,
+    /** Pages tried per collection before the wipe gives up. */
+    private val maxWipePages: Int = 100,
 ) : RemoteStore {
     private fun user(uid: String) = db.collection("users").document(uid)
     private fun designs(uid: String) = user(uid).collection("designs")
@@ -76,9 +95,12 @@ class FirestoreRemoteStore(
     private fun backupDoc(uid: String) = user(uid).collection("backup").document("signingKey")
 
     override suspend fun fetchDesigns(uid: String): List<RemoteDesign> = mapErrors {
-        val docs = bounded(readTimeoutMs) { designs(uid).get(Source.SERVER).await() }.documents
-        if (docs.any { it.metadata.hasPendingWrites() }) throw unsettled()
-        docs.mapNotNull(::toDesign)
+        val snapshot = bounded(readTimeoutMs) { designs(uid).get(Source.SERVER).await() }
+        withContext(Dispatchers.Default) {
+            val docs = snapshot.documents
+            if (docs.any { it.metadata.hasPendingWrites() }) throw unsettled()
+            docs.mapNotNull(::toDesign)
+        }
     }
 
     /**
@@ -89,7 +111,7 @@ class FirestoreRemoteStore(
      * acknowledgement arrives even when no field changed; an identical list is not emitted twice.
      */
     override fun observeDesigns(uid: String): Flow<List<RemoteDesign>> = callbackFlow {
-        val registration = designs(uid).addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+        val registration = designs(uid).addSnapshotListener(LISTENER_THREAD, MetadataChanges.INCLUDE) { snapshot, error ->
             when {
                 error != null -> close(wrap(error))
                 snapshot != null && confirmed(snapshot.metadata.isFromCache, snapshot.metadata.hasPendingWrites()) ->
@@ -107,7 +129,12 @@ class FirestoreRemoteStore(
                 "deleted" to (state == DesignState.TOMBSTONE), "schema" to schema.toLong(),
             )
             bounded(writeTimeout(designJson.length)) { ref.set(data).await() }
-            toDesign(bounded(readTimeoutMs) { ref.get(Source.SERVER).await() }) ?: throw RemoteException(RemoteErrorKind.OTHER, "The cloud returned an unreadable design.")
+            val doc = bounded(readTimeoutMs) { ref.get(Source.SERVER).await() }
+            // a second write of this client to the same document is still on its way: this is not the document we wrote
+            if (doc.metadata.hasPendingWrites()) throw unsettled()
+            val read = toDesign(doc) ?: throw RemoteException(RemoteErrorKind.OTHER, "The cloud returned an unreadable design.")
+            if (!designReadBackMatches(name, designJson, state, schema, read)) throw changedMeanwhile()
+            read
         }
 
     override suspend fun getCurrent(uid: String): RemoteCurrent? = mapErrors {
@@ -118,7 +145,7 @@ class FirestoreRemoteStore(
 
     /** Same rule as [observeDesigns]: only what the server confirmed. */
     override fun observeCurrent(uid: String): Flow<RemoteCurrent?> = callbackFlow {
-        val registration = currentDoc(uid).addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+        val registration = currentDoc(uid).addSnapshotListener(LISTENER_THREAD, MetadataChanges.INCLUDE) { snapshot, error ->
             when {
                 error != null -> close(wrap(error))
                 snapshot != null && confirmed(snapshot.metadata.isFromCache, snapshot.metadata.hasPendingWrites()) ->
@@ -135,10 +162,17 @@ class FirestoreRemoteStore(
             "deviceLabel" to deviceLabel, "schema" to DESIGN_SCHEMA.toLong(),
         )
         bounded(writeTimeout(designJson.length)) { ref.set(data).await() }
-        toCurrent(bounded(readTimeoutMs) { ref.get(Source.SERVER).await() }) ?: throw RemoteException(RemoteErrorKind.OTHER, "The cloud returned an unreadable design.")
+        val doc = bounded(readTimeoutMs) { ref.get(Source.SERVER).await() }
+        if (doc.metadata.hasPendingWrites()) throw unsettled()
+        val read = toCurrent(doc) ?: throw RemoteException(RemoteErrorKind.OTHER, "The cloud returned an unreadable design.")
+        if (!currentReadBackMatches(designJson, deviceId, deviceLabel, read)) throw changedMeanwhile()
+        read
     }
 
     override suspend fun getBackup(uid: String): RemoteBackup? = mapErrors {
+        // A pending local DELETE leaves no document whose metadata could say so (the read would be "absent"), so wait until
+        // every write of this client is settled; the read then shows what the server holds.
+        bounded(readTimeoutMs) { db.waitForPendingWrites().await() }
         toBackup(bounded(readTimeoutMs) { backupDoc(uid).get(Source.SERVER).await() })
     }
 
@@ -183,23 +217,31 @@ class FirestoreRemoteStore(
     }
 
     /**
-     * Deletes every document of the user (designs, current, backup), a collection at a time in batches of at most
-     * [BATCH_SIZE]. Each collection is read from the server (`Source.SERVER`: offline it fails, it never answers from an
-     * empty cache and so never reports success with nothing deleted) and the documents read are deleted.
+     * Deletes every document of the user (designs, current, backup), a collection at a time and [wipePageSize]
+     * documents at a time: read a page from the server (`Source.SERVER`: offline it fails, it never answers from an empty
+     * cache and so never reports success with nothing deleted), delete exactly those documents in one batch, read the next
+     * page, until a page comes back empty. Each read and each commit has its own bound, so the time allowed grows with
+     * the amount of data instead of one read of everything having to fit the bound; at most [maxWipePages] pages per
+     * collection are tried, which is far above what the app lets a user store, after that the call fails (OTHER).
      *
      * It relies on this: **Firestore commits one client's writes in order, and the wipe's read includes pending local
      * writes.** A design write that this client issued just before (for example one the sync engine gave up waiting for)
-     * is therefore part of the list the wipe deletes, and is deleted after the write is committed; it cannot reappear
+     * is therefore part of a page the wipe deletes, and is deleted after the write is committed; it cannot reappear
      * afterwards. A write by ANOTHER client or phone after the wipe's read is not covered; account deletion stops this
      * phone's sync first, and the other phone's sync stops finding its account. `FirebaseEmulatorTest` proves the
-     * reliance against the emulator.
+     * reliance against the emulator. A design with a photo can be about 900 kB, so one page can be tens of megabytes: on
+     * a very slow link a page may still not arrive within [readTimeoutMs] and the deletion reports OFFLINE.
      */
     override suspend fun deleteAllUserData(uid: String) = mapErrors {
         for (collection in listOf(designs(uid), user(uid).collection("state"), user(uid).collection("backup"))) {
-            val docs = bounded(readTimeoutMs) { collection.get(Source.SERVER).await() }.documents
-            for (chunk in docs.chunked(BATCH_SIZE)) {
+            var pages = 0
+            while (true) {
+                val page = bounded(readTimeoutMs) { collection.limit(wipePageSize).get(Source.SERVER).await() }
+                val refs = withContext(Dispatchers.Default) { page.documents.map { it.reference } }
+                if (refs.isEmpty()) break
+                if (++pages > maxWipePages) throw RemoteException(RemoteErrorKind.OTHER, "The cloud still holds documents after $maxWipePages pages were deleted.")
                 val batch = db.batch()
-                chunk.forEach { batch.delete(it.reference) }
+                refs.forEach { batch.delete(it) }
                 bounded(writeTimeoutMs) { batch.commit().await() }
             }
         }
@@ -255,6 +297,8 @@ class FirestoreRemoteStore(
 
     private fun unsettled() = RemoteException(RemoteErrorKind.OFFLINE, "Earlier writes are still being sent.")
 
+    private fun changedMeanwhile() = RemoteException(RemoteErrorKind.OFFLINE, "The document was changed by another device while it was written.")
+
     private fun writeTimeout(payloadChars: Int) = writeTimeoutMs + payloadChars / 1024 * WRITE_MS_PER_KB
 
     /**
@@ -288,7 +332,9 @@ class FirestoreRemoteStore(
     }
 
     private companion object {
-        const val BATCH_SIZE = 400
         const val WRITE_MS_PER_KB = 20L
+
+        /** One thread, so that the snapshots of a listener reach the flow in order; a daemon, so it never keeps the process alive. */
+        val LISTENER_THREAD: Executor = Executors.newSingleThreadExecutor { r -> Thread(r, "firestore-listener").apply { isDaemon = true } }
     }
 }

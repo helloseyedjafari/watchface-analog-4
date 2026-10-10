@@ -93,6 +93,11 @@ class RemoteException(val kind: RemoteErrorKind, message: String, cause: Throwab
  * the server; that cannot be recalled.)
  */
 interface RemoteStore {
+    /**
+     * Reads the server's copy. A store that keeps this client's unacknowledged writes locally (Firestore does) must fail
+     * with [RemoteErrorKind.OFFLINE] while the result contains a document with such a write, rather than return a list in
+     * which that document is missing or has no server time; the sync engine retries. The same holds for [getCurrent].
+     */
     suspend fun fetchDesigns(uid: String): List<RemoteDesign>
 
     /** Emits the full list whenever the server's copy changes (not for the app's own unconfirmed writes). */

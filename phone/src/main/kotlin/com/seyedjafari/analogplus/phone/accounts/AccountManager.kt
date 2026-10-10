@@ -23,7 +23,11 @@ sealed interface ReauthResult {
     data object Ok : ReauthResult
     data object Cancelled : ReauthResult
 
-    /** Nobody, or another account than the one asked for, is signed in. Nothing was asked of the person. */
+    /**
+     * Nobody, or another account than the one asked for, is signed in: either at the start (then the person was not asked
+     * at all), or after the Google prompt, when the signed-in account changed while it was open (then the prompt was
+     * shown, its answer was dropped and nothing was confirmed).
+     */
     data object NotSignedIn : ReauthResult
 
     /** [message] is the system's own text, for a detail line only. */
@@ -48,7 +52,12 @@ sealed interface DeleteUserResult {
 interface AccountManager {
     val state: StateFlow<AccountState>
 
-    /** Shows the Google account chooser. Ends in [AccountState.SignedIn], [AccountState.SignedOut] (cancelled) or [AccountState.Failed]. */
+    /**
+     * Shows the Google account chooser. Ends in [AccountState.SignedIn], [AccountState.SignedOut] (cancelled) or
+     * [AccountState.Failed]. Two rules, kept on purpose: (1) when somebody is already signed in it shows nothing and just
+     * reports that account in [state]; (2) while one chooser is showing, a second call returns at once without showing
+     * another (so it can return while [state] is still [AccountState.SigningIn]; the first call decides the end state).
+     */
     suspend fun signIn()
 
     /**

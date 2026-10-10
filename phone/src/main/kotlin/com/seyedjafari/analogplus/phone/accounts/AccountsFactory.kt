@@ -12,7 +12,7 @@ import com.seyedjafari.analogplus.phone.PrefsKeyValueStore
 import com.seyedjafari.analogplus.phone.R
 import com.seyedjafari.analogplus.phone.Store
 import com.seyedjafari.analogplus.phone.accounts.firebase.CurrentActivity
-import com.seyedjafari.analogplus.phone.accounts.firebase.EmulatorIdTokenSource
+import com.seyedjafari.analogplus.phone.accounts.firebase.EmulatorSetup
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseAccountManager
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseMode
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseProvider
@@ -22,6 +22,7 @@ import com.seyedjafari.analogplus.phone.accounts.firebase.emulatorEmail
 import com.seyedjafari.analogplus.phone.accounts.vault.KeyVault
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 
 /**
  * Builds the accounts stack for the app. The only place (with `accounts/firebase`) that touches Firebase types.
@@ -29,13 +30,20 @@ import kotlinx.coroutines.CoroutineScope
  * Whatever the outcome, the [SyncJournal] is attached to [store] so that edits made while signed out (or in a build
  * without Firebase) are remembered for a later sign-in.
  *
- * Call it once per process: it builds the one [SyncEngine], the one [BackupService] and the one [AttemptLimiter] (the
- * restore-attempt delay lives in [syncKv]; two limiters over the same preferences would each count on their own). The
- * app does that in `AppModel`; tests that build several controllers give each its own [store], [keyStore] and [syncKv].
+ * One call builds one controller with its own [SyncEngine], [BackupService] and [AttemptLimiter], all tied to [scope]:
+ * when the scope ends, the account manager's Firebase Auth listener is removed ([closeWhenScopeEnds]) and sync stops. The
+ * app calls it once per `AppModel` (a view model, so again after the activity was finished and reopened within the same
+ * process), not once per process; the earlier controller is stopped by then because its scope ended. Controllers that are
+ * alive together share [syncKv] (the attempt delay of a wrong passphrase is read from it every time, so it stays
+ * consistent), but each has its own restore lock, so only one should be used at a time. Tests give each controller its own
+ * [store], [keyStore] and [syncKv].
  */
 object AccountsFactory {
     private const val SYNC_PREFS = "analogplus_sync"
     private const val KEY_DEVICE_ID = "device_id"
+
+    /** The rules accept a device label of up to 80 characters. */
+    private const val MAX_DEVICE_LABEL = 80
 
     fun create(
         context: Context,
@@ -55,19 +63,27 @@ object AccountsFactory {
         val remote = FirestoreRemoteStore(FirebaseFirestore.getInstance())
         val engine = SyncEngine(
             store, journal, remote, scope, AndroidPhotoDownscaler(), applier, currentDesign,
-            deviceId = deviceId(syncKv), deviceLabel = Build.MODEL ?: "Android phone", copySuffix = app.getString(R.string.sync_copy_suffix),
+            deviceId = deviceId(syncKv), deviceLabel = Build.MODEL.orEmpty().take(MAX_DEVICE_LABEL), copySuffix = app.getString(R.string.sync_copy_suffix),
         )
         store.addObserver(engine)
-        val credentialManager = CredentialManager.create(app)
-        val tokens = when (setup.mode) {
-            FirebaseMode.EMULATOR -> EmulatorIdTokenSource { emulatorEmail(app) }
-            else -> GoogleIdTokenSource(credentialManager, setup.webClientId) { CurrentActivity.get() }
-        }
+        // the emulator has no Google account and nothing cached to clear
+        val credentialManager = if (setup.mode == FirebaseMode.EMULATOR) null else CredentialManager.create(app)
+        val tokens = if (credentialManager == null) EmulatorSetup.tokenSource { emulatorEmail(app) }
+        else GoogleIdTokenSource(credentialManager, setup.webClientId) { CurrentActivity.get() }
         val accounts = FirebaseAccountManager(FirebaseAuth.getInstance(), tokens, credentialManager)
+        closeWhenScopeEnds(scope, accounts)
         val backup = BackupService(remote, KeyVault(), KeyStoreKeySource(keyStore), AttemptLimiter(syncKv))
         return AccountsController(setup.availability, accounts, engine, backup, AccountDeletion(accounts, remote, engine, journal), scope)
     }
 
     private fun deviceId(kv: KeyValueStore): String =
         kv.getString(KEY_DEVICE_ID) ?: UUID.randomUUID().toString().also { kv.putString(KEY_DEVICE_ID, it) }
+}
+
+/**
+ * Closes [closeable] when [scope] ends (completed or cancelled), at once if it already has. A scope without a `Job` never
+ * ends, so nothing is registered for it.
+ */
+internal fun closeWhenScopeEnds(scope: CoroutineScope, closeable: AutoCloseable) {
+    scope.coroutineContext[Job]?.invokeOnCompletion { closeable.close() }
 }

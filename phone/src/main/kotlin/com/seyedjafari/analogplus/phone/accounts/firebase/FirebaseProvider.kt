@@ -2,8 +2,6 @@ package com.seyedjafari.analogplus.phone.accounts.firebase
 
 import android.content.Context
 import com.google.firebase.FirebaseApp
-import com.google.firebase.FirebaseOptions
-import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.google.firebase.firestore.MemoryCacheSettings
@@ -24,8 +22,9 @@ data class FirebaseSetup(val mode: FirebaseMode, val webClientId: String) {
  *   accounts switched off and nothing in this package is used.
  * - **PRODUCTION**: the owner's project, with App Check ([AppCheckInstaller]). NOT VERIFIED in this repository's tests:
  *   there is no Firebase project, so nothing here has run against a real one (see `docs/accounts/owner-prerequisites.md`).
- * - **EMULATOR** (debug builds only, see [EmulatorSwitch]): a `demo-analogplus` project against the Firebase Emulator
- *   Suite on the host (10.0.2.2 from an Android emulator); no Google account or network needed.
+ * - **EMULATOR** (debug builds only, see [EmulatorSwitch] and [EmulatorSetup], both in `src/debug`; release builds do not
+ *   even contain the code): a `demo-analogplus` project against the Firebase Emulator Suite on the host (10.0.2.2 from an
+ *   Android emulator); no Google account or network needed.
  *
  * Firestore uses a memory-only cache: the sync journal is the durable offline queue, and a persistent cache would queue
  * writes a second time.
@@ -46,7 +45,7 @@ object FirebaseProvider {
         cached?.let { return it }
         val app = context.applicationContext
         val setup = when {
-            EmulatorSwitch.requested(app) -> setUpEmulator(app)
+            EmulatorSwitch.requested(app) -> EmulatorSetup.setUp(app)
             FirebaseApp.getApps(app).isEmpty() -> FirebaseSetup(FirebaseMode.NOT_CONFIGURED, "")
             else -> setUpProduction(app)
         }
@@ -54,7 +53,8 @@ object FirebaseProvider {
         return setup
     }
 
-    private fun memoryOnly(db: FirebaseFirestore) {
+    /** The cache is memory-only (see the class comment). Must run before the instance is first used. */
+    internal fun memoryOnly(db: FirebaseFirestore) {
         db.firestoreSettings = FirebaseFirestoreSettings.Builder(db.firestoreSettings)
             .setLocalCacheSettings(MemoryCacheSettings.newBuilder().build())
             .build()
@@ -66,21 +66,5 @@ object FirebaseProvider {
         AppCheckInstaller.install()
         memoryOnly(FirebaseFirestore.getInstance())
         return FirebaseSetup(FirebaseMode.PRODUCTION, app.getString(id))
-    }
-
-    private fun setUpEmulator(app: Context): FirebaseSetup {
-        if (FirebaseApp.getApps(app).isEmpty()) {
-            val options = FirebaseOptions.Builder()
-                .setProjectId(EMULATOR_PROJECT_ID)
-                .setApplicationId("1:000000000000:android:0000000000000000")
-                .setApiKey("fake-api-key-for-the-emulator")
-                .build()
-            FirebaseApp.initializeApp(app, options)
-        }
-        FirebaseAuth.getInstance().useEmulator(EMULATOR_HOST, AUTH_EMULATOR_PORT)
-        val db = FirebaseFirestore.getInstance()
-        memoryOnly(db)
-        db.useEmulator(EMULATOR_HOST, FIRESTORE_EMULATOR_PORT)
-        return FirebaseSetup(FirebaseMode.EMULATOR, "")
     }
 }

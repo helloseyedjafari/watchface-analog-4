@@ -10,6 +10,18 @@ object EmulatorSwitch {
     fun requested(context: Context): Boolean = false
 }
 
+/**
+ * Release builds contain no emulator code: [EmulatorSwitch.requested] is false, so these are never called. They exist so
+ * that the shared code compiles.
+ */
+object EmulatorSetup {
+    @Suppress("UNUSED_PARAMETER")
+    fun setUp(app: Context): FirebaseSetup = error("Release builds have no emulator mode.")
+
+    @Suppress("UNUSED_PARAMETER")
+    fun tokenSource(email: () -> String): IdTokenSource = error("Release builds have no emulator mode.")
+}
+
 /** Never used in release builds (there is no emulator mode); present so shared code compiles. */
 @Suppress("UNUSED_PARAMETER")
 fun emulatorEmail(context: Context): String = "unused@example.com"
