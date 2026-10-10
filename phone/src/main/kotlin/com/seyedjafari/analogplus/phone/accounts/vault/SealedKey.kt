@@ -61,26 +61,48 @@ class SealedKey(
 
         /**
          * Reads the fields written by [toFields] (Firestore hands numbers back as `Long`).
-         * @throws SealedKeyFormatException when a field is missing, of the wrong type or not base64
+         * @throws SealedKeyFormatException when a field is missing, of the wrong type, not a whole number or not base64;
+         *   the message says which
          */
         fun fromFields(fields: Map<String, Any?>): SealedKey {
-            fun text(name: String): String = fields[name] as? String ?: throw SealedKeyFormatException("field '$name' is missing")
+            fun value(name: String): Any = fields[name] ?: throw SealedKeyFormatException("field '$name' is missing")
+            fun text(name: String): String =
+                value(name) as? String ?: throw SealedKeyFormatException("field '$name' has the wrong type")
             fun number(name: String): Int {
-                val n = fields[name] as? Number ?: throw SealedKeyFormatException("field '$name' is missing")
-                val l = n.toLong()
+                val l: Long = when (val n = value(name)) {
+                    is Long -> n
+                    is Int -> n.toLong()
+                    is Short -> n.toLong()
+                    is Byte -> n.toLong()
+                    // a Double or Float is accepted only when it is a whole number; 600000.7 is damage, not 600000
+                    is Double -> wholeNumber(name, n)
+                    is Float -> wholeNumber(name, n.toDouble())
+                    else -> throw SealedKeyFormatException("field '$name' has the wrong type")
+                }
                 if (l < 0 || l > Int.MAX_VALUE) throw SealedKeyFormatException("field '$name' is out of range")
                 return l.toInt()
             }
-            fun bytes(name: String): ByteArray = try {
-                Base64.getDecoder().decode(text(name))
-            } catch (e: IllegalArgumentException) {
-                throw SealedKeyFormatException("field '$name' is not base64")
+            fun bytes(name: String): ByteArray {
+                val encoded = text(name) // read first: a missing or mistyped field must not be reported as bad base64
+                return try {
+                    Base64.getDecoder().decode(encoded)
+                } catch (e: IllegalArgumentException) {
+                    throw SealedKeyFormatException("field '$name' is not base64")
+                }
             }
             return SealedKey(
                 version = number(FIELD_VERSION), kdf = text(FIELD_KDF), iterations = number(FIELD_ITERATIONS),
                 salt = bytes(FIELD_SALT), iv = bytes(FIELD_IV), ciphertext = bytes(FIELD_SEALED),
                 keyFingerprint = text(FIELD_FINGERPRINT),
             )
+        }
+
+        private fun wholeNumber(name: String, d: Double): Long {
+            // 2^53 is the largest range in which every integer is exactly representable; far above anything valid here
+            if (d.isNaN() || d.isInfinite() || d != Math.rint(d) || Math.abs(d) > 9_007_199_254_740_992.0) {
+                throw SealedKeyFormatException("field '$name' is not a whole number")
+            }
+            return d.toLong()
         }
 
         private fun b64(bytes: ByteArray): String = Base64.getEncoder().encodeToString(bytes)

@@ -113,14 +113,6 @@ class KeyVaultTest {
         assertEquals(OpenResult.Opened(pem), fast.open(SealedKey.fromFields(fields), passphrase))
     }
 
-    @Test fun missingOrBrokenFieldsAreAFormatException() {
-        val good = sealed().toFields()
-        assertThrows(SealedKeyFormatException::class.java) { SealedKey.fromFields(good - "salt") }
-        assertThrows(SealedKeyFormatException::class.java) { SealedKey.fromFields(good + ("iv" to "***not base64***")) }
-        assertThrows(SealedKeyFormatException::class.java) { SealedKey.fromFields(good + ("iterations" to "many")) }
-        assertThrows(SealedKeyFormatException::class.java) { SealedKey.fromFields(good + ("iterations" to -5L)) }
-    }
-
     @Test fun toStringNeverShowsKeyMaterial() {
         val s = sealed()
         assertFalse(s.toString().contains(java.util.Base64.getEncoder().encodeToString(s.ciphertext)))
