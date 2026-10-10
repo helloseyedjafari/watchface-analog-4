@@ -85,10 +85,18 @@ class FirestoreRemoteStore(
     private val db: FirebaseFirestore,
     private val writeTimeoutMs: Long = 15_000,
     private val readTimeoutMs: Long = 20_000,
-    /** Documents per read and per delete batch of the wipe; a batch may hold 500 writes. */
-    private val wipePageSize: Long = 50,
-    /** Pages tried per collection before the wipe gives up. */
-    private val maxWipePages: Int = 100,
+    /**
+     * Documents per read and per delete batch of the wipe. A design with a photo is up to about 950 kB (the rules' cap), so a page of
+     * 3 is at most about 2.85 MB: that arrives within [wipeReadTimeoutMs] on a 1 Mbit/s link (about 23 s) with room to spare.
+     */
+    private val wipePageSize: Long = DEFAULT_WIPE_PAGE_SIZE,
+    /**
+     * Pages tried per collection before the wipe gives up (retryable: the next call continues with what is left).
+     * 400 pages of 3 are 1200 documents, several times the 200 designs the app syncs (plus the few other documents).
+     */
+    private val maxWipePages: Int = DEFAULT_MAX_WIPE_PAGES,
+    /** The bound of one wipe page read; larger than [readTimeoutMs] because a page can carry photos (see [wipePageSize]). */
+    private val wipeReadTimeoutMs: Long = DEFAULT_WIPE_READ_TIMEOUT_MS,
 ) : RemoteStore {
     private fun user(uid: String) = db.collection("users").document(uid)
     private fun designs(uid: String) = user(uid).collection("designs")
@@ -220,21 +228,29 @@ class FirestoreRemoteStore(
      * cache and so never reports success with nothing deleted), delete exactly those documents in one batch, read the next
      * page, until a page comes back empty. Each read and each commit has its own bound, so the time allowed grows with
      * the amount of data instead of one read of everything having to fit the bound; at most [maxWipePages] pages per
-     * collection are tried, which is far above what the app lets a user store, after that the call fails (OTHER).
+     * collection are tried, after that the call fails (OTHER) and the next call continues.
      *
-     * It relies on this: **Firestore commits one client's writes in order, and the wipe's read includes pending local
-     * writes.** A design write that this client issued just before (for example one the sync engine gave up waiting for)
-     * is therefore part of a page the wipe deletes, and is deleted after the write is committed; it cannot reappear
-     * afterwards. A write by ANOTHER client or phone after the wipe's read is not covered; account deletion stops this
-     * phone's sync first, and the other phone's sync stops finding its account. `FirebaseEmulatorTest` proves the
-     * reliance against the emulator. A design with a photo can be about 900 kB, so one page can be tens of megabytes: on
-     * a very slow link a page may still not arrive within [readTimeoutMs] and the deletion reports OFFLINE.
+     * **It first waits (bounded by [writeTimeoutMs]; a timeout is OFFLINE) until every earlier write of this client has
+     * been acknowledged or rejected.** Without that, a read of the server's data has this client's unsettled writes laid
+     * over it, and a delete of ours that is still on its way (an earlier wipe whose commit timed out, say) makes the
+     * documents it covers vanish from the page with no flag: the page could come back empty while the cloud still holds
+     * them, and the wipe would report success. After the wait the only unsettled writes are the ones this call makes, and
+     * each of them is awaited before the next read. That is the whole reliance now: nothing is read while a write of ours
+     * is unsettled. A write by ANOTHER client or phone after the wipe's read is not covered; account deletion stops this
+     * phone's sync first, and the other phone's sync stops finding its account. `FirebaseEmulatorTest` proves it against
+     * the emulator (a queued batch delete plus a wipe in small pages, and writes queued while offline).
+     *
+     * **Numbers.** A page read must arrive within [wipeReadTimeoutMs] (45 s). The worst page is [wipePageSize] designs of
+     * 950 kB (2.85 MB), about 23 s on a 1 Mbit/s link and 11 s on 2 Mbit/s, so it fits with room for latency; the typical
+     * photo design (400 kB) is half of that. The page count limit was raised as the pages shrank. A very slow link (under
+     * 0.5 Mbit/s) with several photo designs per page can still time out, and the deletion then reports OFFLINE.
      */
     override suspend fun deleteAllUserData(uid: String) = mapErrors {
+        bounded(writeTimeoutMs) { db.waitForPendingWrites().await() }
         for (collection in listOf(designs(uid), user(uid).collection("state"), user(uid).collection("backup"))) {
             var pages = 0
             while (true) {
-                val page = bounded(readTimeoutMs) { collection.limit(wipePageSize).get(Source.SERVER).await() }
+                val page = bounded(wipeReadTimeoutMs) { collection.limit(wipePageSize).get(Source.SERVER).await() }
                 val refs = withContext(Dispatchers.Default) { page.documents.map { it.reference } }
                 if (refs.isEmpty()) break
                 if (++pages > maxWipePages) throw RemoteException(RemoteErrorKind.OTHER, "The cloud still holds documents after $maxWipePages pages were deleted.")
@@ -329,10 +345,18 @@ class FirestoreRemoteStore(
         else -> RemoteException(RemoteErrorKind.OTHER, e.message ?: "Cloud error", e)
     }
 
-    private companion object {
-        const val WRITE_MS_PER_KB = 20L
+    companion object {
+        /** See the constructor: a page of this many designs of at most [MAX_DESIGN_BYTES] must fit the page read bound at 1 Mbit/s. */
+        const val DEFAULT_WIPE_PAGE_SIZE = 3L
+        const val DEFAULT_MAX_WIPE_PAGES = 400
+        const val DEFAULT_WIPE_READ_TIMEOUT_MS = 45_000L
+
+        /** The most a design document can hold (the rules cap the design text at 950 000 characters). */
+        const val MAX_DESIGN_BYTES = 950_000L
+
+        private const val WRITE_MS_PER_KB = 20L
 
         /** One thread, so that the snapshots of a listener reach the flow in order; a daemon, so it never keeps the process alive. */
-        val LISTENER_THREAD: Executor = Executors.newSingleThreadExecutor { r -> Thread(r, "firestore-listener").apply { isDaemon = true } }
+        private val LISTENER_THREAD: Executor = Executors.newSingleThreadExecutor { r -> Thread(r, "firestore-listener").apply { isDaemon = true } }
     }
 }

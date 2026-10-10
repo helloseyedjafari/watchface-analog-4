@@ -21,7 +21,8 @@ import org.junit.runner.RunWith
 
 /**
  * The factory with hermetic storage: it attaches the journal to the store, and a debug build always has some Firebase to
- * talk to (the owner's project when `google-services.json` was present at build time, else the emulator).
+ * talk to (under the test runner always the emulator, see `AccountsTestRunner`; a real debug run uses the owner's project
+ * when `google-services.json` was present at build time, else the emulator).
  */
 @RunWith(AndroidJUnit4::class)
 class AccountsFactoryTest {
@@ -46,7 +47,7 @@ class AccountsFactoryTest {
         val controller = AccountsFactory.create(
             context, store, scope, { DesignSettings() }, CurrentApplier { }, KeyStore(context, "factory-$tag.pem"), syncKv,
         )
-        // google-services.json present: the owner's project; absent: the emulator. Either way sign-in is offered.
+        // under the test runner the emulator marker exists, so this is EMULATOR mode; any mode but NOT_CONFIGURED offers sign-in
         assertEquals(AccountsAvailability.AVAILABLE, controller.availability)
         assertEquals(AccountState.SignedOut, controller.ui.value.account)
         store.saveNamed("Night", DesignSettings(name = "Night"))

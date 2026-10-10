@@ -42,8 +42,12 @@ object AppCheckInstaller {
 }
 
 /**
- * Emulator mode, which only debug builds contain: a `demo-analogplus` Firebase app (a `demo-` project id never reaches a
- * real project) with Auth and Firestore pointed at the Firebase Emulator Suite on the host.
+ * Emulator mode, which only debug builds contain: Auth and Firestore are pointed at the Firebase Emulator Suite on the host.
+ * Without `google-services.json` there is no default Firebase app, so a `demo-analogplus` one is made here (a `demo-`
+ * project id never reaches a real project). WITH `google-services.json`, Firebase's own initializer (a content provider)
+ * has already made the default app from the owner's project before this runs: this function then keeps it, and the
+ * emulator mode runs with the owner's project id and API key, with only the endpoints redirected. Nothing else reaches the
+ * real project in this mode: App Check is not installed, and Auth and Firestore talk to the emulator hosts.
  */
 object EmulatorSetup {
     fun setUp(app: Context): FirebaseSetup {

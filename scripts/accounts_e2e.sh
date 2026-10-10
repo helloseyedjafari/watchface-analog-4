@@ -16,6 +16,8 @@
 set -euo pipefail
 source "$(dirname "$0")/_env.sh"
 
+for a in "$@"; do case "$a" in -h|--help) sed -n '2,16p' "$0"; exit 0 ;; esac; done
+
 # Take the phone lock for the whole run: run this very script again under it.
 if [ -z "${ACCOUNTS_E2E_LOCKED:-}" ]; then
   ACCOUNTS_E2E_LOCKED=1 exec "$ROOT/scripts/with_phone_emulator_lock.sh" "$ROOT/scripts/accounts_e2e.sh" "$@"
@@ -35,8 +37,11 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-# Job control: every background job below gets its own process group, so that the whole tree (npm, firebase-tools, the
-# Java Firestore emulator) can be stopped with one signal to the group.
+# Job control: every background job below gets its own process group, so that npm and firebase-tools can be stopped with
+# one signal to the group. That does NOT reach the Java Firestore emulator: firebase-tools starts it detached, in a process
+# group of its own. It stops when firebase-tools shuts down on SIGTERM; if it is still listening afterwards (firebase-tools
+# was killed, or was slow), cleanup kills whatever still listens on the emulator ports, but only when this script started
+# the emulators.
 set -m
 FB_PID=""; AVD_STARTED=no
 step() { printf '\n== %s\n' "$*"; }
@@ -46,8 +51,17 @@ cleanup() {
   if [ "$KEEP" = no ]; then
     if [ -n "$FB_PID" ]; then
       kill -TERM -- "-$FB_PID" 2>/dev/null || true
-      for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 -- "-$FB_PID" 2>/dev/null || break; sleep 1; done
+      # let firebase-tools shut the emulators down itself
+      for _ in $(seq 1 20); do { port_open 8080 || port_open 9099; } || break; sleep 1; done
       kill -KILL -- "-$FB_PID" 2>/dev/null || true
+      # whatever still listens (the detached Java emulator) is ours: we started the emulators
+      for port in 8080 9099; do
+        for pid in $(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null || true); do kill -TERM "$pid" 2>/dev/null || true; done
+      done
+      sleep 1
+      for port in 8080 9099; do
+        for pid in $(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null || true); do kill -KILL "$pid" 2>/dev/null || true; done
+      done
     fi
     if [ "$AVD_STARTED" = yes ]; then "$ADB" -s "$PHONE" emu kill >/dev/null 2>&1 || true; fi
   fi

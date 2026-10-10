@@ -61,9 +61,18 @@ class FirebaseEmulatorTest {
     private lateinit var db: FirebaseFirestore
     private lateinit var remote: FirestoreRemoteStore
 
-    private fun reachable(port: Int) = try {
-        Socket().use { it.connect(InetSocketAddress(FirebaseProvider.EMULATOR_HOST, port), 1_500) }; true
-    } catch (e: Exception) { false }
+    /** Three tries: the emulator can be busy for a moment (a long test before this one), which is not "not running". */
+    private fun reachable(port: Int): Boolean {
+        repeat(3) {
+            try {
+                Socket().use { it.connect(InetSocketAddress(FirebaseProvider.EMULATOR_HOST, port), 3_000) }
+                return true
+            } catch (e: Exception) {
+                Thread.sleep(500)
+            }
+        }
+        return false
+    }
 
     private val managers = ArrayList<FirebaseAccountManager>()
 
@@ -304,7 +313,7 @@ class FirebaseEmulatorTest {
     /** A timeout of 1 ms cannot be met by a round trip to the emulator, so each call must give up and say OFFLINE, quickly. */
     @Test fun everyStoreCallGivesUpWithOfflineWhenTheCloudDoesNotAnswerInTime() = inTest {
         val uid = signInAs(unique("bounded"))
-        val impatient = FirestoreRemoteStore(db, writeTimeoutMs = 1, readTimeoutMs = 1)
+        val impatient = FirestoreRemoteStore(db, writeTimeoutMs = 1, readTimeoutMs = 1, wipeReadTimeoutMs = 1)
         val calls = listOf<Pair<String, suspend () -> Any?>>(
             "fetchDesigns" to { impatient.fetchDesigns(uid) },
             "getCurrent" to { impatient.getCurrent(uid) },
@@ -637,9 +646,8 @@ class FirebaseEmulatorTest {
     }
 
     /**
-     * Writes queued while offline stay unacknowledged for a moment after the connection returns, so the wipe's read happens
-     * while they are still pending: the reliance named in its KDoc ("commits one client's writes in order, and the read
-     * includes pending local writes"). Nothing may be left behind.
+     * Writes queued while offline are still unacknowledged when the wipe is called. The wipe waits for them first (see its
+     * KDoc), reads, and deletes: nothing may be left behind.
      */
     @Test fun deleteAllUserDataRemovesWritesThatWereNotAcknowledgedYet() = inTest {
         val uid = signInAs(unique("wipe-pending"))
@@ -715,7 +723,8 @@ class FirebaseEmulatorTest {
             for (r in results.filterNotNull()) assertEquals("round $round", "{\"v\":\"${r.first}\"}", r.second.designJson)
         }
         android.util.Log.i("FirebaseEmulatorTest", "read-backs refused as changed meanwhile: $refused of 30")
-        Unit
+        // without any interleaving nothing was tested: the writers must have got in each other's way at least once
+        assertTrue("no round interleaved, so the read-back check was never exercised", refused > 0)
     }
 
     // ---- paging of the wipe -------------------------------------------------------------------------------------
@@ -743,6 +752,27 @@ class FirebaseEmulatorTest {
         assertTrue("more than one default page exists", count("users/$uid/designs") > 50)
         remote.deleteAllUserData(uid)
         assertEquals(0, count("users/$uid/designs"))
+    }
+
+    /**
+     * A wipe that timed out leaves its batch delete queued in the SDK. The server still holds those documents, but a read
+     * lays the queued delete over them and shows them as gone with no flag; read after read the page would come back empty
+     * and the wipe would report success with documents remaining. The wipe waits for earlier writes first.
+     */
+    @Test fun deleteAllUserDataNeverReportsSuccessWhileDocumentsRemainBehindAQueuedDelete() = inTest {
+        repeat(4) { attempt ->
+            val uid = signInAs(unique("wipe-queued-$attempt"))
+            val ids = (0 until 7).map { designId("Q$attempt-$it") }.sorted()
+            ids.forEachIndexed { i, id -> remote.putDesign(uid, id, "Q$i", "{}", DesignState.LIVE, DESIGN_SCHEMA) }
+            // the first page (by key) is deleted by a batch that is queued while offline, and the connection comes back
+            db.disableNetwork().await()
+            val queued = db.batch()
+            ids.take(2).forEach { queued.delete(db.document("users/$uid/designs/$it")) }
+            queued.commit() // not awaited
+            db.enableNetwork() // not awaited either
+            FirestoreRemoteStore(db, writeTimeoutMs = 20_000, wipePageSize = 2).deleteAllUserData(uid)
+            assertEquals("try $attempt: success was reported while documents remained", 0, count("users/$uid/designs"))
+        }
     }
 
     // ---- listener errors and empty answers ----------------------------------------------------------------------

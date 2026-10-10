@@ -23,8 +23,11 @@ data class FirebaseSetup(val mode: FirebaseMode, val webClientId: String) {
  * - **PRODUCTION**: the owner's project, with App Check ([AppCheckInstaller]). NOT VERIFIED in this repository's tests:
  *   there is no Firebase project, so nothing here has run against a real one (see `docs/accounts/owner-prerequisites.md`).
  * - **EMULATOR** (debug builds only, see [EmulatorSwitch] and [EmulatorSetup], both in `src/debug`; release builds do not
- *   even contain the code): a `demo-analogplus` project against the Firebase Emulator Suite on the host (10.0.2.2 from an
- *   Android emulator); no Google account or network needed.
+ *   even contain the code): Auth and Firestore are pointed at the Firebase Emulator Suite on the host (10.0.2.2 from an
+ *   Android emulator); no Google account or network needed. Without `google-services.json` the app is a `demo-analogplus`
+ *   Firebase app; WITH it, Firebase's own initializer has already made the default app from the owner's project, so the
+ *   emulator mode then runs with the owner's project id and API key (only the endpoints are redirected, and App Check is
+ *   not installed in this mode).
  *
  * Firestore uses a memory-only cache: the sync journal is the durable offline queue, and a persistent cache would queue
  * writes a second time.
