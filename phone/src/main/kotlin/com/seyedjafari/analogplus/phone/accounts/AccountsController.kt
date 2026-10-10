@@ -111,8 +111,10 @@ data class AccountsUi(
  *
  * Call it from one thread (the main thread).
  *
- * Lifecycle: [scope] belongs to whoever owns the controller (the app: it lives as long as the process; Task 12 builds
- * the controller once). Every cloud-changing action (backup, restore, discard, delete, and sign-out, which waits for
+ * Lifecycle: [scope] belongs to whoever owns the controller. The app gives it the `AppModel` view model's scope, so it
+ * lives as long as that view model: a rotation keeps it, finishing the activity (Back from the root on Android 9-11)
+ * or the system killing the process ends it. A deletion that is cut off that way is not finished by the controller;
+ * what the app does about that is the owner's DECISION A (Task 14). Every cloud-changing action (backup, restore, discard, delete, and sign-out, which waits for
  * them) runs in that scope, not in the caller's coroutine. Cancelling the caller (the screen rotates, the person leaves
  * the tab) only stops it waiting for the answer: the action carries on to its end, then writes [ui] (busy, notice,
  * backup status) as usual, so a deletion is never abandoned halfway. The only way to cancel an action is to cancel
@@ -150,6 +152,9 @@ class AccountsController(
     /** The newest backup status that was a real answer (never [BackupStatus.Checking]), put back when a check is cancelled. */
     private var lastSettled: BackupStatus = BackupStatus.SignedOut
 
+    /** The account [lastSettled] belongs to; null when signed out. A direct switch to another account must not inherit its status. */
+    private var settledUid: String? = null
+
     /** The account sync was started for; a repeated [AccountState.SignedIn] of the same account (a new email, say) must not restart it. */
     private var syncedUid: String? = null
 
@@ -168,6 +173,10 @@ class AccountsController(
         _ui.update { it.copy(account = state) }
         when (state) {
             is AccountState.SignedIn -> {
+                if (settledUid != state.uid) {
+                    settledUid = state.uid
+                    lastSettled = BackupStatus.SignedOut
+                }
                 // a notice about another account is not this account's
                 if (noticeUid != null && noticeUid != state.uid) {
                     noticeUid = null
@@ -188,6 +197,7 @@ class AccountsController(
             }
             else -> {
                 syncedUid = null
+                settledUid = null
                 sync.stop()
                 checkSeq++
                 lastSettled = BackupStatus.SignedOut

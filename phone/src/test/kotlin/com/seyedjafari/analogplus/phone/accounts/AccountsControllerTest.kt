@@ -521,6 +521,23 @@ class AccountsControllerTest {
         second.complete(Unit)
     }
 
+    @Test fun aCheckCancelledAfterAnotherAccountSignedInDirectlyNeverPutsTheFirstAccountsStatusBack() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        c.upload(passphrase, BackupExpectation.None)
+        assertTrue(c.ui.value.backup is BackupStatus.BackedUp)               // u1 has a backup: the last real answer
+        val first = CompletableDeferred<Unit>().also { remote.getGates += it }
+        val second = CompletableDeferred<Unit>().also { remote.getGates += it }
+        accounts.force(AccountState.SignedIn("u2", "other@example.com"))     // no sign-out in between; u2's own check waits
+        assertEquals(BackupStatus.Checking, c.ui.value.backup)
+        val b = launch { c.refreshBackup() }
+        b.cancelAndJoin()
+        // u2 has had no answer yet; u1's backup must not appear on u2's screen
+        assertEquals(BackupStatus.SignedOut, c.ui.value.backup)
+        first.complete(Unit)
+        second.complete(Unit)
+    }
+
     // ---- the account changing under the actions -----------------------------------------------------------------
 
     @Test fun aWholeDeletionQueuedBehindAnUploadAsksAndStopsNothingForTheNewAccount() = runTest(UnconfinedTestDispatcher()) {
