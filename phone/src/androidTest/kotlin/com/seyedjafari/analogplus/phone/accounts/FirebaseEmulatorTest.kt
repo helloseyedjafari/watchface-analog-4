@@ -356,7 +356,8 @@ class FirebaseEmulatorTest {
         val written = remote.putCurrent(uid, DesignJson.toJson(DesignSettings()), "device-1", "Pixel 8")
         remote.getCurrent(uid)
         db.disableNetwork().await()
-        assertNull(withTimeoutOrNull(4_000) { remote.observeCurrent(uid).first() })
+        // boxed in a list: an emitted null (no current design) must not look like the timeout
+        assertNull("a cache-only snapshot must not be emitted", withTimeoutOrNull(4_000) { listOf(remote.observeCurrent(uid).first()) })
         db.enableNetwork().await()
         assertEquals(written, withTimeout(30_000) { remote.observeCurrent(uid).first() })
     }
@@ -598,18 +599,55 @@ class FirebaseEmulatorTest {
         assertEquals(1, count("users/$other/designs"))
     }
 
-    @Test fun deleteAllUserDataRemovesWritesIssuedJustBeforeItThatWereNotAcknowledgedYet() = inTest {
+    /**
+     * Writes queued while offline stay unacknowledged for a moment after the connection returns, so the wipe's read happens
+     * while they are still pending: the reliance named in its KDoc ("commits one client's writes in order, and the read
+     * includes pending local writes"). Nothing may be left behind.
+     */
+    @Test fun deleteAllUserDataRemovesWritesThatWereNotAcknowledgedYet() = inTest {
         val uid = signInAs(unique("wipe-pending"))
-        // a burst of writes that are still on their way when the wipe reads: the reliance named in its KDoc
+        val patient = FirestoreRemoteStore(db, writeTimeoutMs = 60_000)
+        db.disableNetwork().await()
         val writes = (0 until 12).map { i ->
             launch(start = CoroutineStart.UNDISPATCHED) {
-                try { remote.putDesign(uid, designId("Burst$i"), "Burst$i", "{}", DesignState.LIVE, DESIGN_SCHEMA) } catch (e: RemoteException) { /* the document is wiped before the read-back */ }
+                try { patient.putDesign(uid, designId("Burst$i"), "Burst$i", "{}", DesignState.LIVE, DESIGN_SCHEMA) } catch (e: RemoteException) { /* the document is wiped before the read-back */ }
             }
         }
-        remote.deleteAllUserData(uid)
+        db.enableNetwork() // not awaited: the wipe's read must meet writes that are still on their way
+        patient.deleteAllUserData(uid)
         writes.forEach { it.join() }
         delay(1_000)
         assertEquals("no document may be left behind", 0, count("users/$uid/designs"))
+    }
+
+    /** A read while own writes are unsettled must say so; it must never return a list with those documents missing. */
+    @Test fun fetchDesignsNeverReturnsAListThatLacksADocumentOfOurOwnUnsettledWrite() = inTest {
+        val uid = signInAs(unique("fetch-pending"))
+        val patient = FirestoreRemoteStore(db, writeTimeoutMs = 60_000)
+        val ids = (0 until 6).map { designId("Pending$it") }
+        db.disableNetwork().await()
+        val writes = ids.mapIndexed { i, id ->
+            launch(start = CoroutineStart.UNDISPATCHED) {
+                try { patient.putDesign(uid, id, "Pending$i", "{}", DesignState.LIVE, DESIGN_SCHEMA) } catch (e: RemoteException) { /* read-back */ }
+            }
+        }
+        db.enableNetwork()
+        var sawUnsettled = false
+        val until = System.nanoTime() + 20_000_000_000
+        while (System.nanoTime() < until) {
+            try {
+                val got = patient.fetchDesigns(uid).map { it.id }.toSet()
+                assertTrue("a list without our own pending documents: $got", got.containsAll(ids))
+                break
+            } catch (e: RemoteException) {
+                assertEquals(RemoteErrorKind.OFFLINE, e.kind)
+                sawUnsettled = true
+                delay(100)
+            }
+        }
+        writes.forEach { it.join() }
+        android.util.Log.i("FirebaseEmulatorTest", "fetchDesigns met unsettled writes: $sawUnsettled")
+        Unit
     }
 
     @Test fun deleteAllUserDataFailsOfflineInsteadOfReportingSuccessWithNothingDeleted() = inTest {
