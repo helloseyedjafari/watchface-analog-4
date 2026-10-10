@@ -17,6 +17,8 @@ class FakeRemoteStore(var serverNow: Long = 1_000_000) : RemoteStore {
     var failWith: RemoteException? = null
     val designWrites = ArrayList<RemoteDesign>()
     val currentWrites = ArrayList<RemoteCurrent>()
+    /** Every backup the store accepted, in order (seeded ones are not included). */
+    val backupWrites = ArrayList<RemoteBackup>()
     var deletedAllFor: String? = null
     var failDeleteAll: RemoteException? = null
 
@@ -56,12 +58,26 @@ class FakeRemoteStore(var serverNow: Long = 1_000_000) : RemoteStore {
 
     override suspend fun getBackup(uid: String): RemoteBackup? { check(); return backups[uid] }
 
-    override suspend fun putBackup(uid: String, sealed: SealedKey): RemoteBackup {
+    override suspend fun putBackup(uid: String, sealed: SealedKey, replacing: BackupPrecondition): BackupWrite {
         check()
-        return RemoteBackup(sealed, stamp()).also { backups[uid] = it }
+        if (!holds(replacing, backups[uid])) return BackupWrite.Conflict(cloudOf(backups[uid]))
+        return BackupWrite.Written(RemoteBackup(sealed, stamp()).also { backups[uid] = it; backupWrites += it })
     }
 
-    override suspend fun deleteBackup(uid: String) { check(); backups.remove(uid) }
+    override suspend fun deleteBackup(uid: String, replacing: BackupPrecondition): BackupRemoval {
+        check()
+        if (!holds(replacing, backups[uid])) return BackupRemoval.Conflict(cloudOf(backups[uid]))
+        backups.remove(uid)
+        return BackupRemoval.Removed
+    }
+
+    private fun holds(replacing: BackupPrecondition, held: RemoteBackup?): Boolean = when (replacing) {
+        BackupPrecondition.NoBackup -> held == null
+        is BackupPrecondition.Version -> held != null && held.createdAtMs == replacing.createdAtMs
+    }
+
+    private fun cloudOf(held: RemoteBackup?): CloudBackup =
+        if (held == null) CloudBackup.Absent else CloudBackup.Present(held.sealed.keyFingerprint)
 
     override suspend fun deleteAllUserData(uid: String) {
         failDeleteAll?.let { throw it }

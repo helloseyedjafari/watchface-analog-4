@@ -168,6 +168,16 @@ class KeyStoreInstallTest {
         assertFalse(store.hasKey())
     }
 
+    @Test fun stateReadsTheKeyWithoutEverMakingOne() {
+        assertEquals(LocalKeyState.None, store.state())
+        assertFalse(store.hasKey())                                  // reading the state created nothing
+        store.installPem(pemA)
+        assertEquals(LocalKeyState.Present(pemA), store.state())
+        File(context.filesDir, name).writeText("garbage")
+        assertEquals(LocalKeyState.Damaged, store.state())
+        assertEquals("garbage", File(context.filesDir, name).readText())   // and left the damaged file alone
+    }
+
     private companion object {
         // RSA key generation takes about a second each: make three once for the whole class
         val REAL_A: String by lazy { PackNative.generateKeysPem() }

@@ -36,12 +36,6 @@ sealed interface KeyOnPhone {
     data class Present(val fingerprint: String) : KeyOnPhone
 }
 
-/** What the cloud holds as the signing-key backup, by fingerprint of the key inside. */
-sealed interface CloudBackup {
-    data object Absent : CloudBackup
-    data class Present(val fingerprint: String) : CloudBackup
-}
-
 /**
  * What the caller knows about the account's backup when it asks [BackupService.upload] to write one, taken from the
  * confirmation the person saw. The upload only goes ahead if the cloud still matches, so it can never silently destroy
@@ -54,8 +48,13 @@ sealed interface BackupExpectation {
     /** The backup (if any) is of the key this phone has: first backup, or "change passphrase" for this phone's key. */
     data object SameKey : BackupExpectation
 
-    /** The person confirmed replacing the backup of the key with this fingerprint (which is not this phone's key). */
-    data class Key(val fingerprint: String) : BackupExpectation
+    /**
+     * The person confirmed replacing the backup of the key [cloudFingerprint] with this phone's key [phoneFingerprint]
+     * (the two the confirmation named). Both sides are pinned, as in a restore: a phone without a key, or with another
+     * key than the one confirmed, is refused, so a replacement can never seal a key the person did not see and a key is
+     * never generated for it. Starting over after a lost key is `discard` then `upload(None)`.
+     */
+    data class Key(val cloudFingerprint: String, val phoneFingerprint: String) : BackupExpectation
 }
 
 sealed interface BackupStatus {
@@ -90,8 +89,13 @@ sealed interface UploadResult {
 
     /**
      * The account's backup is not what the caller expected ([BackupExpectation]) given what the cloud and this phone
-     * hold now. Nothing was written and no key was generated. The UI shows the confirmation naming [cloud] and [phone]
-     * and asks again with the matching expectation.
+     * hold now, or it changed while the upload was under way (another phone wrote it, also when the upload had to be
+     * taken back: that backup is then left in place). The upload did not replace or remove it. The UI shows the
+     * confirmation naming [cloud] and [phone] and asks again with the matching expectation.
+     * No key is generated for [BackupExpectation.Key]. For [BackupExpectation.None] and [BackupExpectation.SameKey] a
+     * phone without a key gets one made (only when the cloud allows it at the first look), so a key can exist even
+     * though this result is returned, if the cloud changed during the key derivation: the key is kept, only the backup
+     * was not written.
      */
     data class BackupDiffers(val cloud: CloudBackup, val phone: KeyOnPhone) : UploadResult
 
@@ -175,6 +179,9 @@ sealed interface RestoreResult {
 
 sealed interface DiscardResult {
     data object Deleted : DiscardResult
+
+    /** The backup is not the one the person was looking at (another phone replaced or removed it); nothing was deleted. */
+    data class BackupChanged(val current: CloudBackup) : DiscardResult
     data class Failed(val kind: RemoteErrorKind, val message: String) : DiscardResult
 }
 
@@ -200,7 +207,7 @@ class BackupService(
     private val restoreLock = Mutex()
 
     /** Milliseconds the next [restore] would wait before trying (0: none), so the UI can say so before the person types. */
-    fun restoreWaitMs(): Long = limiter.waitMs()
+    suspend fun restoreWaitMs(): Long = withContext(cpu) { limiter.waitMs() }
 
     suspend fun status(uid: String): BackupStatus = try {
         val backup = remote.getBackup(uid)
@@ -244,21 +251,35 @@ class BackupService(
         }
         val phoneNow = KeyOnPhone.Present(fingerprint)
         if (!allows(expecting, previous, phoneNow)) return UploadResult.BackupDiffers(cloudOf(previous), phoneNow)
+        val precondition = if (previous == null) BackupPrecondition.NoBackup else BackupPrecondition.Version(previous.createdAtMs)
+        var written: RemoteBackup? = null
         var proven = false
+        var outcome: UploadResult = UploadResult.SelfTestFailed
         try {
-            remote.putBackup(uid, sealed)
+            when (val write = remote.putBackup(uid, sealed, precondition)) {
+                // another phone wrote since the second look: nothing of ours is in the cloud, so there is nothing to take back
+                is BackupWrite.Conflict -> return UploadResult.BackupDiffers(write.current, phoneNow)
+                is BackupWrite.Written -> written = write.backup
+            }
             val readBack = remote.getBackup(uid)
             proven = readBack != null && readBack.sealed == sealed &&
                 withContext(cpu) { vault.open(readBack.sealed, passphrase) } == OpenResult.Opened(pem)
-            if (!proven) return UploadResult.SelfTestFailed
-            limiter.recordSuccess()
-            return UploadResult.Ok(fingerprint)
+            if (proven) {
+                withContext(cpu) { limiter.recordSuccess() }
+                outcome = UploadResult.Ok(fingerprint)
+            }
         } catch (e: RemoteException) {
-            return UploadResult.Failed(e.kind, e.message.orEmpty())
+            outcome = UploadResult.Failed(e.kind, e.message.orEmpty())
         } finally {
-            // also runs when the caller cancels: a backup nobody has proven must not stay in place of a good one
-            if (!proven) withContext(NonCancellable) { putBack(uid, previous) }
+            // also runs when the caller cancels: a backup nobody has proven must not stay in place of a good one,
+            // but only what THIS upload wrote is taken back; whatever another phone wrote since stays
+            val ours = written
+            if (!proven && ours != null) {
+                val undone = withContext(NonCancellable) { undo(uid, previous, ours) }
+                if (undone is Undo.Overtaken) outcome = UploadResult.BackupDiffers(undone.current, phoneNow)
+            }
         }
+        return outcome
     }
 
     suspend fun plan(uid: String): RestorePlan = try {
@@ -291,25 +312,26 @@ class BackupService(
 
     private suspend fun restoreSerially(uid: String, passphrase: String, plan: RestorePlan): RestoreResult {
         if (plan == RestorePlan.NotSignedIn) return RestoreResult.NotSignedIn
-        val wait = limiter.waitMs()
+        val wait = withContext(cpu) { limiter.waitMs() }
         if (wait > 0) return RestoreResult.Throttled(wait)
         val backup = try { remote.getBackup(uid) } catch (e: RemoteException) {
             return RestoreResult.Failed(e.kind, e.message.orEmpty())
         } ?: return RestoreResult.NoBackup
-        // the person confirmed this plan for a particular backup; any other backup must be shown to them first
+        // Both halves of the plan are checked BEFORE the passphrase is tried, so that a stale plan costs neither a key
+        // derivation nor a guess. The person confirmed this plan for a particular backup; any other must be shown first.
         if (!planWasMadeFor(plan, backup.sealed.keyFingerprint)) return RestoreResult.BackupChanged
+        // not authoritative (the key store checks again inside the install); this one is cheap and early
+        if (!planExpects(plan, withContext(cpu) { keyOnPhone() })) return RestoreResult.LocalKeyChanged
         val pem = when (val opened = withContext(cpu) { vault.open(backup.sealed, passphrase) }) {
             is OpenResult.Opened -> opened.pem
-            OpenResult.WrongPassphraseOrDamaged -> { limiter.recordFailure(); return RestoreResult.WrongPassphrase(limiter.waitMs()) }
+            OpenResult.WrongPassphraseOrDamaged ->
+                return RestoreResult.WrongPassphrase(withContext(cpu) { limiter.recordFailure(); limiter.waitMs() })
             is OpenResult.Unsupported -> return RestoreResult.Unsupported(opened.reason)
         }
-        limiter.recordSuccess()
+        withContext(cpu) { limiter.recordSuccess() }
         val fingerprint = keyFingerprint(pem)
         if (fingerprint != backup.sealed.keyFingerprint) return RestoreResult.FingerprintMismatch
-        if (plan is RestorePlan.AlreadyHaveThisKey) {
-            val still = withContext(cpu) { keyOnPhone() } == KeyOnPhone.Present(fingerprint)
-            return if (still) RestoreResult.Restored(fingerprint) else RestoreResult.LocalKeyChanged
-        }
+        if (plan is RestorePlan.AlreadyHaveThisKey) return RestoreResult.Restored(fingerprint)   // nothing to install; the phone was checked above
         return withContext(cpu) {
             val outcome = try {
                 keys.installPem(pem) { held -> planExpects(plan, held.toKeyOnPhone()) }
@@ -322,29 +344,50 @@ class BackupService(
         }
     }
 
-    /** Forgotten passphrase: the backup can never be opened, so it is deleted. Does not touch this phone's key. */
-    suspend fun discard(uid: String): DiscardResult = try {
-        remote.deleteBackup(uid)
-        DiscardResult.Deleted
+    /**
+     * Forgotten passphrase: the backup can never be opened, so it is deleted. [fingerprint] is that of the backup the
+     * person was looking at; a backup of another key (another phone replaced it meanwhile) is not deleted and is
+     * reported as [DiscardResult.BackupChanged]. Does not touch this phone's key.
+     */
+    suspend fun discard(uid: String, fingerprint: String): DiscardResult = try {
+        val held = remote.getBackup(uid)
+        if (held == null || held.sealed.keyFingerprint != fingerprint) DiscardResult.BackupChanged(cloudOf(held))
+        else when (val removal = remote.deleteBackup(uid, BackupPrecondition.Version(held.createdAtMs))) {
+            BackupRemoval.Removed -> DiscardResult.Deleted
+            is BackupRemoval.Conflict -> DiscardResult.BackupChanged(removal.current)
+        }
     } catch (e: RemoteException) {
         DiscardResult.Failed(e.kind, e.message.orEmpty())
     }
 
-    /** Best effort: takes an unproven backup out of the cloud. */
-    private suspend fun putBack(uid: String, previous: RemoteBackup?) {
-        try {
-            if (previous != null) remote.putBackup(uid, previous.sealed) else remote.deleteBackup(uid)
-        } catch (e: RemoteException) {
-            // nothing more can be done from here; the next status check shows what the cloud holds
-        } catch (e: CancellationException) {
-            throw e
+    private sealed interface Undo {
+        /** Put back, or nothing could be done (unreachable): the next status check shows what the cloud holds. */
+        data object Finished : Undo
+
+        /** Another phone wrote since: its backup is left as it is. */
+        data class Overtaken(val current: CloudBackup) : Undo
+    }
+
+    /** Best effort: takes the unproven backup [ours] out of the cloud, only if it is still the one there. */
+    private suspend fun undo(uid: String, previous: RemoteBackup?, ours: RemoteBackup): Undo = try {
+        val onlyOurs = BackupPrecondition.Version(ours.createdAtMs)
+        if (previous != null) when (val r = remote.putBackup(uid, previous.sealed, onlyOurs)) {
+            is BackupWrite.Conflict -> Undo.Overtaken(r.current)
+            is BackupWrite.Written -> Undo.Finished
+        } else when (val r = remote.deleteBackup(uid, onlyOurs)) {
+            is BackupRemoval.Conflict -> Undo.Overtaken(r.current)
+            BackupRemoval.Removed -> Undo.Finished
         }
+    } catch (e: RemoteException) {
+        Undo.Finished
     }
 
     private fun allows(expecting: BackupExpectation, backup: RemoteBackup?, phone: KeyOnPhone): Boolean = when (expecting) {
         BackupExpectation.None -> backup == null
         BackupExpectation.SameKey -> backup == null || (phone is KeyOnPhone.Present && phone.fingerprint == backup.sealed.keyFingerprint)
-        is BackupExpectation.Key -> backup != null && backup.sealed.keyFingerprint == expecting.fingerprint
+        is BackupExpectation.Key ->
+            backup != null && backup.sealed.keyFingerprint == expecting.cloudFingerprint &&
+                phone is KeyOnPhone.Present && phone.fingerprint == expecting.phoneFingerprint
     }
 
     private fun cloudOf(backup: RemoteBackup?): CloudBackup =
@@ -364,7 +407,8 @@ class BackupService(
         is RestorePlan.InstallNew -> held == KeyOnPhone.None
         is RestorePlan.ReplaceLocal -> held is KeyOnPhone.Present && held.fingerprint == plan.localFingerprint
         is RestorePlan.ReplaceDamaged -> held == KeyOnPhone.Damaged
-        is RestorePlan.AlreadyHaveThisKey, RestorePlan.NoBackup, RestorePlan.NotSignedIn, is RestorePlan.Unknown -> false
+        is RestorePlan.AlreadyHaveThisKey -> held is KeyOnPhone.Present && held.fingerprint == plan.fingerprint
+        RestorePlan.NoBackup, RestorePlan.NotSignedIn, is RestorePlan.Unknown -> false
     }
 
     private fun LocalKeyState.toKeyOnPhone(): KeyOnPhone = when (this) {
@@ -373,8 +417,6 @@ class BackupService(
         is LocalKeyState.Present -> KeyOnPhone.Present(keyFingerprint(pem))
     }
 
-    private fun keyOnPhone(): KeyOnPhone {
-        if (!keys.hasKey()) return KeyOnPhone.None
-        return try { KeyOnPhone.Present(keyFingerprint(keys.pem())) } catch (e: SigningKeyException) { KeyOnPhone.Damaged }
-    }
+    /** One read of what the phone holds ([KeySource.state]): never generates a key. */
+    private fun keyOnPhone(): KeyOnPhone = keys.state().toKeyOnPhone()
 }

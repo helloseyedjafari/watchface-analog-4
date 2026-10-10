@@ -11,6 +11,9 @@ interface KeySource {
     /** The PEM; generates a key on first use (about a second: off the main thread). Throws [com.seyedjafari.analogplus.facegen.SigningKeyException] when damaged. */
     fun pem(): String
 
+    /** What the phone holds, read in one step; never generates a key (unlike [hasKey] then [pem]). */
+    fun state(): LocalKeyState
+
     /**
      * Replaces the key with [pem], keeping the previous key as a copy. All or nothing: a refused or failed install
      * leaves the old key as it was. [onlyIf] is asked with what the phone holds at that very moment, in the same step
@@ -24,5 +27,6 @@ interface KeySource {
 class KeyStoreKeySource(private val keyStore: KeyStore) : KeySource {
     override fun hasKey(): Boolean = keyStore.hasKey()
     override fun pem(): String = keyStore.pem()
+    override fun state(): LocalKeyState = keyStore.state()
     override fun installPem(pem: String, onlyIf: (LocalKeyState) -> Boolean): InstallOutcome = keyStore.installPem(pem, onlyIf)
 }

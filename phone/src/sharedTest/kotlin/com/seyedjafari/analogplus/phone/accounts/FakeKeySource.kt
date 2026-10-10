@@ -17,14 +17,15 @@ class FakeKeySource(private var stored: String? = null, private val generated: S
         return stored ?: generated.also { stored = it }
     }
 
+    override fun state(): LocalKeyState = when {
+        damaged -> LocalKeyState.Damaged
+        stored == null -> LocalKeyState.None
+        else -> LocalKeyState.Present(stored!!)
+    }
+
     override fun installPem(pem: String, onlyIf: (LocalKeyState) -> Boolean): InstallOutcome {
         if (!pem.contains("BEGIN CERTIFICATE") || !pem.contains("BEGIN PRIVATE KEY")) throw SigningKeyException("That is not a complete signing key.")
-        val state = when {
-            damaged -> LocalKeyState.Damaged
-            stored == null -> LocalKeyState.None
-            else -> LocalKeyState.Present(stored!!)
-        }
-        if (!onlyIf(state)) return InstallOutcome.CONDITION_NOT_MET
+        if (!onlyIf(state())) return InstallOutcome.CONDITION_NOT_MET
         previousKey = stored
         stored = pem
         damaged = false

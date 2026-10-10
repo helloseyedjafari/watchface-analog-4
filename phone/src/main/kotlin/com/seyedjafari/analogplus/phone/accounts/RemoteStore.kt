@@ -13,8 +13,44 @@ data class RemoteDesign(
 /** `users/{uid}/state/current`. */
 data class RemoteCurrent(val designJson: String, val updatedAtMs: Long, val deviceId: String, val deviceLabel: String)
 
-/** `users/{uid}/backup/signingKey`. */
+/**
+ * `users/{uid}/backup/signingKey`. [createdAtMs] is the server time of the document's last write; it is also the
+ * document's version for [BackupPrecondition.Version]: every write gets a new one.
+ */
 data class RemoteBackup(val sealed: SealedKey, val createdAtMs: Long)
+
+/** What the cloud holds as the signing-key backup, by fingerprint of the key inside. */
+sealed interface CloudBackup {
+    data object Absent : CloudBackup
+    data class Present(val fingerprint: String) : CloudBackup
+}
+
+/**
+ * What a backup write or delete is allowed to find in the cloud. The check and the write are one step: a write whose
+ * precondition does not hold changes nothing.
+ */
+sealed interface BackupPrecondition {
+    /** There must be no backup. */
+    data object NoBackup : BackupPrecondition
+
+    /** The backup must be the one whose [RemoteBackup.createdAtMs] is [createdAtMs]. */
+    data class Version(val createdAtMs: Long) : BackupPrecondition
+}
+
+sealed interface BackupWrite {
+    /** The document as the server stored it. */
+    data class Written(val backup: RemoteBackup) : BackupWrite
+
+    /** The precondition did not hold; nothing was written. [current] is what the cloud holds. */
+    data class Conflict(val current: CloudBackup) : BackupWrite
+}
+
+sealed interface BackupRemoval {
+    data object Removed : BackupRemoval
+
+    /** The precondition did not hold; nothing was deleted. [current] is what the cloud holds. */
+    data class Conflict(val current: CloudBackup) : BackupRemoval
+}
 
 enum class RemoteErrorKind {
     /** No network, no answer in time, or the call was cancelled. Retried; shown as offline. */
@@ -59,8 +95,19 @@ interface RemoteStore {
     suspend fun putCurrent(uid: String, designJson: String, deviceId: String, deviceLabel: String): RemoteCurrent
 
     suspend fun getBackup(uid: String): RemoteBackup?
-    suspend fun putBackup(uid: String, sealed: SealedKey): RemoteBackup
-    suspend fun deleteBackup(uid: String)
+
+    /**
+     * Writes the backup with the server's timestamp if the cloud holds what [replacing] says, and reports a
+     * [BackupWrite.Conflict] without writing otherwise. This is what keeps two phones, or an upload and its own
+     * rollback, from overwriting each other's backup.
+     * The production implementation MUST do the read, the comparison and the write in one Firestore transaction, so it
+     * works only online (a transaction fails offline: [RemoteErrorKind.OFFLINE]); a plain read followed by a write
+     * would only narrow the race.
+     */
+    suspend fun putBackup(uid: String, sealed: SealedKey, replacing: BackupPrecondition): BackupWrite
+
+    /** Deletes the backup if the cloud holds what [replacing] says; same transaction rule as [putBackup]. */
+    suspend fun deleteBackup(uid: String, replacing: BackupPrecondition): BackupRemoval
 
     /** Removes every document of the user (designs, current, backup). Used by account deletion. */
     suspend fun deleteAllUserData(uid: String)

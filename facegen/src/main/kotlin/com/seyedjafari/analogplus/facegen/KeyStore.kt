@@ -134,6 +134,12 @@ class KeyStore(context: Context, val fileName: String = DEFAULT_FILE_NAME) {
         }
     }
 
+    /**
+     * What the store holds right now, read under the lock in one step. Unlike [hasKey] followed by [pem] it can never
+     * generate a key (a reset between the two calls would make [pem] create one).
+     */
+    fun state(): LocalKeyState = synchronized(LOCK) { currentState() }
+
     /** Call with [LOCK] held. */
     private fun currentState(): LocalKeyState {
         val f = file
