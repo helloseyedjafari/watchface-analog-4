@@ -46,7 +46,8 @@ internal fun Modifier.verticalScrollWithFades(state: ScrollState): Modifier {
     return this
         .testTag(Tags.ONBOARDING_PAGE_SCROLL)
         .semantics { scrollHint = scrollHintOf(state.canScrollBackward, state.canScrollForward) }
-        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        // the mask needs an offscreen layer, but only while there is something to fade: a page that fits (a 60 fps animation on it) draws straight
+        .graphicsLayer { compositingStrategy = if (state.canScrollBackward || state.canScrollForward) CompositingStrategy.Offscreen else CompositingStrategy.Auto }
         .drawWithContent {
             drawContent()
             val fade = minOf(Dimens.ScrollFade.toPx(), size.height / 2)

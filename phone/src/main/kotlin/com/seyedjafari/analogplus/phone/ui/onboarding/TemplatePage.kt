@@ -44,8 +44,9 @@ fun needsReplaceConfirmation(current: DesignSettings, target: DesignSettings): B
     target != current && current !in Templates.all
 
 /**
- * Page 4. Choosing a template sets the current design under the same replace rule as Library: the shared dialog asks
- * first when the design is the user's own work, and Cancel keeps it.
+ * Page 4. Choosing a template sets the current design. Unlike Library (which asks whenever the target differs), the shared
+ * dialog is shown only when the design being replaced is the user's own work, i.e. not one of the built-in templates
+ * ([needsReplaceConfirmation]): swapping one template for another loses nothing. Cancel keeps the design.
  */
 @Composable
 fun TemplatePage(state: EditorState, modifier: Modifier = Modifier) {
