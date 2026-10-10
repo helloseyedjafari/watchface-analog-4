@@ -177,6 +177,11 @@ class FinalFrame(unittest.TestCase):
         self.assertEqual(value_at(tick["ks"]["o"], op), [100])
         self.assertEqual([value_at(t["e"], op) for t in trims_in(tick)], [[100]])
 
+    def test_the_permission_ripple_is_drawn_in_the_accent_colour_not_onaccent(self):
+        """onaccent is white in the light theme: a white ripple is nearly invisible on the pale prompt."""
+        d = self.docs["onboarding_permission"]
+        self.assertEqual(roles_of(layer_named(d, "ripple")), {"accent"})
+
     def test_permission_ends_with_prompt_up_and_label_replaced_by_the_tick(self):
         d = self.docs["onboarding_permission"]
         op = d["op"]

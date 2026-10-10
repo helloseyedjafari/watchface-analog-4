@@ -316,7 +316,7 @@ def permission():
     ripple_opacity = anim([(0, 0), (60, 0), (61, 80), (90, 0), (op, 0)], linear=True)
     return composition("onboarding permission", op, [
         layer(1, "tick", [tick], op, pos=(bx, by), opacity=tick_opacity),
-        layer(2, "ripple", [group("onaccent", [ellipse(40), stroke("onaccent", 5)])], op, pos=(bx, by),
+        layer(2, "ripple", [group("accent", [ellipse(40), stroke("accent", 5)])], op, pos=(bx, by),
               scale_anim=ripple_scale, opacity=ripple_opacity),
         layer(3, "label", [group("onaccent", [rrect(56, 10, 5), fill("onaccent")])], op, pos=(bx, by), opacity=label_opacity),
         layer(4, "prompt", prompt, op, pos_anim=slide),
