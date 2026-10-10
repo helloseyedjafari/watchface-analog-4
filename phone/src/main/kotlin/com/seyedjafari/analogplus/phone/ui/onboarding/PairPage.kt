@@ -1,5 +1,9 @@
 package com.seyedjafari.analogplus.phone.ui.onboarding
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -12,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -26,6 +31,7 @@ import com.seyedjafari.analogplus.phone.ui.components.SectionCard
 import com.seyedjafari.analogplus.phone.ui.send.StatusRow
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatus
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
+import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 
 /**
  * Page 2. Checks with [watch] when the page first resumes, whenever the app resumes later (the user may have just
@@ -34,6 +40,7 @@ import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
  * on screen until the new one arrives (like the Send screen), so a ready watch does not flicker. An answer that could not
  * be read is "could not check", never "not found".
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PairPage(
     watch: WatchStatusChecker,
@@ -79,10 +86,18 @@ fun PairPage(
             pairRows(status).forEach { row ->
                 StatusRow(stringResource(row.labelRes), stringResource(row.textRes), row.kind, Tags.pairRow(row.id))
             }
-            Text(
-                stringResource(OnboardingText.PAIR_WATCH_NOTE), style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // "Check again" sits right under the rows it re-runs, above the advice and the notes, so it is in reach whatever the window
+            // (a flow row: with large text the button drops under the note instead of squeezing it)
+            FlowRow(
+                Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+            ) {
+                Text(
+                    stringResource(OnboardingText.PAIR_WATCH_NOTE), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.CenterVertically).padding(end = Spacing.md),
+                )
+                SecondaryButton(stringResource(OnboardingText.PAIR_CHECK_AGAIN), { status = WatchStatus.CHECKING; round += 1 }, Modifier.testTag(Tags.PAIR_RECHECK))
+            }
         }
         step.adviceRes()?.let {
             Text(
@@ -90,7 +105,6 @@ fun PairPage(
                 modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }.testTag(Tags.PAIR_ADVICE),
             )
         }
-        SecondaryButton(stringResource(OnboardingText.PAIR_CHECK_AGAIN), { status = WatchStatus.CHECKING; round += 1 }, Modifier.testTag(Tags.PAIR_RECHECK))
         Text(
             stringResource(OnboardingText.PAIR_NO_WATCH_YET), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,

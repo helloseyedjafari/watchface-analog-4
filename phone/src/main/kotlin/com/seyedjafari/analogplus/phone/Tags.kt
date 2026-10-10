@@ -56,6 +56,8 @@ object Tags {
     fun onboardingPage(page: OnboardingPage) = "onboarding_page_${page.name.lowercase()}"
     const val BACKUP_PLACEHOLDER_DONE = "onboarding_backup_done"
     const val ONBOARDING_ROOT = "onboarding_root"
+    /** The scrolling area of the shown page (see `verticalScrollWithFades`). */
+    const val ONBOARDING_PAGE_SCROLL = "onboarding_page_scroll"
     const val ONBOARDING_SKIP = "onboarding_skip"
     const val ONBOARDING_BACK = "onboarding_back"
     const val ONBOARDING_NEXT = "onboarding_next"

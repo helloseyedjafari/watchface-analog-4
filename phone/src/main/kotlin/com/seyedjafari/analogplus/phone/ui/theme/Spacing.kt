@@ -36,6 +36,8 @@ object Dimens {
     val QrMaxWidth = 320.dp
     /** The animation on top of an onboarding page is a square this wide at most (less in a narrower window). */
     val OnboardingAnimationMax = 208.dp
+    /** How far the fade at a scrolling edge reaches in (a page that continues beyond the edge). */
+    val ScrollFade = 24.dp
     /** The onboarding screen (progress, page, buttons) stays in a column this wide in a wider window, so the template grid and the buttons do not stretch. */
     val OnboardingContentMax = 640.dp
     /** The outline of the selected template on the onboarding template page (the word "Selected" says it too). */
