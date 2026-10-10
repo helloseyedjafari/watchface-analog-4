@@ -12,6 +12,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.test.platform.app.InstrumentationRegistry
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.phone.ui.onboarding.OnboardingHost
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatus
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
 import com.seyedjafari.analogplus.phone.ui.theme.LocalAnimationScale
@@ -54,9 +55,8 @@ internal class TestLifecycle(initial: Lifecycle.State = Lifecycle.State.RESUMED)
 
 /**
  * The pieces `AppShell` needs, built over an in-memory store. [startAt] is written to the store before the controller
- * is created, like a state left behind by an earlier run of the app. [show] renders the real `AppShell` (its current
- * signature: state, store, send, watch, pendingLink, onPendingLinkResolved) in a [PinnedWindow]; when a later task gives
- * `AppShell` the onboarding controller, this is the one place to pass it.
+ * is created, like a state left behind by an earlier run of the app. [show] renders the real `AppShell` with the
+ * onboarding gate (`OnboardingHost(controller)`) in a [PinnedWindow].
  */
 internal class ShellFixture(
     val kv: MemoryKv = MemoryKv(),
@@ -76,11 +76,14 @@ internal class ShellFixture(
         window: WindowDp = PHONE_PORTRAIT,
         pendingLink: DesignSettings? = null,
         animationScale: Float? = 1f,
+        onPendingLinkResolved: () -> Unit = {},
     ) {
         // pinned, so the result does not depend on the emulator's animator_duration_scale; null reads the device's setting
         rule.setContent {
             CompositionLocalProvider(LocalAnimationScale provides animationScale) {
-                PinnedWindow(window) { AppShell(state, store, send, watch, pendingLink) {} }
+                PinnedWindow(window) {
+                    AppShell(state, store, send, watch, pendingLink, OnboardingHost(controller), onPendingLinkResolved)
+                }
             }
         }
     }
@@ -119,5 +122,16 @@ class AnimatorScaleRule(private val scale: String) : TestWatcher() {
     override fun finished(description: Description) {
         if (original == "null" || original.isEmpty()) shell("settings delete global animator_duration_scale")
         else shell("settings put global animator_duration_scale $original")
+    }
+}
+
+/**
+ * Tests that start the real `MainActivity` use the app's real storage, where a new install would show onboarding. They are
+ * about the app after setup, so this rule marks setup as skipped first (the way an update from the POC lands). The
+ * onboarding tests that want the first run build their own state.
+ */
+class SetupSkippedRule : TestWatcher() {
+    override fun starting(description: Description) {
+        Store(InstrumentationRegistry.getInstrumentation().targetContext).saveOnboardingState(OnboardingState.Skipped)
     }
 }

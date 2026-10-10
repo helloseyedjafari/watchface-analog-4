@@ -60,4 +60,8 @@ object Tags {
     const val ONBOARDING_BACK = "onboarding_back"
     const val ONBOARDING_NEXT = "onboarding_next"
     const val ONBOARDING_PROGRESS = "onboarding_progress"
+    const val ONBOARDING_TIP = "onboarding_tip"
+    const val ONBOARDING_TIP_SEND = "onboarding_tip_send"
+    const val ONBOARDING_TIP_DISMISS = "onboarding_tip_dismiss"
+    const val RUN_SETUP_AGAIN = "run_setup_again"
 }

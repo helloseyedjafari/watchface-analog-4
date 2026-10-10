@@ -21,6 +21,7 @@ import org.junit.runner.RunWith
 /** The system Back button (a real key event, not a call into the dispatcher) in the real activity. */
 @RunWith(AndroidJUnit4::class)
 class BackButtonTest {
+    @get:Rule val setupSkipped = SetupSkippedRule()
     @get:Rule val rule = createEmptyComposeRule()
     private var scenario: ActivityScenario<MainActivity>? = null
 

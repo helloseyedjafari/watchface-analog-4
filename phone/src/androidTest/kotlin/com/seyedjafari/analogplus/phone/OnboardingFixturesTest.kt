@@ -24,7 +24,7 @@ class OnboardingFixturesTest {
     @get:Rule val rule = createComposeRule()
 
     @Test fun theFixtureRendersTheRealShellInAPinnedWindow() {
-        val fixture = ShellFixture()
+        val fixture = ShellFixture(startAt = OnboardingState.Skipped)      // after setup: the gate shows the editor
         fixture.show(rule)
         rule.waitForTag(Tags.PREVIEW)
         rule.onNodeWithTag(Tags.PREVIEW).assertIsDisplayed()

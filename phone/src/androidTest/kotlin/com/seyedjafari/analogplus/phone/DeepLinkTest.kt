@@ -33,6 +33,7 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class DeepLinkTest {
+    @get:Rule val setupSkipped = SetupSkippedRule()
     @get:Rule val rule = createEmptyComposeRule()
     private var scenario: ActivityScenario<MainActivity>? = null
     private var original: DesignSettings? = null

@@ -296,6 +296,9 @@
     <string name="account_backup_title">Backup and sync</string>
     <string name="account_signin_coming">Sign-in is coming</string>
     <string name="account_saved_on_phone">Your designs are saved on this phone.</string>
+    <string name="account_run_setup_title">Setup</string>
+    <string name="account_run_setup_body">Go through the welcome steps again: pair your watch, the permission and a starting template.</string>
+    <string name="account_run_setup_button">Run setup again</string>
     <string name="account_signing_key_title">Signing key</string>
     <string name="signing_key_explanation">Every face is signed with a key stored in this app. If the app complains that the key is damaged, or the watch rejects updates after a reinstall, you can make a new key here.</string>
     <string name="signing_key_button_reset">Reset signing key</string>
@@ -341,4 +344,8 @@
     <!-- Onboarding: the screen around the pages -->
     <string name="onboarding_screen_skip">Skip</string>
     <string name="onboarding_screen_back">Back</string>
+    <!-- Onboarding: the one-time tip above the preview after setup -->
+    <string name="send_tip_text">Your watch is ready. Open Send to put this face on it.</string>
+    <string name="send_tip_open_send">Open Send</string>
+    <string name="send_tip_dismiss">Got it</string>
 </resources>

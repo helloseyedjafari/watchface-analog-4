@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,6 +35,9 @@ import com.seyedjafari.analogplus.phone.ui.design.DesignScreen
 import com.seyedjafari.analogplus.phone.ui.library.LibraryScreen
 import com.seyedjafari.analogplus.phone.ui.nav.AppNav
 import com.seyedjafari.analogplus.phone.ui.nav.Destination
+import com.seyedjafari.analogplus.phone.ui.onboarding.OnboardingHost
+import com.seyedjafari.analogplus.phone.ui.onboarding.OnboardingScreen
+import com.seyedjafari.analogplus.phone.ui.onboarding.SendTip
 import com.seyedjafari.analogplus.phone.ui.send.SendScreen
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
 import com.seyedjafari.analogplus.phone.ui.send.gmsWatchStatusChecker
@@ -43,6 +47,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -50,6 +55,8 @@ import kotlinx.coroutines.withContext
 /** Lives across rotation: the design being edited, its store and the running send. */
 class AppModel(app: Application) : AndroidViewModel(app) {
     val store = Store(app)
+    // Decides first run vs existing user and stores it NOW, before the autosave of the default design below can make a new install look used.
+    val onboarding = OnboardingController(store)
     // the photo (up to 25 MB) is read in the background and attached below
     val state = EditorState(store.loadCurrentWithoutPhoto(), PhotoLoad.LOADING)
     /** A design from a tapped link, waiting for the user to confirm that it replaces the current one. */
@@ -122,13 +129,14 @@ internal fun dialogName(name: String, max: Int = 40, noName: String = NO_NAME): 
 class MainActivity : ComponentActivity() {
     private val model: AppModel by viewModels()
     private val watchChecker: WatchStatusChecker by lazy { gmsWatchStatusChecker(applicationContext) }
+    private val onboardingHost by lazy { OnboardingHost(model.onboarding) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (savedInstanceState == null) loadFromIntent(intent)
         setContent {
-            AppShell(model.state, model.store, model.send, watchChecker, model.pendingLinkDesign) {
+            AppShell(model.state, model.store, model.send, watchChecker, model.pendingLinkDesign, onboarding = onboardingHost) {
                 model.pendingLinkDesign = null
             }
         }
@@ -155,8 +163,12 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * The whole app: the four destinations under the bottom bar, and the "Load shared design?" dialog on top of whichever one
- * is showing. A link ([pendingLink]) never replaces the design on its own; both buttons call [onPendingLinkResolved].
+ * The whole app: first-run setup while it is active, otherwise the four destinations under the bottom bar; and the "Load shared
+ * design?" dialog on top of whichever one is showing (onboarding too). A link ([pendingLink]) never replaces the design on its own;
+ * both buttons call [onPendingLinkResolved]. [onboarding] null means no gate (previews, tests of the shell alone).
+ *
+ * The gate is a plain `if`: while setup is active the navigation (and its Back handler) is not composed at all, and once it is
+ * over, [OnboardingScreen] (which would show the first page for a finished state) is not composed either.
  */
 @Composable
 fun AppShell(
@@ -165,24 +177,47 @@ fun AppShell(
     send: SendController,
     watch: WatchStatusChecker,
     pendingLink: DesignSettings?,
+    onboarding: OnboardingHost? = null,
     onPendingLinkResolved: () -> Unit,
 ) {
-    val sendUi by send.state.collectAsState()
     AnalogTheme {
         // insets: edge-to-edge is enforced on Android 15, a camera cutout must not sit over the rail of a phone held sideways (the union is
         // the larger of the two on each side, so the status bar is not padded twice), and the keyboard must not cover the field being edited
         Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)).imePadding(), color = MaterialTheme.colorScheme.background) {
-            AppNav(content = { destination, navigateTo ->
-                when (destination) {
-                    Destination.DESIGN -> DesignScreen(state, onSend = { send.send(state.design); navigateTo(Destination.SEND) }, sendBusy = sendUi.isBusy)
-                    Destination.LIBRARY -> LibraryScreen(state, store)
-                    Destination.SEND -> SendScreen(state, send, watch)
-                    Destination.ACCOUNT -> AccountScreen()
-                }
-            })
+            if (onboarding == null) {
+                MainContent(state, store, send, watch, controller = null)
+            } else {
+                val current by onboarding.controller.state.collectAsState()
+                if (current.isActive) OnboardingScreen(onboarding.controller, onboarding.backupPage, state, watch)
+                else MainContent(state, store, send, watch, onboarding.controller)
+            }
         }
         pendingLink?.let { incoming ->
             LoadSharedDesignDialog(incoming, onLoad = { state.replace(incoming); onPendingLinkResolved() }, onKeep = onPendingLinkResolved)
         }
     }
+}
+
+/** What there is no tip to show for: no onboarding controller. */
+private val NO_TIP = MutableStateFlow(false)
+
+/** The four destinations; with a [controller], Design carries the one-time Send tip and Account the "Run setup again" card. */
+@Composable
+private fun MainContent(state: EditorState, store: Store, send: SendController, watch: WatchStatusChecker, controller: OnboardingController?) {
+    val sendUi by send.state.collectAsState()
+    val tip by (controller?.sendTipVisible ?: NO_TIP).collectAsState()
+    val runSetupAgain: (() -> Unit)? = controller?.let { c -> { c.restart() } }
+    AppNav(content = { destination, navigateTo ->
+        when (destination) {
+            Destination.DESIGN -> Column(Modifier.fillMaxSize()) {
+                if (tip && controller != null) {
+                    SendTip(onOpenSend = { controller.dismissTip(); navigateTo(Destination.SEND) }, onDismiss = controller::dismissTip)
+                }
+                DesignScreen(state, onSend = { send.send(state.design); navigateTo(Destination.SEND) }, sendBusy = sendUi.isBusy, modifier = Modifier.weight(1f))
+            }
+            Destination.LIBRARY -> LibraryScreen(state, store)
+            Destination.SEND -> SendScreen(state, send, watch)
+            Destination.ACCOUNT -> AccountScreen(onRunSetupAgain = runSetupAgain)
+        }
+    })
 }

@@ -25,6 +25,7 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class ColdStartTest {
+    @get:Rule val setupSkipped = SetupSkippedRule()
     @get:Rule val rule = createEmptyComposeRule()
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val field = Tags.field("minuteTickWidth")
