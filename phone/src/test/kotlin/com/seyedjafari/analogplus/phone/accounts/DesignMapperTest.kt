@@ -40,16 +40,33 @@ class DesignMapperTest {
         assertTrue(r is MappedDesign.TooLarge)
     }
 
-    @Test fun anUndecodablePhotoIsDroppedAndTheBackgroundFallsBackToSolid() {
-        val json = (designToRemoteJson(photoDesign, { null }) as MappedDesign.Ok).json
-        val back = designFromRemoteJson(json)!!
+    @Test fun anUndecodablePhotoIsReportedAsDroppedAndTheBackgroundFallsBackToSolid() {
+        val r = designToRemoteJson(photoDesign, { null })
+        assertTrue(r is MappedDesign.PhotoDropped)
+        val back = designFromRemoteJson((r as MappedDesign.PhotoDropped).json)!!
         assertNull(back.background.photoJpeg)
         assertEquals(BackgroundKind.SOLID, back.background.kind)
     }
 
     @Test fun aThrowingDownscalerIsTreatedLikeAnUndecodablePhoto() {
-        val json = (designToRemoteJson(photoDesign, { error("OOM-ish") }) as MappedDesign.Ok).json
-        assertNull(designFromRemoteJson(json)!!.background.photoJpeg)
+        val r = designToRemoteJson(photoDesign, { error("OOM-ish") })
+        assertTrue(r is MappedDesign.PhotoDropped)
+        assertNull(designFromRemoteJson((r as MappedDesign.PhotoDropped).json)!!.background.photoJpeg)
+    }
+
+    @Test fun aDesignWithoutAPhotoIsOkEvenWhenItsBackgroundKindIsPhoto() {
+        val d = DesignSettings(name = "NoBytes", background = BackgroundDesign(kind = BackgroundKind.PHOTO, photoJpeg = null))
+        assertTrue(designToRemoteJson(d, { error("nothing to shrink") }) is MappedDesign.Ok)
+    }
+
+    @Test fun aValidPhotoIsOkNotDropped() {
+        assertTrue(designToRemoteJson(photoDesign, { ByteArray(1_000) { 3 } }) is MappedDesign.Ok)
+    }
+
+    @Test fun aDroppedPhotoDoesNotHideAnOversizedDesign() {
+        // photo dropped, but the rest of the design is still too large: refusing it wins over pushing it
+        val huge = photoDesign.copy(name = "x".repeat(MAX_DESIGN_JSON_BYTES + 1))
+        assertTrue(designToRemoteJson(huge, { null }) is MappedDesign.TooLarge)
     }
 
     @Test fun damagedJsonReadsAsNullNotAnException() {

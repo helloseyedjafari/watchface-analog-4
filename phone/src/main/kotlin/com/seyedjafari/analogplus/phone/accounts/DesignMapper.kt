@@ -23,8 +23,15 @@ fun interface PhotoDownscaler {
     fun downscale(jpeg: ByteArray): ByteArray?
 }
 
+/** The outcome of mapping a design for the cloud. Never a silent loss: every way the cloud copy differs has its own case. */
 sealed interface MappedDesign {
+    /** The whole design, photo included if it has one. */
     data class Ok(val json: String) : MappedDesign
+
+    /** The design without its photo, which could not be shrunk (undecodable or the shrinker failed); the background is solid. The sync result must say so. */
+    data class PhotoDropped(val json: String) : MappedDesign
+
+    /** Too large for one document; nothing is pushed. */
     data class TooLarge(val bytes: Int) : MappedDesign
 }
 
@@ -40,10 +47,13 @@ fun designId(name: String): String {
 
 /**
  * The `design` string for Firestore. A photo is shrunk by [photos] and kept inline (no Cloud Storage); a photo that
- * cannot be decoded is dropped and the background falls back to a solid colour. Never throws.
+ * cannot be decoded is dropped and the background falls back to a solid colour, which is reported as
+ * [MappedDesign.PhotoDropped] so the caller can tell the user. A design too large for a document is [MappedDesign.TooLarge]
+ * whatever else happened. Never throws.
  */
 fun designToRemoteJson(design: DesignSettings, photos: PhotoDownscaler): MappedDesign {
     val photo = design.background.photoJpeg
+    var photoDropped = false
     val prepared = if (photo == null) {
         design
     } else {
@@ -51,13 +61,18 @@ fun designToRemoteJson(design: DesignSettings, photos: PhotoDownscaler): MappedD
         if (small != null) {
             design.copy(background = design.background.copy(photoJpeg = small))
         } else {
+            photoDropped = true
             val kind = if (design.background.kind == BackgroundKind.PHOTO) BackgroundKind.SOLID else design.background.kind
             design.copy(background = design.background.copy(photoJpeg = null, kind = kind))
         }
     }
     val json = DesignJson.toJson(prepared)
     val bytes = json.toByteArray(Charsets.UTF_8).size
-    return if (bytes <= MAX_DESIGN_JSON_BYTES) MappedDesign.Ok(json) else MappedDesign.TooLarge(bytes)
+    return when {
+        bytes > MAX_DESIGN_JSON_BYTES -> MappedDesign.TooLarge(bytes)
+        photoDropped -> MappedDesign.PhotoDropped(json)
+        else -> MappedDesign.Ok(json)
+    }
 }
 
 /** Reads a `design` string; null when it is damaged. Does not validate the design (the editor shows what is wrong). */
