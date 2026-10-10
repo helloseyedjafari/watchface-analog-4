@@ -209,6 +209,26 @@ class SyncEngineTest {
         assertEquals("b", remote.currentWrites.last().deviceId)
     }
 
+    /** Fix round item 5: the editor's design while its photo is still loading must never reach the cloud. */
+    @Test fun aDesignWhosePhotoIsStillLoadingIsNotPushedNotByKeepMineNorByAnAutosave() = runTest {
+        val remote = FakeRemoteStore()
+        remote.seedCurrent("u1", RemoteCurrent(DesignJson.toJson(night), 2_000_000, "other", "Pixel 8"))
+        val loading = DesignSettings(accent = "#FF123456", background = BackgroundDesign(kind = BackgroundKind.PHOTO, photoJpeg = null))
+        val b = phone(remote, "b"); b.current = loading
+        b.engine.start("u1"); runCurrent()
+        b.engine.resolveOffer(OfferChoice.KEEP_MINE)
+        b.engine.onCurrentSaved(loading, ChangeOrigin.USER)
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(0, remote.currentWrites.size)
+        assertNull(b.engine.currentOffer.value)
+        // the photo has loaded: the next complete autosave goes through
+        val loaded = loading.copy(background = loading.background.copy(photoJpeg = ByteArray(10) { 1 }))
+        b.current = loaded
+        b.engine.onCurrentSaved(loaded, ChangeOrigin.USER)
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(loaded, DesignJson.fromJson(remote.currentWrites.single().designJson))
+    }
+
     @Test fun anEditIsPushedOnceAfterTheDebounceNotOnEveryKeystroke() = runTest {
         val remote = FakeRemoteStore()
         val a = phone(remote, "a")

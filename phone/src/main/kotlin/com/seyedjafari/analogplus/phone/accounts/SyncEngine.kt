@@ -1,5 +1,6 @@
 package com.seyedjafari.analogplus.phone.accounts
 
+import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.ChangeOrigin
 import com.seyedjafari.analogplus.phone.SavedChange
@@ -34,6 +35,10 @@ import kotlinx.coroutines.withTimeout
  *
  * Why the journal and not Firestore's offline queue: the phone must remember offline edits and deletions across app
  * restarts, and the journal does, so the Firestore client uses a memory cache only (see `FirebaseProvider`).
+ *
+ * [currentDesign] is the design in the editor and must be the COMPLETE one: photo bytes present. While the editor is still
+ * loading the photo it reports `kind = PHOTO` without bytes; the engine never pushes such a design (it would take the photo
+ * away from the other devices) and waits for the complete autosave. It is read from any thread, so it must be thread-safe.
  *
  * Threads: [io] runs everything blocking, that is the store and journal (SharedPreferences commits, photo file) and the
  * bitmap decoding and encoding behind [photos] and [designToRemoteJson]. Nothing here touches them on the caller's
@@ -215,7 +220,8 @@ class SyncEngine(
             OfferChoice.USE_REMOTE -> { lastPushedCurrent = offer.design; applier.apply(offer.design) }
             OfferChoice.KEEP_MINE -> {
                 lastPushedCurrent = null
-                pendingCurrent.set(currentDesign())
+                val mine = currentDesign()
+                if (!mine.photoStillLoading()) pendingCurrent.set(mine)   // else the next complete autosave pushes it
                 trigger?.trySend(Unit)
             }
         }
@@ -394,6 +400,12 @@ class SyncEngine(
         }
     }
 
+    /**
+     * While the editor's photo is being read from disk its design says `PHOTO` and has no bytes yet. Pushed, that would make
+     * the other devices lose their photo; the complete design arrives with the autosave that follows the load.
+     */
+    private fun DesignSettings.photoStillLoading() = background.kind == BackgroundKind.PHOTO && background.photoJpeg == null
+
     private fun isEmptyDevice(): Boolean = store.savedDesigns().isEmpty() && currentDesign() == DesignSettings()
 
     private fun notePhoto(key: String, mapped: MappedDesign) {
@@ -405,6 +417,7 @@ class SyncEngine(
     /** Pushes the design being edited if it changed. A failed push puts it back, so the next pass tries again. */
     private suspend fun pushCurrentIfNeeded(uid: String): Problem? {
         val d = pendingCurrent.getAndSet(null) ?: return null
+        if (d.photoStillLoading()) return null
         if (d == lastPushedCurrent) return null
         val mapped = withContext(io) { designToRemoteJson(d, photos) }
         val json = mapped.remoteJson ?: return Problem(SyncProblem.CURRENT_TOO_LARGE)
