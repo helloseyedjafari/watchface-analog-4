@@ -6,6 +6,7 @@ import com.seyedjafari.analogplus.phone.SavedChange
 import com.seyedjafari.analogplus.phone.Store
 import com.seyedjafari.analogplus.phone.StoreObserver
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -40,6 +41,11 @@ import kotlinx.coroutines.withTimeout
  * device" question. [copySuffix] is the text added to the name of this phone's copy when two designs with the same name
  * differ (a string resource, resolved by the caller). A cloud call that gets no answer for [callTimeoutMs] counts as
  * offline.
+ *
+ * Retrying: a failed pass or a dead listener asks for one retry after [retryMs] doubled for every failure in a row, up to
+ * [maxRetryMs], each wait randomised by [random] (0 to 1: the wait is 50% to 100% of the backoff) so that phones do not
+ * retry in step. A success or a local edit starts the backoff over. [setForeground]: in the background no listener runs
+ * and nothing is retried; edits still get their (debounced) pass.
  */
 class SyncEngine(
     private val store: Store,
@@ -56,7 +62,9 @@ class SyncEngine(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val debounceMs: Long = 1_000,
     private val retryMs: Long = 30_000,
+    private val maxRetryMs: Long = 300_000,
     private val callTimeoutMs: Long = 20_000,
+    private val random: () -> Double = { Math.random() },
 ) : CloudSync, StoreObserver {
 
     private val _status = MutableStateFlow<SyncStatus>(SyncStatus.Off)
@@ -67,10 +75,16 @@ class SyncEngine(
     private val passLock = Mutex()
     private val currentLock = Mutex()
     private val retryLock = Any()
+    private val watchLock = Any()
 
     @Volatile private var uid: String? = null
     private var session: Job? = null
     private var retryJob: Job? = null
+    private val watchJobs = HashMap<Watch, Job>()
+    private val attempt = AtomicInteger()
+
+    /** Two genuine states: the app is in front of the user or it is not. */
+    @Volatile private var foreground = true
     @Volatile private var trigger: Channel<Unit>? = null
     @Volatile private var bound: CompletableDeferred<Unit>? = null
     private val pendingCurrent = AtomicReference<DesignSettings?>(null)
@@ -108,14 +122,13 @@ class SyncEngine(
             ready.complete(Unit)
             runPass(uid)
             guarded(uid) { onRemoteCurrent(uid, call { remote.getCurrent(uid) }) }
+            ensureListeners()
             launch {
                 for (t in channel) {
                     do { delay(debounceMs) } while (channel.tryReceive().isSuccess)   // waits until edits stop for debounceMs
                     runPass(uid)
                 }
             }
-            launch { keepRunning(uid) { remote.observeDesigns(uid).collect { list -> onRemoteDesigns(uid, list) } } }
-            launch { keepRunning(uid) { remote.observeCurrent(uid).collect { rc -> guarded(uid) { onRemoteCurrent(uid, rc) } } } }
         }
         session = job
         job.start()
@@ -124,7 +137,9 @@ class SyncEngine(
     override fun stop() {
         session?.cancel()
         session = null
-        synchronized(retryLock) { retryJob?.cancel(); retryJob = null }
+        cancelRetry()
+        cancelListeners()
+        attempt.set(0)
         trigger?.close()
         trigger = null
         uid = null
@@ -162,14 +177,35 @@ class SyncEngine(
         }
     }
 
+    override fun setForeground(foreground: Boolean) {
+        if (this.foreground == foreground) return
+        this.foreground = foreground
+        if (!foreground) {
+            cancelListeners()
+            cancelRetry()
+        } else if (uid != null) {
+            attempt.set(0)
+            recover()
+        }
+    }
+
     override fun onSavedDesignChanged(change: SavedChange, origin: ChangeOrigin) {
-        if (origin == ChangeOrigin.USER) trigger?.trySend(Unit)
+        if (origin != ChangeOrigin.USER) return
+        editMade()
+        trigger?.trySend(Unit)
     }
 
     override fun onCurrentSaved(design: DesignSettings, origin: ChangeOrigin) {
         if (origin != ChangeOrigin.USER || uid == null) return
         pendingCurrent.set(design)
+        editMade()
         trigger?.trySend(Unit)
+    }
+
+    /** The user changed something: whatever the network did before, try at once (after the debounce) and start the backoff over. */
+    private fun editMade() {
+        attempt.set(0)
+        cancelRetry()
     }
 
     override fun resolveOffer(choice: OfferChoice) {
@@ -419,10 +455,15 @@ class SyncEngine(
         if (uid == id) _status.value = s   // a pass that outlives a sign-out must not bring the status back
     }
 
-    private fun finish(id: String, problem: Problem?) = setStatus(
-        id,
-        if (problem != null) SyncStatus.Error(problem.kind, problem.count, problem.detail) else SyncStatus.Idle(clock(), withoutPhoto.size),
-    )
+    private fun finish(id: String, problem: Problem?) {
+        if (problem != null) {
+            setStatus(id, SyncStatus.Error(problem.kind, problem.count, problem.detail))
+        } else {
+            setStatus(id, SyncStatus.Idle(clock(), withoutPhoto.size))
+            attempt.set(0)
+            ensureListeners()   // a pass that got through means the network is back: bring up listeners that are down ("Sync now" is such a pass)
+        }
+    }
 
     /** A cloud call; no answer for [callTimeoutMs] is [RemoteErrorKind.OFFLINE] (the retry then asks again). */
     private suspend fun <T> call(block: suspend () -> T): T = try {
@@ -431,60 +472,92 @@ class SyncEngine(
         throw RemoteException(RemoteErrorKind.OFFLINE, "The cloud did not answer", e)
     }
 
-    /** Shows a failure in [status]. Returns true when it is the kind that can go away by itself (offline, or a sign-in token that refreshes). */
-    private fun report(id: String, e: RemoteException): Boolean {
-        when (e.kind) {
-            RemoteErrorKind.OFFLINE -> setStatus(id, SyncStatus.Offline)
-            RemoteErrorKind.AUTH -> setStatus(id, SyncStatus.Error(SyncProblem.SIGN_IN_NEEDED))
-            RemoteErrorKind.PERMISSION -> setStatus(id, SyncStatus.Error(SyncProblem.REFUSED))
-            RemoteErrorKind.QUOTA -> setStatus(id, SyncStatus.Error(SyncProblem.QUOTA))
-            RemoteErrorKind.OTHER -> setStatus(id, SyncStatus.Error(SyncProblem.FAILED, detail = e.message.orEmpty()))
-        }
-        return e.kind == RemoteErrorKind.OFFLINE || e.kind == RemoteErrorKind.AUTH
+    private fun statusOf(e: RemoteException): SyncStatus = when (e.kind) {
+        RemoteErrorKind.OFFLINE -> SyncStatus.Offline
+        RemoteErrorKind.AUTH -> SyncStatus.Error(SyncProblem.SIGN_IN_NEEDED)
+        RemoteErrorKind.PERMISSION -> SyncStatus.Error(SyncProblem.REFUSED)
+        RemoteErrorKind.QUOTA -> SyncStatus.Error(SyncProblem.QUOTA)
+        RemoteErrorKind.OTHER -> SyncStatus.Error(SyncProblem.FAILED, detail = e.message.orEmpty())
     }
 
-    /** Runs [block], turning failures into [status]; an offline failure schedules one retry. */
+    /** Runs [block], turning failures into [status]; an offline or sign-in failure schedules one retry. */
     private suspend fun guarded(id: String, block: suspend () -> Unit) {
         try {
             block()
         } catch (e: CancellationException) {
             throw e
         } catch (e: RemoteException) {
-            if (report(id, e)) scheduleRetry()
+            setStatus(id, statusOf(e))
+            if (e.kind == RemoteErrorKind.OFFLINE || e.kind == RemoteErrorKind.AUTH) scheduleRetry()
         } catch (e: Exception) {
             setStatus(id, SyncStatus.Error(SyncProblem.FAILED, detail = e.message ?: e.javaClass.simpleName))
         }
     }
 
-    /** Asks for one more pass after [retryMs]; a pass already waiting is enough. */
+    // ---- retry and listeners ------------------------------------------------------------------------------------
+
+    private enum class Watch { DESIGNS, CURRENT }
+
+    /** Asks for one more pass after the backoff; a retry already waiting is enough. Nothing is retried in the background. */
     private fun scheduleRetry() {
-        val channel = trigger ?: return
+        if (!foreground) return
+        val parent = session ?: return
         synchronized(retryLock) {
             if (retryJob?.isActive == true) return
-            retryJob = scope.launch { delay(retryMs); channel.trySend(Unit) }
+            val wait = nextRetryDelay()
+            retryJob = scope.launch(parent) { delay(wait); recover() }
         }
     }
 
-    /**
-     * Collects a listener. When the network drops it reports that, waits [retryMs], asks for a full pass (which sets the
-     * status right again) and listens again. A refusal ends the listener: it does not fix itself, and the next sign-in or
-     * "Sync now" starts over.
-     */
-    private suspend fun keepRunning(id: String, listen: suspend () -> Unit) {
-        while (uid == id) {
-            try {
-                listen()
-                return
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: RemoteException) {
-                if (!report(id, e)) return
-            } catch (e: Exception) {
-                setStatus(id, SyncStatus.Error(SyncProblem.FAILED, detail = e.message ?: e.javaClass.simpleName))
-                return
+    private fun nextRetryDelay(): Long {
+        val doublings = attempt.getAndIncrement().coerceAtMost(20)
+        val backoff = minOf(maxRetryMs, retryMs shl doublings)
+        return (backoff * (0.5 + 0.5 * random())).toLong()
+    }
+
+    private fun cancelRetry() = synchronized(retryLock) { retryJob?.cancel(); retryJob = null }
+
+    /** Brings back whatever is down: the listeners, and one full pass (after the debounce). */
+    private fun recover() {
+        ensureListeners()
+        trigger?.trySend(Unit)
+    }
+
+    /** Starts every listener that is not running (never started, ended with an error, or cancelled in the background). */
+    private fun ensureListeners() {
+        if (!foreground) return
+        val id = uid ?: return
+        val parent = session ?: return
+        synchronized(watchLock) {
+            for (which in Watch.values()) {
+                if (watchJobs[which]?.isActive != true) watchJobs[which] = scope.launch(parent) { listen(id, which) }
             }
-            delay(retryMs)
-            trigger?.trySend(Unit)
+        }
+    }
+
+    private fun cancelListeners() = synchronized(watchLock) {
+        watchJobs.values.forEach { it.cancel() }
+        watchJobs.clear()
+    }
+
+    /**
+     * One listener. When it fails it reports that and, unless the cloud refused (PERMISSION: that does not fix itself),
+     * asks for a retry, which restarts it. "Sync now" ([syncNow]) also restarts a listener that is down.
+     */
+    private suspend fun listen(id: String, which: Watch) {
+        try {
+            when (which) {
+                Watch.DESIGNS -> remote.observeDesigns(id).collect { onRemoteDesigns(id, it) }
+                Watch.CURRENT -> remote.observeCurrent(id).collect { rc -> guarded(id) { onRemoteCurrent(id, rc) } }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: RemoteException) {
+            setStatus(id, statusOf(e))
+            if (e.kind != RemoteErrorKind.PERMISSION) scheduleRetry()
+        } catch (e: Exception) {
+            setStatus(id, SyncStatus.Error(SyncProblem.FAILED, detail = e.message ?: e.javaClass.simpleName))
+            scheduleRetry()
         }
     }
 

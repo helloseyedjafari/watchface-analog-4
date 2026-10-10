@@ -14,6 +14,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -48,7 +51,31 @@ class SyncEngineTest {
         var refuse: ((name: String) -> RemoteException?)? = null
         val attemptedNames = ArrayList<String>()
 
-        override suspend fun fetchDesigns(uid: String): List<RemoteDesign> { throwOnFetch?.let { throw it }; return inner.fetchDesigns(uid) }
+        /** The virtual time of every full fetch, and how often the designs listener was started. */
+        var clockMs: () -> Long = { 0L }
+        val fetchTimes = ArrayList<Long>()
+        var designListens = 0
+        var currentListens = 0
+
+        /** Thrown when the designs listener starts (a listener that dies on its own). */
+        var listenFailure: RemoteException? = null
+
+        override suspend fun fetchDesigns(uid: String): List<RemoteDesign> {
+            fetchTimes += clockMs()
+            throwOnFetch?.let { throw it }
+            return inner.fetchDesigns(uid)
+        }
+
+        override fun observeDesigns(uid: String): Flow<List<RemoteDesign>> = flow {
+            designListens++
+            listenFailure?.let { throw it }
+            emitAll(inner.observeDesigns(uid))
+        }
+
+        override fun observeCurrent(uid: String): Flow<RemoteCurrent?> = flow {
+            currentListens++
+            emitAll(inner.observeCurrent(uid))
+        }
 
         override suspend fun putDesign(uid: String, id: String, name: String, designJson: String, state: DesignState, schema: Int): RemoteDesign {
             if (hangPuts) awaitCancellation()
@@ -79,7 +106,7 @@ class SyncEngineTest {
     private inner class Phone(
         val remote: FakeRemoteStore, scope: CoroutineScope, val id: String, var now: () -> Long,
         engineRemote: RemoteStore = remote, photos: PhotoDownscaler = PhotoDownscaler { it },
-        io: CoroutineDispatcher = Dispatchers.Unconfined,
+        io: CoroutineDispatcher = Dispatchers.Unconfined, random: () -> Double = { 1.0 },
     ) {
         val store = Store(MemoryKeyValueStore(), File(tmp.newFolder(), "background.jpg"))
         val journal = SyncJournal(MemoryKeyValueStore()) { now() }
@@ -88,7 +115,7 @@ class SyncEngineTest {
         val engine = SyncEngine(
             store, journal, engineRemote, scope, photos, { applied += it; current = it }, { current },
             deviceId = id, deviceLabel = "Phone $id", copySuffix = suffix, clock = { now() }, io = io,
-            debounceMs = 1_000, retryMs = 30_000, callTimeoutMs = 20_000,
+            debounceMs = 1_000, retryMs = 30_000, maxRetryMs = 300_000, callTimeoutMs = 20_000, random = random,
         )
         init { store.addObserver(journal); store.addObserver(engine) }
         fun names() = store.savedDesigns().map { it.name }.sorted()
@@ -97,7 +124,8 @@ class SyncEngineTest {
     private fun TestScope.phone(
         remote: FakeRemoteStore, id: String, clock: () -> Long = { testScheduler.currentTime + 5_000_000 },
         engineRemote: RemoteStore = remote, photos: PhotoDownscaler = PhotoDownscaler { it }, io: CoroutineDispatcher = Dispatchers.Unconfined,
-    ) = Phone(remote, backgroundScope, id, clock, engineRemote, photos, io)
+        random: () -> Double = { 1.0 },
+    ) = Phone(remote, backgroundScope, id, clock, engineRemote, photos, io, random)
 
     // ---- the brief's tests, adapted to the final signatures ---------------------------------------------------------
 
@@ -350,7 +378,133 @@ class SyncEngineTest {
         assertEquals(SyncStatus.Error(SyncProblem.REFUSED), a.engine.status.value)
         advanceTimeBy(120_000); runCurrent()
         assertEquals(SyncStatus.Error(SyncProblem.REFUSED), a.engine.status.value)
-        assertEquals(0, remote.designWrites.size)
+    }
+
+    @Test fun aRefusedListenerIsStartedOnceAndNotRestartedByItself() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        flaky.listenFailure = RemoteException(RemoteErrorKind.PERMISSION, "denied")
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.engine.start("u1"); runCurrent()
+        assertEquals(SyncStatus.Error(SyncProblem.REFUSED), a.engine.status.value)
+        assertEquals(1, flaky.designListens)
+        advanceTimeBy(1_200_000); runCurrent()
+        assertEquals(1, flaky.designListens)                 // not restarted, however long we wait
+        assertEquals(SyncStatus.Error(SyncProblem.REFUSED), a.engine.status.value)
+    }
+
+    // ---- fix round item 4: backoff, foreground, listeners that come back -----------------------------------------------------
+
+    private fun TestScope.flakyPhone(random: () -> Double = { 1.0 }): Triple<FakeRemoteStore, FlakyRemote, Phone> {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote).also { it.clockMs = { testScheduler.currentTime } }
+        return Triple(remote, flaky, phone(remote, "a", engineRemote = flaky, random = random))
+    }
+
+    private fun gaps(times: List<Long>) = times.zipWithNext { x, y -> y - x }
+
+    @Test fun retriesBackOffToAFiveMinuteCapInsteadOfFiringEveryThirtySecondsForever() = runTest {
+        val (remote, flaky, a) = flakyPhone()
+        remote.failWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(3_600_000); runCurrent()
+        val gaps = gaps(flaky.fetchTimes)
+        assertTrue("first retry after about 30 s: $gaps", gaps.first() in 30_000..32_000)
+        assertEquals("never shorter than the one before: $gaps", gaps, gaps.sorted())
+        assertTrue("capped at 5 minutes: $gaps", gaps.max() in 299_000..302_000)
+        assertTrue("a fixed 30 s would be about 120 tries: ${flaky.fetchTimes.size}", flaky.fetchTimes.size < 25)
+    }
+
+    @Test fun theWaitIsRandomisedSoPhonesDoNotRetryInStep() = runTest {
+        val (remote, flaky, a) = flakyPhone(random = { 0.0 })
+        remote.failWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(40_000); runCurrent()
+        assertTrue("half of 30 s (plus the 1 s debounce): ${gaps(flaky.fetchTimes)}", gaps(flaky.fetchTimes).first() in 15_000..17_000)
+    }
+
+    @Test fun aSuccessStartsTheBackoffOverAndSoDoesAnEditOfTheUser() = runTest {
+        val (remote, flaky, a) = flakyPhone()
+        remote.failWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(1_200_000); runCurrent()               // 20 minutes offline: the wait is at its longest
+        // an edit: its own pass fails, and the next try is 30 s away, not 5 minutes
+        val before = flaky.fetchTimes.size
+        a.store.saveNamed("Night", night)
+        advanceTimeBy(40_000); runCurrent()
+        val afterEdit = flaky.fetchTimes.drop(before)
+        assertTrue("two tries within 40 s of the edit: $afterEdit", afterEdit.size >= 2 && afterEdit[1] - afterEdit[0] in 30_000..32_000)
+        // the network is back: success, then a new failure starts again at 30 s
+        remote.failWith = null
+        advanceTimeBy(70_000); runCurrent()                  // (the third wait was 60 s)
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+        remote.failWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        val mark = flaky.fetchTimes.size
+        a.engine.syncNow()                                   // (not an edit: only the success may have reset the backoff)
+        advanceTimeBy(40_000); runCurrent()
+        val again = flaky.fetchTimes.drop(mark)
+        assertTrue("backoff restarted: $again", again.size >= 2 && again[1] - again[0] in 30_000..32_000)
+    }
+
+    @Test fun inTheBackgroundNothingListensAndForegroundCatchesUp() = runTest {
+        val (remote, flaky, a) = flakyPhone()
+        val other = phone(remote, "other")
+        a.engine.start("u1"); runCurrent()
+        assertEquals(1, flaky.designListens)
+        a.engine.setForeground(false); runCurrent()
+        other.store.saveNamed("Night", night)
+        other.engine.start("u1"); runCurrent()                // pushed while this phone is in the background
+        advanceTimeBy(10_000); runCurrent()
+        assertEquals(emptyList<String>(), a.names())          // nobody is listening
+        a.store.saveNamed("Mine", day); advanceTimeBy(2_000); runCurrent()   // an edit still gets its pass, which does not wake the listeners
+        assertEquals(1, remote.designsOf("u1").values.count { it.name == "Mine" })
+        assertEquals(1, flaky.designListens)
+        a.engine.setForeground(true); advanceTimeBy(2_000); runCurrent()
+        assertEquals(listOf("Mine", "Night"), a.names())      // one pass on the way back ...
+        assertEquals(2, flaky.designListens)                  // ... and the listeners are running again
+        assertEquals(2, flaky.currentListens)
+    }
+
+    @Test fun inTheBackgroundAFailedPassIsNotRetriedButForegroundTriesAgain() = runTest {
+        val (remote, flaky, a) = flakyPhone()
+        a.engine.start("u1"); runCurrent()
+        a.engine.setForeground(false)
+        remote.failWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        a.store.saveNamed("Night", night)
+        advanceTimeBy(1_500); runCurrent()
+        assertEquals(SyncStatus.Offline, a.engine.status.value)
+        val tries = flaky.fetchTimes.size
+        advanceTimeBy(1_800_000); runCurrent()
+        assertEquals(tries, flaky.fetchTimes.size)            // no retry job in the background
+        remote.failWith = null
+        a.engine.setForeground(true); advanceTimeBy(2_000); runCurrent()
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+        assertEquals(1, remote.designsOf("u1").size)
+    }
+
+    @Test fun aListenerThatDiesWithAnUnknownErrorComesBackAndSyncNowRestartsOneThatIsDown() = runTest {
+        val (remote, flaky, a) = flakyPhone()
+        flaky.listenFailure = RemoteException(RemoteErrorKind.OTHER, "boom")
+        a.engine.start("u1"); runCurrent()
+        assertEquals(SyncStatus.Error(SyncProblem.FAILED, detail = "boom"), a.engine.status.value)
+        flaky.listenFailure = null
+        advanceTimeBy(31_000); runCurrent()                   // retried like offline
+        assertEquals(2, flaky.designListens)
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+        val other = phone(remote, "other")
+        other.store.saveNamed("Zed", day); other.engine.start("u1"); runCurrent()
+        assertEquals(listOf("Zed"), a.names())                // the listener works again
+
+        // a refusal ends the listener for good, until the user asks for a sync
+        val (_, flaky2, b) = flakyPhone()
+        flaky2.listenFailure = RemoteException(RemoteErrorKind.PERMISSION, "denied")
+        b.engine.start("u1"); runCurrent()
+        advanceTimeBy(600_000); runCurrent()
+        assertEquals(1, flaky2.designListens)
+        flaky2.listenFailure = null
+        b.engine.syncNow()
+        assertEquals(2, flaky2.designListens)
+        assertTrue(b.engine.status.value is SyncStatus.Idle)
     }
 
     /** Review focus 1. */

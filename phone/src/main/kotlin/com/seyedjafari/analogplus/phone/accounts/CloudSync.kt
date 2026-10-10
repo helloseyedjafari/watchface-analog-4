@@ -80,6 +80,14 @@ interface CloudSync {
     suspend fun syncNow()
 
     fun resolveOffer(choice: OfferChoice)
+
+    /**
+     * Tells the sync whether the app is in front of the user. In the background the listeners and the retries stop (the
+     * spec listens only in the foreground; a phone must not wake itself every few minutes); edits still get their
+     * debounced pass. Back in the foreground the listeners restart and one pass runs. Starts as `true`.
+     * Wiring (Task 12): `true` in the activity's `onStart`, `false` in `onStop`.
+     */
+    fun setForeground(foreground: Boolean)
 }
 
 /** Used when there is no cloud: always [SyncStatus.Off]. */
@@ -90,4 +98,5 @@ class NoCloudSync : CloudSync {
     override fun stop() {}
     override suspend fun syncNow() {}
     override fun resolveOffer(choice: OfferChoice) {}
+    override fun setForeground(foreground: Boolean) {}
 }
