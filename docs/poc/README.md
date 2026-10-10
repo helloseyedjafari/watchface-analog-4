@@ -55,7 +55,7 @@ Screenshots of every destination (light and dark, font scale 1.0 and 2.0) are in
 (`<destination>-<theme>-<scale>.png`). Onboarding is in `onboarding-<page>-<theme>-<portrait|landscape>[-2x].png` (rendered
 by an instrumented test in a 360x800 / 800x360 window; those show five steps because the test turns the fifth page on, and
 the pair page shows a ready watch) plus real-app captures on the emulator: `onboarding-pair-nowatch-*` (no watch, "Could not
-check") and `onboarding-welcome-real-dark-landscape.png`.
+check"; the light landscape ones show Check again in view and, at font scale 2, the fade where the page continues) and `onboarding-welcome-real-dark-landscape.png`.
 
 **First run (onboarding).** A new install shows a short paged flow before the app: welcome, connect your watch, the
 one-time permission explained and a starting template. A fifth page, optional sign-in, appears only once accounts ship
