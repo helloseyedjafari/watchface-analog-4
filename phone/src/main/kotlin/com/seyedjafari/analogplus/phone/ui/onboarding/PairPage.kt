@@ -105,9 +105,12 @@ fun PairPage(
                 modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }.testTag(Tags.PAIR_ADVICE),
             )
         }
-        Text(
-            stringResource(OnboardingText.PAIR_NO_WATCH_YET), style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
-        )
+        // "no watch yet? ..." is for a user without one: it would contradict "Your watch is ready."
+        if (step != PairStep.ALL_READY) {
+            Text(
+                stringResource(OnboardingText.PAIR_NO_WATCH_YET), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+            )
+        }
     }
 }

@@ -77,6 +77,23 @@ class PairPageTest {
         assertEquals(ready, reported)
     }
 
+    @Test fun theNoWatchYetLineIsHiddenWhenTheWatchIsReadyAndShownOtherwise() {
+        val line = "No watch yet? You can still design faces now and send one later."
+        show(ControllableWatch(ready))
+        rule.waitForTag(Tags.PAIR_ADVICE)
+        rule.onNodeWithText(line).assertDoesNotExist()
+    }
+
+    private fun noWatchYetLineIsShownFor(status: WatchStatus) {
+        show(ControllableWatch(status))
+        rule.waitForTag(Tags.PAIR_ADVICE)
+        rule.onNodeWithText("No watch yet? You can still design faces now and send one later.").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun theNoWatchYetLineIsShownWithoutAWatch() = noWatchYetLineIsShownFor(noWatch)
+    @Test fun theNoWatchYetLineIsShownWithoutTheWatchApp() = noWatchYetLineIsShownFor(noApp)
+    @Test fun theNoWatchYetLineIsShownWhenTheCheckCouldNotRead() = noWatchYetLineIsShownFor(unknown)
+
     @Test fun noWatchShowsTheExactNextStep() {
         show(ControllableWatch(noWatch))
         rule.waitForTag(Tags.PAIR_ADVICE)
