@@ -47,6 +47,8 @@ android {
 // not on the test classpath, so without these inputs Gradle would call the tests up to date after an edit to them.
 tasks.withType<Test>().configureEach {
     inputs.dir("src/main/kotlin").withPropertyName("mainSourcesRead")
+    inputs.dir("src/debug/kotlin").withPropertyName("debugSourcesRead")
+    inputs.dir("src/release/kotlin").withPropertyName("releaseSourcesRead")
     inputs.dir("src/main/res/values").withPropertyName("stringsRead")
 }
 
