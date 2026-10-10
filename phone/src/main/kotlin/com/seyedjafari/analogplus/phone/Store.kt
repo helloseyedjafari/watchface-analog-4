@@ -8,6 +8,7 @@ import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import java.io.File
 import java.io.IOException
 import java.time.Instant
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -42,6 +43,25 @@ class VersionCounterException(cause: Throwable) : RuntimeException(
 
 data class SavedDesign(val name: String, val design: DesignSettings)
 
+/** Who made a change: the user in this app, or the sync engine applying something that came from the cloud. */
+enum class ChangeOrigin { USER, SYNC }
+
+/** What happened to the named designs. */
+sealed interface SavedChange {
+    data class Saved(val name: String) : SavedChange
+    data class Deleted(val name: String) : SavedChange
+    data class Renamed(val oldName: String, val newName: String) : SavedChange
+}
+
+/**
+ * Hears about changes after they are stored. Called on the thread that made the change, outside [Store]'s lock, so an
+ * observer may call back into the store. An observer that throws is ignored. Nothing here knows about any cloud.
+ */
+interface StoreObserver {
+    fun onSavedDesignChanged(change: SavedChange, origin: ChangeOrigin) {}
+    fun onCurrentSaved(design: DesignSettings, origin: ChangeOrigin) {}
+}
+
 /**
  * Persistence for the editor: the current design, named designs and the face version counter.
  *
@@ -60,6 +80,16 @@ class Store(
         clock,
     )
 
+    private val observers = CopyOnWriteArrayList<StoreObserver>()
+
+    fun addObserver(observer: StoreObserver) { observers.add(observer) }
+
+    fun removeObserver(observer: StoreObserver) { observers.remove(observer) }
+
+    private fun notifyObservers(call: (StoreObserver) -> Unit) {
+        for (o in observers) try { call(o) } catch (e: Exception) { /* a faulty observer must not break saving */ }
+    }
+
     private var lastPhotoWritten: ByteArray? = null
 
     /** True between [loadCurrentWithoutPhoto] and [finishPhotoLoad]: the photo file exists but is not in memory yet. */
@@ -67,13 +97,22 @@ class Store(
 
     // ---- current design -----------------------------------------------------------------------------------
 
-    fun saveCurrent(d: DesignSettings) = synchronized(LOCK) {
+    fun saveCurrent(d: DesignSettings, origin: ChangeOrigin = ChangeOrigin.USER) {
+        val complete = synchronized(LOCK) { saveCurrentLocked(d) }
+        // A design saved while its stored photo is still being read lacks that photo: observers must not mistake it for the real one.
+        if (complete) notifyObservers { it.onCurrentSaved(d, origin) }
+    }
+
+    /** Returns false when [d] was saved without its photo only because the stored photo has not been loaded yet. */
+    private fun saveCurrentLocked(d: DesignSettings): Boolean {
         // While the stored photo is still being read, a design without photo must not delete it.
-        if (!(photoPending && d.background.photoJpeg == null)) {
+        val photoStillLoading = photoPending && d.background.photoJpeg == null
+        if (!photoStillLoading) {
             if (d.background.photoJpeg != null) photoPending = false
             savePhoto(d.background.photoJpeg)
         }
         kv.putString(KEY_CURRENT, DesignJson.toJson(withoutPhoto(d)))
+        return !photoStillLoading
     }
 
     /** The saved design with its photo (reads the photo file: do not call on the main thread). */
@@ -138,27 +177,36 @@ class Store(
     }
 
     /** Saves [d] under [name] (the photo is not saved). An existing design with that name is replaced. */
-    fun saveNamed(name: String, d: DesignSettings) = synchronized(LOCK) {
+    fun saveNamed(name: String, d: DesignSettings, origin: ChangeOrigin = ChangeOrigin.USER) {
         val clean = name.trim()
         require(clean.isNotEmpty()) { "Give the design a name" }
-        val all = LinkedHashMap(readSaved())
-        all[clean] = DesignJson.toJson(withoutPhoto(d))
-        writeSaved(all)
+        synchronized(LOCK) {
+            val all = LinkedHashMap(readSaved())
+            all[clean] = DesignJson.toJson(withoutPhoto(d))
+            writeSaved(all)
+        }
+        notifyObservers { it.onSavedDesignChanged(SavedChange.Saved(clean), origin) }
     }
 
-    fun deleteNamed(name: String) = synchronized(LOCK) {
-        val all = LinkedHashMap(readSaved())
-        if (all.remove(name) != null) writeSaved(all)
+    fun deleteNamed(name: String, origin: ChangeOrigin = ChangeOrigin.USER) {
+        val removed = synchronized(LOCK) {
+            val all = LinkedHashMap(readSaved())
+            (all.remove(name) != null).also { if (it) writeSaved(all) }
+        }
+        if (removed) notifyObservers { it.onSavedDesignChanged(SavedChange.Deleted(name), origin) }
     }
 
     /** Throws [IllegalArgumentException] when [old] does not exist, [new] is blank or already taken. */
-    fun renameNamed(old: String, new: String) = synchronized(LOCK) {
+    fun renameNamed(old: String, new: String) {
         val clean = new.trim()
         require(clean.isNotEmpty()) { "Give the design a name" }
-        val all = readSaved()
-        require(old in all) { "No saved design called '$old'" }
-        require(clean == old || clean !in all) { "A design called '$clean' already exists" }
-        if (clean != old) writeSaved(all.entries.associate { (k, v) -> (if (k == old) clean else k) to v })
+        val changed = synchronized(LOCK) {
+            val all = readSaved()
+            require(old in all) { "No saved design called '$old'" }
+            require(clean == old || clean !in all) { "A design called '$clean' already exists" }
+            (clean != old).also { if (it) writeSaved(all.entries.associate { (k, v) -> (if (k == old) clean else k) to v }) }
+        }
+        if (changed) notifyObservers { it.onSavedDesignChanged(SavedChange.Renamed(old, clean), ChangeOrigin.USER) }
     }
 
     private fun readSaved(): Map<String, String> {
