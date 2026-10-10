@@ -23,4 +23,9 @@ object OnboardingText {
     @StringRes val PAIR_ADVICE_OPEN_WEARABLE_APP = R.string.onboarding_pair_advice_open_wearable_app
     @StringRes val PAIR_ADVICE_INSTALL_WATCH_APP = R.string.onboarding_pair_advice_install_watch_app
     @StringRes val PAIR_ADVICE_COULD_NOT_CHECK = R.string.onboarding_pair_advice_could_not_check
+
+    // template page
+    @StringRes val TEMPLATE_TITLE = R.string.onboarding_template_title
+    @StringRes val TEMPLATE_BODY = R.string.onboarding_template_body
+    @StringRes val TEMPLATE_SELECTED = R.string.onboarding_template_selected
 }

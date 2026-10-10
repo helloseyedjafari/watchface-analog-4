@@ -36,6 +36,8 @@ object Dimens {
     val QrMaxWidth = 320.dp
     /** The animation on top of an onboarding page is a square this wide at most (less in a narrower window). */
     val OnboardingAnimationMax = 256.dp
+    /** The outline of the selected template on the onboarding template page (the word "Selected" says it too). */
+    val SelectedBorder = 2.dp
     /** The slot drag canvas never grows past this. */
     val SlotEditorMaxWidth = 360.dp
     /** Width of a four-digit number field at font scale 1; the field grows with the font scale. */

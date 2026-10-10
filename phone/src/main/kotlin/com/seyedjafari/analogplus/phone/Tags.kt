@@ -47,4 +47,6 @@ object Tags {
     const val PAIR_RECHECK = "pair_recheck"
     /** The status pill of a pairing row; [id] is `PairRowId.tagId` ("watch" or "app"). */
     fun pairRow(id: String) = "pair_row_$id"
+    /** One template choice on the onboarding template page; [name] is the template's name. */
+    fun onboardingTemplate(name: String) = "onboarding_template_$name"
 }

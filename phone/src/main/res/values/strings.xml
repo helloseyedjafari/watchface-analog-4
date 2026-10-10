@@ -317,4 +317,8 @@
     <string name="onboarding_pair_advice_open_wearable_app">No watch found. Open the Galaxy Wearable or Wear OS app, pair your watch with this phone, then come back here.</string>
     <string name="onboarding_pair_advice_install_watch_app">Your watch is paired, but Analog Plus is not on it yet. Open the Play Store on the watch, install Analog Plus, then come back here.</string>
     <string name="onboarding_pair_advice_could_not_check">We could not check your watch. Make sure Bluetooth is on, then tap Check again.</string>
+    <!-- Onboarding: template page -->
+    <string name="onboarding_template_title">Pick a starting point</string>
+    <string name="onboarding_template_body">Everything can be changed later. Your own edits are never replaced without asking.</string>
+    <string name="onboarding_template_selected">Selected</string>
 </resources>
