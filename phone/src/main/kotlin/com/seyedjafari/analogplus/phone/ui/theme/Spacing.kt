@@ -34,6 +34,8 @@ object Dimens {
     val PhotoThumbSize = 120.dp
     /** The QR code never grows past this, however wide the screen. */
     val QrMaxWidth = 320.dp
+    /** The animation on top of an onboarding page is a square this wide at most (less in a narrower window). */
+    val OnboardingAnimationMax = 256.dp
     /** The slot drag canvas never grows past this. */
     val SlotEditorMaxWidth = 360.dp
     /** Width of a four-digit number field at font scale 1; the field grows with the font scale. */

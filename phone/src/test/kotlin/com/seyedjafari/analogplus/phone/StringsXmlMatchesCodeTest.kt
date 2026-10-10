@@ -18,7 +18,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.w3c.dom.Element
 
 /**
  * The English wording that logic code keeps for the JVM tests (enum labels, [SendProblem.english], [SlotRefusal.message],
@@ -31,22 +30,10 @@ import org.w3c.dom.Element
  * by the XML parser, white space collapsed) and formatted the way `Resources.getString` does (`%1$s`, `%1$d`, `%%`).
  */
 class StringsXmlMatchesCodeTest {
-    // ---- reading strings.xml ----------------------------------------------------------------------------------
-
-    private val strings: Map<String, String> by lazy {
-        // Gradle runs JVM tests with the module directory (phone/) as the working directory
-        val file = File("src/main/res/values/strings.xml")
-        assertTrue("strings.xml not found: ${file.absolutePath}", file.isFile)
-        val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file)
-        val nodes = doc.getElementsByTagName("string")
-        (0 until nodes.length).map { nodes.item(it) as Element }.associate { it.getAttribute("name") to unescape(it.textContent) }
-    }
+    // ---- reading strings.xml (StringsXml.kt reads it the way aapt does) -----------------------------------------------
 
     /** `Resources.getString(name, *args)` for the default locale. */
-    private fun text(name: String, vararg args: Any): String {
-        val template = strings[name] ?: error("no <string name=\"$name\"> in strings.xml")
-        return format(template, args)
-    }
+    private fun text(name: String, vararg args: Any): String = StringsXml.text(name, *args)
 
     private class Row(val what: String, val english: String, val resource: String, vararg val args: Any)
 
@@ -57,11 +44,7 @@ class StringsXmlMatchesCodeTest {
         assertTrue("code and strings.xml say different things:\n$wrong", wrong.isEmpty())
     }
 
-    /** The name of the string resource with this id (the generated `R.string` class lists them). */
-    private fun nameOf(id: Int): String {
-        val fields = Class.forName("${R::class.java.name}\$string").fields
-        return fields.firstOrNull { it.getInt(null) == id }?.name ?: error("no R.string field has the id $id")
-    }
+    private fun nameOf(id: Int): String = StringsXml.nameOf(id)
 
     // ---- the enums that drive tags and tests --------------------------------------------------------------------
 
@@ -212,52 +195,18 @@ class StringsXmlMatchesCodeTest {
     // ---- the reader itself ---------------------------------------------------------------------------------------------
 
     @Test fun theReaderUnescapesAndFormatsLikeAapt() {
-        assertEquals("Don't say \"hi\"\nnow", unescape("Don\\'t say \\\"hi\\\"\\nnow"))
-        assertEquals(", ", unescape("\", \""))
-        assertEquals("a b", unescape("  a \n   b  "))
-        assertEquals("back\\slash", unescape("back\\\\slash"))
-        assertEquals("Sending (50%) to slot 3 of x", format("Sending (%1\$d%%) to slot %2\$d of %3\$s", arrayOf(50, 3, "x")))
-        assertEquals("b a", format("%2\$s %1\$s", arrayOf("a", "b")))
+        assertEquals("Don't say \"hi\"\nnow", StringsXml.unescape("Don\\'t say \\\"hi\\\"\\nnow"))
+        assertEquals(", ", StringsXml.unescape("\", \""))
+        assertEquals("a b", StringsXml.unescape("  a \n   b  "))
+        assertEquals("back\\slash", StringsXml.unescape("back\\\\slash"))
+        assertEquals("Sending (50%) to slot 3 of x", StringsXml.format("Sending (%1\$d%%) to slot %2\$d of %3\$s", arrayOf(50, 3, "x")))
+        assertEquals("b a", StringsXml.format("%2\$s %1\$s", arrayOf("a", "b")))
     }
 
     @Test fun anXmlEntityIsDecodedByTheParserAndAnUnknownNameFails() {
         val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder()
             .parse("<r><string name=\"x\">Fish &amp; chips</string></r>".byteInputStream())
-        assertEquals("Fish & chips", unescape(doc.getElementsByTagName("string").item(0).textContent))
+        assertEquals("Fish & chips", StringsXml.unescape(doc.getElementsByTagName("string").item(0).textContent))
         assertThrows(IllegalStateException::class.java) { text("no_such_string_name") }
-    }
-
-    private companion object {
-        /** aapt's reading of a string resource: quotes group (and keep) white space, other white space collapses, backslash escapes. */
-        fun unescape(raw: String): String {
-            val out = StringBuilder()
-            var inQuotes = false
-            var pendingSpace = false // white space outside quotes becomes one space, and only between two other characters
-            fun add(c: Char) {
-                if (pendingSpace && out.isNotEmpty()) out.append(' ')
-                pendingSpace = false
-                out.append(c)
-            }
-            var i = 0
-            while (i < raw.length) {
-                val c = raw[i]
-                when {
-                    c == '\\' && i + 1 < raw.length -> {
-                        add(when (val e = raw[i + 1]) { 'n' -> '\n'; 't' -> '\t'; else -> e })
-                        i += 2
-                        continue
-                    }
-                    c == '"' -> inQuotes = !inQuotes
-                    c.isWhitespace() && !inQuotes -> pendingSpace = true
-                    else -> add(c)
-                }
-                i++
-            }
-            return out.toString()
-        }
-
-        /** `String.format` for the two conversions the strings use, `%n$s` and `%n$d`, and `%%`. */
-        fun format(template: String, args: Array<out Any>): String =
-            Regex("""%(?:(\d+)\$[sd]|%)""").replace(template) { m -> m.groupValues[1].takeIf { it.isNotEmpty() }?.let { args[it.toInt() - 1].toString() } ?: "%" }
     }
 }

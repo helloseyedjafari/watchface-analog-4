@@ -304,4 +304,17 @@
     <string name="signing_key_button_confirm">Reset</string>
     <string name="signing_key_reset_failed">The key could not be reset.</string>
     <string name="signing_key_reset_done">Signing key reset. A new key is made on the next send.</string>
+    <!-- Onboarding: pairing page (keys onboarding_<page>_<purpose>; OnboardingText lists the ids) -->
+    <string name="onboarding_pair_title">Connect your watch</string>
+    <string name="onboarding_pair_body">Analog Plus builds your face on this phone and sends it to your Wear OS watch.</string>
+    <string name="onboarding_pair_watch_note">Needs a Wear OS 6 watch.</string>
+    <string name="onboarding_pair_no_watch_yet">No watch yet? You can still design faces now and send one later.</string>
+    <string name="onboarding_pair_row_watch">Watch paired</string>
+    <string name="onboarding_pair_row_app">Analog Plus on the watch</string>
+    <string name="onboarding_pair_row_app_waiting">Needs a paired watch</string>
+    <string name="onboarding_pair_check_again">Check again</string>
+    <string name="onboarding_pair_advice_ready">Your watch is ready.</string>
+    <string name="onboarding_pair_advice_open_wearable_app">No watch found. Open the Galaxy Wearable or Wear OS app, pair your watch with this phone, then come back here.</string>
+    <string name="onboarding_pair_advice_install_watch_app">Your watch is paired, but Analog Plus is not on it yet. Open the Play Store on the watch, install Analog Plus, then come back here.</string>
+    <string name="onboarding_pair_advice_could_not_check">We could not check your watch. Make sure Bluetooth is on, then tap Check again.</string>
 </resources>

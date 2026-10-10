@@ -43,4 +43,8 @@ object Tags {
 
     // onboarding
     fun onboardingAnimation(name: String) = "onboarding_anim_$name"
+    const val PAIR_ADVICE = "pair_advice"
+    const val PAIR_RECHECK = "pair_recheck"
+    /** The status pill of a pairing row; [id] is `PairRowId.tagId` ("watch" or "app"). */
+    fun pairRow(id: String) = "pair_row_$id"
 }
