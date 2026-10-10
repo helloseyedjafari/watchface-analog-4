@@ -189,6 +189,21 @@ class FirebaseEmulatorTest {
         assertEquals(ReauthResult.Cancelled, closing.reauthenticate(uid))
     }
 
+    @Test fun reauthenticateNoticesThatAnotherAccountSignedInWhileTheChooserWasOpen() = inTest {
+        val subA = unique("race-a")
+        val uidA = signInAs(subA)
+        val subB = unique("race-b")
+        // the person (or another code path) signs in as B while A's re-confirm prompt is still on screen
+        val chooser = IdTokenSource {
+            auth.signOut()
+            manager(subB).signIn()
+            fakeToken(subA)
+        }
+        val result = FirebaseAccountManager(auth, chooser, null).reauthenticate(uidA)
+        assertEquals(ReauthResult.NotSignedIn, result)
+        assertTrue("B must stay signed in, untouched", auth.currentUser!!.uid != uidA)
+    }
+
     @Test fun reauthenticatingWithAnotherGoogleAccountFailsAndChangesNothing() = inTest {
         val m = manager(unique("reauth-mine"))
         m.signIn()
