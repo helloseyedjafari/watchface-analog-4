@@ -5,7 +5,7 @@ import com.seyedjafari.analogplus.phone.OnboardingPage
 import com.seyedjafari.analogplus.phone.R
 
 /**
- * Every onboarding string, by the id of its resource in `res/values/strings.xml` (keys `onboarding_<page>_<purpose>`).
+ * Every onboarding string, by the id of its resource in `res/values/strings.xml` (keys `onboarding_<page>_<purpose>`; the one exception is the Send tip, `send_tip_<purpose>`, which sits above the app, not on a page, and is used straight from `R.string`; a string that is identical English in another screen reuses that screen's key).
  * No English lives in code: the pure helpers behind a page (`pairStep`, `pairRows`, `primaryLabel`, `stepOf`, ...) return these
  * ids, a composable resolves them with `stringResource(id)`, and a JVM test says what the user reads with
  * `StringsXml.text(id)` (test sources). A new page adds its ids here and its strings to strings.xml.

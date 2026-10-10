@@ -339,7 +339,7 @@
     <!-- Onboarding: the screen around the pages -->
     <string name="onboarding_screen_skip">Skip</string>
     <string name="onboarding_screen_back">Back</string>
-    <!-- Onboarding: the one-time tip above the preview after setup -->
+    <!-- Send tip: the one-time tip above the preview after setup (keys send_tip_<purpose>, the one exception to onboarding_<page>_<purpose>) -->
     <string name="send_tip_text">Your watch is ready. Open Send to put this face on it.</string>
     <string name="send_tip_open_send">Open Send</string>
     <string name="send_tip_dismiss">Got it</string>
