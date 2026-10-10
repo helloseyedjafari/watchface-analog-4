@@ -17,7 +17,7 @@ onboarding never blocks an existing user and never shows twice unless asked.
 
 Five pages in a paged flow with a progress indicator ("Step N of M"), Skip on every page, Back works. There is no swipe:
 the user moves with Back, Skip and the primary button only (and the system Back button), and pages change with a
-shared-axis slide (a plain change when animations are off). Only the visible page is composed, so the pairing check
+shared-axis slide (a plain change when animations are off). System Back goes one page back; on the first page a first run leaves the app, while a run restarted from Account's "Run setup again" counts Back as Skip and returns to the app (the controller keeps how the run started, `OnboardingOrigin`, in memory only: after process death a run is a first run). Only the visible page is composed, so the pairing check
 starts when the connect page is reached and a neighbouring page never plays its animation. Until accounts ship the flow
 has four pages (the fifth, backup, is hidden).
 

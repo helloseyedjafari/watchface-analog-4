@@ -175,6 +175,59 @@ class OnboardingControllerTest {
         assertFalse(c.sendTipVisible.value)
     }
 
+    // --- how the run started: Back on the first page ---
+
+    @Test fun aNewRunIsAFirstRunAndRestartMakesItARestartedOne() {
+        val c = controller()
+        assertEquals(OnboardingOrigin.FIRST_RUN, c.origin.value)
+        c.skip(); c.restart()
+        assertEquals(OnboardingOrigin.RESTARTED, c.origin.value)
+    }
+
+    @Test fun backOnTheFirstPageOfAFirstRunDoesNothingAndIsLeftToTheSystem() {
+        val c = controller()
+        assertFalse("Back on page 1 is not ours in a first run (the app is left)", c.handlesBackOnFirstPage())
+        c.backOrSkip()
+        assertEquals(OnboardingState.NotStarted, c.state.value)
+    }
+
+    @Test fun backOnTheFirstPageOfARestartedRunSkipsAndReturnsToTheApp() {
+        for (end in listOf(OnboardingState.Completed, OnboardingState.Skipped)) {
+            val c = controller()
+            if (end == OnboardingState.Completed) repeat(4) { c.advance() } else c.skip()
+            assertEquals(end, c.state.value)
+            c.restart()
+            assertEquals(inProgress(OnboardingPage.WELCOME), c.state.value)
+            assertTrue(c.handlesBackOnFirstPage())
+            c.backOrSkip()
+            assertEquals("after $end", OnboardingState.Skipped, c.state.value)
+        }
+    }
+
+    @Test fun backOnALaterPageGoesToThePreviousPageInBothKindsOfRun() {
+        val first = controller(); first.advance()
+        first.backOrSkip()
+        assertEquals(inProgress(OnboardingPage.WELCOME), first.state.value)
+        val again = controller(); again.skip(); again.restart(); again.advance()
+        again.backOrSkip()
+        assertEquals("a restarted run steps back too, it only skips from the first page", inProgress(OnboardingPage.WELCOME), again.state.value)
+    }
+
+    @Test fun aRestartedRunAfterProcessDeathIsAFirstRunBecauseTheOriginIsNotStored() {
+        val c = controller(); c.skip(); c.restart(); c.advance()
+        val afterDeath = OnboardingController(store(), four)                     // same stored state: InProgress(PAIR)
+        assertEquals(inProgress(OnboardingPage.PAIR), afterDeath.state.value)
+        assertEquals(OnboardingOrigin.FIRST_RUN, afterDeath.origin.value)
+        afterDeath.back()
+        assertFalse(afterDeath.handlesBackOnFirstPage())
+    }
+
+    @Test fun backOnceSetupHasEndedChangesNothing() {
+        val c = controller(); c.skip()
+        c.backOrSkip()
+        assertEquals(OnboardingState.Skipped, c.state.value)
+    }
+
     @Test fun restartClearsTheTipAndTheWatchMemory() {
         val c = controller()
         c.reportWatchReady(true); repeat(4) { c.advance() }

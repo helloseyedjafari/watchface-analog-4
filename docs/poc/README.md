@@ -60,8 +60,8 @@ check"; the light landscape ones show Check again in view and, at font scale 2, 
 **First run (onboarding).** A new install shows a short paged flow before the app: welcome, connect your watch, the
 one-time permission explained and a starting template. A fifth page, optional sign-in, appears only once accounts ship
 (until then the flow is four pages: "Step 1 of 4"). There is no swiping: move with the primary button (Get started /
-Continue), **Back** or **Skip**, and the system Back button goes to the previous page (on the first page it leaves the
-app). Skip is on every page and never touches the design. Only the visible page is composed, so the pairing check does
+Continue), **Back** or **Skip**, and the system Back button goes to the previous page (on the first page of a first run it leaves the
+app; on the first page of a run started from Account's "Run setup again" it counts as Skip and returns to the app at Design). Skip is on every page and never touches the design. Only the visible page is composed, so the pairing check does
 not start until you reach the connect page. Closing the app mid-way (or process death) resumes on the same page; rotating
 the phone keeps the page, and in a short wide window (phone held sideways) the animation sits beside the text and
 Back, progress, Skip and the primary button share one row; at large font sizes the page scrolls and the buttons stay.

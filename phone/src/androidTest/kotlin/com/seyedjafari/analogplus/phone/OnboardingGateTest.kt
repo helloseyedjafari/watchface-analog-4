@@ -150,7 +150,32 @@ class OnboardingGateTest {
         assertTrue("on Account, the navigation takes Back to Design", backIsOurs())
         rule.onNodeWithTag(Tags.RUN_SETUP_AGAIN).performScrollTo().performClick(); rule.waitForIdle()
         rule.onNodeWithTag(Tags.ONBOARDING_ROOT).assertExists()
-        assertFalse("onboarding's first page: nothing of the navigation is left to take Back", backIsOurs())
+        // a restarted run takes Back on its first page itself (it counts as Skip): the navigation's handler is not what answers it
+        assertTrue("a restarted run's first page: Back is the onboarding's", backIsOurs())
+        backPress()
+        assertEquals(OnboardingState.Skipped, f.controller.state.value)
+        rule.onNodeWithTag(Tags.ONBOARDING_ROOT).assertDoesNotExist()
+        rule.onNodeWithTag(Destination.DESIGN.tag).assertIsSelected()       // like the Skip button: the app at Design (the navigation is not kept while setup is on show)
+    }
+
+    private fun backOnTheFirstPageOfARestartedRunSkips(ended: OnboardingState) {
+        val f = show(ShellFixture(startAt = ended))
+        rule.onNodeWithTag(Destination.ACCOUNT.tag).performClick(); rule.waitForIdle()
+        rule.onNodeWithTag(Tags.RUN_SETUP_AGAIN).performScrollTo().performClick(); rule.waitForIdle()
+        assertEquals(OnboardingState.InProgress(OnboardingPage.WELCOME), f.controller.state.value)
+        backPress()
+        assertEquals("after $ended", OnboardingState.Skipped, f.controller.state.value)
+        rule.onNodeWithTag(Tags.ONBOARDING_ROOT).assertDoesNotExist()
+        rule.onNodeWithTag(Destination.DESIGN.tag).assertIsSelected()
+    }
+
+    @Test fun backOnTheFirstPageOfARestartedRunAfterCompletedSkipsAndShowsTheApp() = backOnTheFirstPageOfARestartedRunSkips(OnboardingState.Completed)
+    @Test fun backOnTheFirstPageOfARestartedRunAfterSkippedSkipsAndShowsTheApp() = backOnTheFirstPageOfARestartedRunSkips(OnboardingState.Skipped)
+
+    @Test fun backOnTheFirstPageOfAFirstRunIsLeftToTheSystem() {
+        val f = show()
+        assertEquals(OnboardingState.NotStarted, f.controller.state.value)
+        assertFalse("a first run's first page: Back leaves the app", backIsOurs())
     }
 
     // --- no first page after the end ---

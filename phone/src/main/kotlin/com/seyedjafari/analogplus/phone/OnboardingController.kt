@@ -5,6 +5,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
+ * How the current run of setup started. A first run (a new install) leaves the app on Back from the first page; a run the user
+ * restarted from Account's "Run setup again" counts that Back as Skip and returns to the app. Not a boolean: it is a named
+ * kind of run, and a third kind (for instance a run started from a deep link) would be one more value.
+ */
+enum class OnboardingOrigin { FIRST_RUN, RESTARTED }
+
+/**
  * Owns first-run setup: what state it is in, how it moves between pages, and the one-time "open Send" tip.
  * Lives in `AppModel`, so rotation keeps it; every transition is stored first, so process death resumes at the page.
  *
@@ -31,6 +38,14 @@ class OnboardingController(
      * screen shows the same watch status).
      */
     val sendTipVisible: StateFlow<Boolean> = _sendTip.asStateFlow()
+
+    private val _origin = MutableStateFlow(OnboardingOrigin.FIRST_RUN)
+    /**
+     * How this run started: [OnboardingOrigin.RESTARTED] after [restart], else [OnboardingOrigin.FIRST_RUN]. Held in memory (the
+     * controller lives in `AppModel`, so a rotation keeps it) and not stored: after process death the stored state is
+     * `InProgress` with no origin and the run counts as a first run, so Back on its first page leaves the app, as it always did.
+     */
+    val origin: StateFlow<OnboardingOrigin> = _origin.asStateFlow()
 
     /** Two genuine states: positively confirmed ready, or not (unknown counts as not confirmed). Guarded by `this`. */
     private var watchReady = false
@@ -62,8 +77,21 @@ class OnboardingController(
         finish(OnboardingState.Skipped)
     }
 
+    /** True when Back on the first page is the onboarding's (a restarted run): [backOrSkip] then skips. A first run leaves Back to the system. */
+    fun handlesBackOnFirstPage(): Boolean = _state.value.isActive && _origin.value == OnboardingOrigin.RESTARTED
+
+    /**
+     * System Back: one page back; on the first page a restarted run is skipped (back to the app) and a first run does nothing
+     * (the screen does not take Back there, so the system leaves the app).
+     */
+    @Synchronized fun backOrSkip() {
+        if (!_state.value.isActive) return
+        if (pages.indexOf(currentPage()) > 0) back() else if (handlesBackOnFirstPage()) skip()
+    }
+
     /** "Run setup again" from Account: from Completed or Skipped (or mid-run) back to the first page. */
     @Synchronized fun restart() {
+        _origin.value = OnboardingOrigin.RESTARTED
         _sendTip.value = false
         watchReady = false
         set(OnboardingState.InProgress(pages.first()))

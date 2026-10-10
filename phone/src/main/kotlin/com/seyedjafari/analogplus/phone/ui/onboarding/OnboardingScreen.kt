@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import com.seyedjafari.analogplus.phone.EditorState
 import com.seyedjafari.analogplus.phone.OnboardingController
+import com.seyedjafari.analogplus.phone.OnboardingOrigin
 import com.seyedjafari.analogplus.phone.OnboardingPage
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
@@ -72,7 +73,10 @@ fun OnboardingScreen(
     // For Completed/Skipped pageFor is the first page: the host must not compose this screen then (the AppShell gate is a plain `if`).
     val page = controller.pageFor(current)
     val index = pages.indexOf(page)
-    BackHandler(enabled = index > 0) { controller.back() }
+    // System Back: a page back; on the first page only a run the user restarted from Account takes it (it counts as Skip and returns
+    // to the app), a first run leaves it to the system, which leaves the app
+    val origin by controller.origin.collectAsState()
+    BackHandler(enabled = index > 0 || origin == OnboardingOrigin.RESTARTED) { controller.backOrSkip() }
 
     val compact = rememberScreenLayout() == ScreenLayout.SIDE_BY_SIDE
     val skip = controller::skip
