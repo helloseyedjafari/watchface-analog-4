@@ -39,8 +39,8 @@ inside it) when you switch away, rotate the phone or the system restarts the app
   design under a name is in My designs).
 - **Send** shows the watch status (paired, Analog Plus installed) and the progress of a send. Pressing **Send to watch**
   in Design starts the send and opens this destination. A send keeps running if you switch destination.
-- **Account** shows the app version, the (not yet available) sign-in, and **Reset signing key**, which used to be in the
-  Share tab.
+- **Account** shows the app version, the (not yet available) sign-in, **Run setup again** (see First run below) and
+  **Reset signing key**, which used to be in the Share tab.
 
 Design sections. Colours are typed as `#AARRGGBB` (for example `#FF1E6BFF`); a wrong value shows a message and disables
 **Send to watch**. The preview updates as you type. Complications: choose 4 or 6 slots, tap a slot to edit it, drag it to
@@ -52,7 +52,40 @@ link, a scanned QR code, a template or a saved design asks before it replaces th
 into Share and loaded with **Load design** replaces it at once. A tapped link shows its question over whichever destination is open.
 
 Screenshots of every destination (light and dark, font scale 1.0 and 2.0) are in `docs/poc/screens/`
-(`<destination>-<theme>-<scale>.png`).
+(`<destination>-<theme>-<scale>.png`). Onboarding is in `onboarding-<page>-<theme>-<portrait|landscape>[-2x].png` (rendered
+by an instrumented test in a 360x800 / 800x360 window; those show five steps because the test turns the fifth page on, and
+the pair page shows a ready watch) plus real-app captures on the emulator: `onboarding-pair-nowatch-*` (no watch, "Could not
+check") and `onboarding-welcome-real-dark-landscape.png`.
+
+**First run (onboarding).** A new install shows a short paged flow before the app: welcome, connect your watch, the
+one-time permission explained and a starting template. A fifth page, optional sign-in, appears only once accounts ship
+(until then the flow is four pages: "Step 1 of 4"). There is no swiping: move with the primary button (Get started /
+Continue), **Back** or **Skip**, and the system Back button goes to the previous page (on the first page it leaves the
+app). Skip is on every page and never touches the design. Only the visible page is composed, so the pairing check does
+not start until you reach the connect page. Closing the app mid-way (or process death) resumes on the same page; rotating
+the phone keeps the page, and in a short wide window (phone held sideways) the animation sits beside the text and
+Back, progress, Skip and the primary button share one row; at large font sizes the page scrolls and the buttons stay.
+
+The connect page checks the Wear Data Layer when it opens, every time you come back to the app, and on **Check again**
+(the same checker as Send; it gives up after 5 seconds). "OK: Found" and "OK: Installed" mean a face can be sent;
+anything else names the exact next step ("Could not check" means the check failed, "Not found" that no watch is paired),
+and you can always continue without a watch. Finishing (or skipping) lands on Design with the chosen template loaded.
+If the watch was found, a one-time tip on Design offers **Open Send** or **Got it**; it also ends when you open Send by
+any route, and no tip is shown when the watch was not found. An install that already has designs, a saved design, a version
+number or a sent key (the POC) is never shown onboarding: the first launch records it as *Skipped*, and a new install is
+decided the same way before the app autosaves the default design. To see it again: Account, **Run setup again** (works
+after Completed and after Skipped). Choosing a template on the template page asks before replacing edits you made.
+
+The animations are Lottie files drawn from the watch-face geometry, recoloured with the app's brand colours in light and
+dark. They ignore the system animator scale inside Lottie; the page decides: with animations turned off in the system
+(animator scale 0, "reduced motion") each page shows its last frame as a still image and pages change without sliding.
+They also pause when the page is not visible and when the app is in the background. To regenerate them:
+`python3 tools/gen_onboarding_lottie.py` rewrites `phone/src/main/res/raw/onboarding_{welcome,searching,found,permission}.json`
+(`--out DIR` writes elsewhere). `tests/test_onboarding_lottie.py` and a JVM test fail when the committed files and the
+generator disagree, so edit the generator, not the JSON. To use licensed animations instead, drop files under the same four
+names into `res/raw` (keep them under 100 KB; the colour groups named accent / ink / track / onaccent are what the app
+recolours, so licensed files get their own colours unless they use those group names, and the generator test then no
+longer applies and should be deleted with them).
 
 **Always-on mode.** The background is hidden (black) and the dial is dimmed. Dark hands, ticks and numerals switch to
 light grey there, and the editor shows a hint when that happens; dark slot text stays dim.
@@ -95,6 +128,14 @@ battery, the second the step count as text, the others start empty; pick provide
 
 ## Checklist for the real-device test
 
+**Group 0 below is NOT RUN yet** (the owner skipped it: no phone and watch were attached when onboarding was built). Do it,
+then write what happened under "Known limits".
+
+0. (Not run) Phone: Account, **Run setup again**. Connect page: both rows "OK" within a few seconds; the animation switches to
+   the tick; note how long the check took and any message. Turn Bluetooth off on the phone, come back to the app: the rows
+   change (Found becomes Not found or Could not check); turn it on, return to the app: both OK again. Permission page: read
+   it, then finish; the tip offers **Open Send**. Do not uninstall the watch app to test "installed but missing" (it would use
+   up the one-time activation).
 1. Pair phone and watch, install both apps (above), allow the watch permissions.
 2. Phone: open Analog Plus, leave the default design, press **Send to watch**. Wait for the success message with the version.
 3. Watch: open Analog Plus, check "Face: version N", press **Activate face**. The face appears and looks like the Classic face.
@@ -127,6 +168,14 @@ setup in `docs/poc/pack-native.md`. Screenshots go to `docs/screenshots/poc/`. T
 apply, the centre disc is not the design's accent colour, the version does not rise, or more than one face is installed.
 `POC_SETTLE_SECONDS` (default 25) is the wait before each screenshot; complications need about 20 s after the first
 activation.
+
+Onboarding tests: `python3 -m unittest tests.test_onboarding_lottie` (assets), JVM `./gradlew :phone:testDebugUnitTest`
+(state, controller, storage, asset files), and on the phone emulator the `Onboarding*`, `PairPageTest`, `TemplatePageTest`
+and `StaticPagesTest` classes, for example
+`scripts/with_phone_emulator_lock.sh ./gradlew :phone:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.seyedjafari.analogplus.phone.OnboardingFlowTest,com.seyedjafari.analogplus.phone.OnboardingGateTest`
+(`connectedDebugAndroidTest` rejects `--tests`; the class argument takes a comma-separated list; an unset animator scale is the
+normal state, and `OnboardingReducedMotionTest` sets it to 0 itself). The tests render through `PinnedWindow`, so they do not
+depend on the emulator's orientation, and the ones that touch the real store restore it afterwards.
 
 Device tests by hand: `./gradlew testDebugUnitTest`, then
 `scripts/with_phone_emulator_lock.sh ./gradlew :facegen:connectedDebugAndroidTest :packjni:connectedDebugAndroidTest :phone:connectedDebugAndroidTest`
