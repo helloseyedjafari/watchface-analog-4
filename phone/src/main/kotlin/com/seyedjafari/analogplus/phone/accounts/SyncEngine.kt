@@ -91,7 +91,12 @@ class SyncEngine(
     @Volatile private var retired: Job? = null
     private var retryJob: Job? = null
     private val watchJobs = HashMap<Watch, Job>()
+
+    /** Retries scheduled since things last worked: the backoff level. */
     private val attempt = AtomicInteger()
+
+    /** Listeners that died of an error that is retried. While one is down, passes that succeed do not start the backoff over. */
+    private val failingListeners: MutableSet<Watch> = ConcurrentHashMap.newKeySet()
 
     /** Two genuine states: the app is in front of the user or it is not. */
     @Volatile private var foreground = true
@@ -167,7 +172,7 @@ class SyncEngine(
         session = null
         cancelRetry()
         cancelListeners()
-        attempt.set(0)
+        resetBackoff()
         trigger?.close()
         trigger = null
         uid = null
@@ -212,7 +217,7 @@ class SyncEngine(
             cancelListeners()
             cancelRetry()
         } else if (uid != null) {
-            attempt.set(0)
+            resetBackoff()
             recover()
         }
     }
@@ -233,8 +238,12 @@ class SyncEngine(
 
     /** The user changed something: whatever the network did before, try at once (after the debounce) and start the backoff over. */
     private fun editMade() {
-        attempt.set(0)
+        resetBackoff()
         cancelRetry()
+    }
+
+    private fun resetBackoff() {
+        attempt.set(0)
     }
 
     override fun resolveOffer(choice: OfferChoice) {
@@ -526,17 +535,22 @@ class SyncEngine(
 
     /** The final status of a pass: the designs' problem first, then what is wrong with the current design, else "synced". */
     private fun finish(id: String, problem: Problem?) {
+        // A pass that reached its end proves the network and the sign-in work, whatever it found wrong with single designs:
+        // listeners that are down (also one the cloud refused) are started again, and the backoff starts over unless a
+        // listener keeps dying (then the retries must keep slowing down, not run every half minute because the passes succeed).
+        if (failingListeners.isEmpty()) attempt.set(0)
+        ensureListeners()
         val current = currentSync
         if (problem != null) {
             setStatus(id, SyncStatus.Error(problem.kind, problem.count, problem.detail))
         } else if (current == CurrentSync.TOO_LARGE) {
             setStatus(id, SyncStatus.Error(SyncProblem.CURRENT_TOO_LARGE))
         } else if (current == CurrentSync.RETRY_PENDING) {
-            setStatus(id, currentFailure)   // the design in the editor still has to go up; the retry is already scheduled
+            // the design in the editor still has to go up: a retry is scheduled for offline, sign-in and quota failures; after
+            // a refusal or an unknown error the next edit or "Sync now" tries again
+            setStatus(id, currentFailure)
         } else {
             setStatus(id, SyncStatus.Idle(clock(), withoutPhoto.size))
-            attempt.set(0)
-            ensureListeners()   // a pass that got through means the network is back: bring up listeners that are down ("Sync now" is such a pass)
         }
     }
 
@@ -573,7 +587,8 @@ class SyncEngine(
             throw e
         } catch (e: RemoteException) {
             setStatus(id, statusOf(e))
-            if (e.kind == RemoteErrorKind.OFFLINE || e.kind == RemoteErrorKind.AUTH) scheduleRetry()
+            // offline, an expired sign-in and a used-up quota all pass by themselves: retry with the backoff
+            if (e.kind == RemoteErrorKind.OFFLINE || e.kind == RemoteErrorKind.AUTH || e.kind == RemoteErrorKind.QUOTA) scheduleRetry()
         } catch (e: Exception) {
             setStatus(id, SyncStatus.Error(SyncProblem.FAILED, detail = e.message ?: e.javaClass.simpleName))
         }
@@ -621,6 +636,7 @@ class SyncEngine(
     }
 
     private fun cancelListeners() = synchronized(watchLock) {
+        failingListeners.clear()
         watchJobs.values.forEach { it.cancel() }
         watchJobs.clear()
     }
@@ -634,16 +650,17 @@ class SyncEngine(
         if (uid != id) return
         try {
             when (which) {
-                Watch.DESIGNS -> remote.observeDesigns(id).collect { onRemoteDesigns(id, it) }
-                Watch.CURRENT -> remote.observeCurrent(id).collect { rc -> guarded(id) { onRemoteCurrent(id, rc) } }
+                Watch.DESIGNS -> remote.observeDesigns(id).collect { failingListeners.remove(which); onRemoteDesigns(id, it) }
+                Watch.CURRENT -> remote.observeCurrent(id).collect { rc -> failingListeners.remove(which); guarded(id) { onRemoteCurrent(id, rc) } }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: RemoteException) {
             setStatus(id, statusOf(e))
-            if (e.kind != RemoteErrorKind.PERMISSION) scheduleRetry()
+            if (e.kind != RemoteErrorKind.PERMISSION) { failingListeners.add(which); scheduleRetry() }
         } catch (e: Exception) {
             setStatus(id, SyncStatus.Error(SyncProblem.FAILED, detail = e.message ?: e.javaClass.simpleName))
+            failingListeners.add(which)
             scheduleRetry()
         }
     }

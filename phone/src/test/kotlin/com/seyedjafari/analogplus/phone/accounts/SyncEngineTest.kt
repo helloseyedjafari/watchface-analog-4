@@ -963,6 +963,85 @@ class SyncEngineTest {
 
     // ---- fix round 2 ---------------------------------------------------------------------------------------------------------
 
+    /** C: any pass that gets through proves the network works, whatever it found wrong with a single design. */
+    @Test fun aSyncNowThatEndsWithASkippedDesignStillRestartsAListenerThatWasRefused() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        flaky.refuse = { name -> if (name == "Bad") RemoteException(RemoteErrorKind.PERMISSION, "denied: Bad") else null }
+        flaky.listenFailure = RemoteException(RemoteErrorKind.PERMISSION, "denied")
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.store.saveNamed("Bad", night)
+        a.engine.start("u1"); runCurrent()
+        assertEquals(1, flaky.designListens)
+        flaky.listenFailure = null
+        a.engine.syncNow()
+        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1, "denied: Bad"), a.engine.status.value)
+        assertEquals(2, flaky.designListens)
+    }
+
+    @Test fun aPassThatEndsWithASkippedDesignStartsTheBackoffOver() = runTest {
+        val (remote, flaky, a) = flakyPhone()
+        flaky.refuse = { name -> if (name == "Bad") RemoteException(RemoteErrorKind.PERMISSION, "denied: Bad") else null }
+        a.store.saveNamed("Bad", night)
+        remote.failWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(1_200_000); runCurrent()                 // the wait has grown to its longest
+        remote.failWith = null
+        advanceTimeBy(400_000); runCurrent()                   // the next try gets through, with the skipped design
+        assertTrue(a.engine.status.value is SyncStatus.Error)
+        remote.failWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        val mark = flaky.fetchTimes.size
+        a.engine.syncNow()
+        advanceTimeBy(40_000); runCurrent()
+        val again = flaky.fetchTimes.drop(mark)
+        assertTrue("backoff restarted: $again", again.size >= 2 && again[1] - again[0] in 30_000..32_000)
+    }
+
+    /** F: a listener that keeps dying while the passes succeed must back off on its own clock. */
+    @Test fun aListenerThatKeepsFailingWhilePassesSucceedBacksOffInsteadOfRetryingEveryHalfMinute() = runTest {
+        val (_, flaky, a) = flakyPhone()
+        flaky.listenFailure = RemoteException(RemoteErrorKind.OTHER, "boom")
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(3_600_000); runCurrent()
+        val gaps = gaps(flaky.fetchTimes)
+        assertEquals("never shorter than the one before: $gaps", gaps, gaps.sorted())
+        assertTrue("capped near 5 minutes: $gaps", gaps.max() in 299_000..302_000)
+        assertTrue("a retry every 31 s would be over 100 tries: ${flaky.fetchTimes.size}", flaky.fetchTimes.size < 25)
+    }
+
+    @Test fun aQuotaRefusalOfAWriteIsRetriedByThePassItselfWhileTheListenersAreFine() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        flaky.refuse = { RemoteException(RemoteErrorKind.QUOTA, "limit") }
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.store.saveNamed("Night", night)
+        a.engine.start("u1"); runCurrent()
+        assertEquals(SyncStatus.Error(SyncProblem.QUOTA), a.engine.status.value)
+        flaky.refuse = null
+        advanceTimeBy(31_000); runCurrent()
+        assertEquals(1, remote.designsOf("u1").size)
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+    }
+
+    /** G (owner decision): a used-up quota is retried in the background with the capped backoff. */
+    @Test fun aUsedUpQuotaKeepsRetryingWithTheCappedBackoffAndShowsTheLimit() = runTest {
+        val (remote, flaky, a) = flakyPhone()
+        remote.failWith = RemoteException(RemoteErrorKind.QUOTA, "limit")
+        a.store.saveNamed("Night", night)
+        a.engine.start("u1"); runCurrent()
+        assertEquals(SyncStatus.Error(SyncProblem.QUOTA), a.engine.status.value)
+        advanceTimeBy(3_600_000); runCurrent()
+        assertEquals(SyncStatus.Error(SyncProblem.QUOTA), a.engine.status.value)
+        val gaps = gaps(flaky.fetchTimes)
+        assertTrue("retried: $gaps", gaps.size >= 5 && gaps.first() in 30_000..32_000)
+        assertEquals(gaps, gaps.sorted())
+        assertTrue("capped: $gaps", gaps.max() in 299_000..302_000)
+        remote.failWith = null
+        advanceTimeBy(400_000); runCurrent()
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+        assertEquals(1, remote.designsOf("u1").size)
+    }
+
     /** A: a sign-out followed by a sign-in (what Firebase Auth's listener does within milliseconds) must wait for the old pass too. */
     @Test fun aSignOutThenSignInDoesNotBindTheNewAccountWhileTheOldPassIsStillRunning() = runTest {
         val remote = FakeRemoteStore()
