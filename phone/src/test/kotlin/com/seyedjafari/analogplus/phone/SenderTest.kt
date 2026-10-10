@@ -100,11 +100,11 @@ class SenderTest {
         assertEquals(ApplyMessage(9, "token-9", 1234), seen)
     }
 
-    @Test fun noNodeFailsWithTheBluetoothHint() = runTest {
+    @Test fun noNodeFailsWithTheWearableAppHint() = runTest {
         val states = DataLayerSender(FakeTransport(withApp = emptyList(), connected = emptyList())).send(bundle()).toList()
         assertEquals(SendState.Connecting, states[0])
         val failed = states.last() as SendState.Failed
-        assertTrue(failed.text.startsWith("No watch found. Open Bluetooth"))
+        assertTrue(failed.text.startsWith("No watch found. Open the Galaxy Wearable or Wear OS app"))
     }
 
     @Test fun timeoutWithoutAnAnswerFailsAndCleansUp() = runTest {

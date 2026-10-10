@@ -88,7 +88,7 @@ class PairPageTest {
         rule.waitForTag(Tags.PAIR_ADVICE)
         row(PairRowId.WATCH).assertTextEquals("OK: Found")
         row(PairRowId.APP).assertTextEquals("Check: Not installed")
-        rule.onNodeWithTag(Tags.PAIR_ADVICE).assertTextContains("Play Store", substring = true)
+        rule.onNodeWithTag(Tags.PAIR_ADVICE).assertTextContains("Install it on the watch", substring = true)
     }
 
     @Test fun anUnreadableCheckIsNotShownAsNotFound() {

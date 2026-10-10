@@ -1,5 +1,7 @@
 package com.seyedjafari.analogplus.phone.ui.onboarding
 
+import com.seyedjafari.analogplus.phone.NOT_INSTALLED_TEXT
+import com.seyedjafari.analogplus.phone.NO_WATCH_TEXT
 import com.seyedjafari.analogplus.phone.StringsXml
 import com.seyedjafari.analogplus.phone.ui.components.StatusKind
 import com.seyedjafari.analogplus.phone.ui.send.CheckStatus
@@ -52,8 +54,13 @@ class PairLogicTest {
         assertNull(advice(PairStep.CHECKING))
         assertEquals("Your watch is ready.", advice(PairStep.ALL_READY))
         assertTrue(advice(PairStep.OPEN_WEARABLE_APP)!!.contains("Galaxy Wearable"))
-        assertTrue(advice(PairStep.INSTALL_WATCH_APP)!!.contains("Play Store"))
+        assertTrue(advice(PairStep.INSTALL_WATCH_APP)!!.contains("Install it on the watch"))
         assertTrue(advice(PairStep.COULD_NOT_CHECK)!!.contains("Check again"))
+    }
+
+    @Test fun theAdviceIsExactlyWhatTheSendScreenSaysForTheSameState() {
+        assertEquals(NO_WATCH_TEXT, advice(PairStep.OPEN_WEARABLE_APP))
+        assertEquals(NOT_INSTALLED_TEXT, advice(PairStep.INSTALL_WATCH_APP))
     }
 
     @Test fun rowsForAReadyWatch() {

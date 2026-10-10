@@ -62,7 +62,7 @@ class WatchStatusScreenTest {
         rule.onNodeWithText(NOT_INSTALLED_TEXT).performScrollTo().assertIsDisplayed()
     }
 
-    @Test fun noWatchSaysToOpenBluetoothAndDoesNotJudgeTheApp() {
+    @Test fun noWatchSaysToOpenTheWearableAppAndDoesNotJudgeTheApp() {
         transport.withApp = emptyList()
         openSend()
         awaitPills("Check: Not found", "Could not check")

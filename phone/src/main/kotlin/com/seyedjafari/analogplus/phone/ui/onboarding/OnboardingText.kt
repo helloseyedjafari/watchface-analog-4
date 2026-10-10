@@ -6,7 +6,7 @@ import com.seyedjafari.analogplus.phone.R
 
 /**
  * Every onboarding string, by the id of its resource in `res/values/strings.xml` (keys `onboarding_<page>_<purpose>`).
- * No English lives in code: the pure helpers behind a page (`pairStep`, `pairRows`, later `primaryLabel`, ...) return these
+ * No English lives in code: the pure helpers behind a page (`pairStep`, `pairRows`, `primaryLabel`, `stepOf`, ...) return these
  * ids, a composable resolves them with `stringResource(id)`, and a JVM test says what the user reads with
  * `StringsXml.text(id)` (test sources). A new page adds its ids here and its strings to strings.xml.
  */
@@ -14,15 +14,15 @@ object OnboardingText {
     // pairing page
     @StringRes val PAIR_TITLE = R.string.onboarding_pair_title
     @StringRes val PAIR_BODY = R.string.onboarding_pair_body
-    @StringRes val PAIR_WATCH_NOTE = R.string.onboarding_pair_watch_note
+    @StringRes val PAIR_WATCH_NOTE = R.string.send_needs_wear_os
     @StringRes val PAIR_NO_WATCH_YET = R.string.onboarding_pair_no_watch_yet
     @StringRes val PAIR_ROW_WATCH = R.string.onboarding_pair_row_watch
     @StringRes val PAIR_ROW_APP = R.string.onboarding_pair_row_app
     @StringRes val PAIR_ROW_APP_WAITING = R.string.onboarding_pair_row_app_waiting
-    @StringRes val PAIR_CHECK_AGAIN = R.string.onboarding_pair_check_again
+    @StringRes val PAIR_CHECK_AGAIN = R.string.send_button_check_again
     @StringRes val PAIR_ADVICE_READY = R.string.onboarding_pair_advice_ready
-    @StringRes val PAIR_ADVICE_OPEN_WEARABLE_APP = R.string.onboarding_pair_advice_open_wearable_app
-    @StringRes val PAIR_ADVICE_INSTALL_WATCH_APP = R.string.onboarding_pair_advice_install_watch_app
+    @StringRes val PAIR_ADVICE_OPEN_WEARABLE_APP = R.string.send_no_watch
+    @StringRes val PAIR_ADVICE_INSTALL_WATCH_APP = R.string.send_not_installed
     @StringRes val PAIR_ADVICE_COULD_NOT_CHECK = R.string.onboarding_pair_advice_could_not_check
 
     // template page
@@ -40,7 +40,7 @@ object OnboardingText {
     val PERMISSION_STEPS: List<PermissionStep> = PermissionStep.entries
 
     // backup page
-    @StringRes val BACKUP_TITLE = R.string.onboarding_backup_title
+    @StringRes val BACKUP_TITLE = R.string.account_backup_title
     @StringRes val BACKUP_PLACEHOLDER_BODY = R.string.onboarding_backup_placeholder_body
     @StringRes val BACKUP_NOT_NOW = R.string.onboarding_backup_not_now
 

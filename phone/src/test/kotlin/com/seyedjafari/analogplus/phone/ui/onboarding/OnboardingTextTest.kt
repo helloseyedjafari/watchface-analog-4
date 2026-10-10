@@ -1,6 +1,7 @@
 package com.seyedjafari.analogplus.phone.ui.onboarding
 
 import com.seyedjafari.analogplus.phone.OnboardingPage
+import com.seyedjafari.analogplus.phone.R
 import com.seyedjafari.analogplus.phone.StringsXml
 import com.seyedjafari.analogplus.phone.Tags
 import org.junit.Assert.assertEquals
@@ -32,6 +33,14 @@ class OnboardingTextTest {
             listOf("onboarding_page_welcome", "onboarding_page_pair", "onboarding_page_permission", "onboarding_page_template", "onboarding_page_backup"),
             OnboardingPage.entries.map { Tags.onboardingPage(it) },
         )
+    }
+
+    @Test fun identicalEnglishIsOneResourceNotTwo() {
+        assertEquals(R.string.send_button_check_again, OnboardingText.PAIR_CHECK_AGAIN)
+        assertEquals(R.string.send_needs_wear_os, OnboardingText.PAIR_WATCH_NOTE)
+        assertEquals(R.string.account_backup_title, OnboardingText.BACKUP_TITLE)
+        assertEquals(R.string.send_no_watch, OnboardingText.PAIR_ADVICE_OPEN_WEARABLE_APP)
+        assertEquals(R.string.send_not_installed, OnboardingText.PAIR_ADVICE_INSTALL_WATCH_APP)
     }
 
     @Test fun theBackupPageBringsItsOwnButtons() = assertNull(OnboardingText.primaryLabel(OnboardingPage.BACKUP, isLast = true))
