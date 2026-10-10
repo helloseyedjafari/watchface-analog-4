@@ -4,6 +4,8 @@ import com.seyedjafari.analogplus.phone.accounts.vault.KeyVault
 import com.seyedjafari.analogplus.phone.accounts.vault.PassphraseAssessment
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -84,6 +86,12 @@ sealed interface Notice {
 
     /** The cloud data is deleted but the account is not; trying again finishes it. */
     data class DeleteAccountFailed(val problem: AccountDeleteProblem, val detail: String) : Notice { override val kind = NoticeKind.ERROR }
+
+    /**
+     * An action failed in a way nobody planned for, after the screen that started it had gone, so no caller could be told.
+     * [detail] is the exception's own message, for a detail line only. (A caller that is still there gets the exception.)
+     */
+    data class ActionFailed(val detail: String) : Notice { override val kind = NoticeKind.ERROR }
 }
 
 /** Everything the Account screen and the onboarding backup page draw from. */
@@ -166,7 +174,13 @@ class AccountsController(
                     _ui.update { it.copy(notice = null) }
                 }
                 // not while its deletion runs: what sync wrote between now and the end of the wipe would be orphaned
-                if (syncedUid != state.uid && deletingUid != state.uid) {
+                if (deletingUid == state.uid) {
+                    // the sync of another account that ran meanwhile must not go on for this one; the deletion catches up at its end
+                    if (syncedUid != null && syncedUid != state.uid) {
+                        sync.stop()
+                        syncedUid = null
+                    }
+                } else if (syncedUid != state.uid) {
                     syncedUid = state.uid
                     sync.start(state.uid)
                 }
@@ -294,6 +308,7 @@ class AccountsController(
         val uid = uid() ?: return DeletionResult.NotSignedIn
         return action(uid, Busy.DELETING, DeletionResult.NotSignedIn, outlivesAccount = { it == DeletionResult.Done }) {
             val result = deletion.delete(uid)
+            catchUpSync(uid, result)
             ActionOutcome(
                 result,
                 when (result) {
@@ -306,6 +321,24 @@ class AccountsController(
                 // the wipe may have taken the backup document even though the deletion failed
                 refresh = result is DeletionResult.DataFailed || result is DeletionResult.AccountFailed,
             )
+        }
+    }
+
+    /**
+     * The sign-in guard skipped starting sync for [uid] while its deletion ran. When the deletion ended without touching
+     * the cloud and the account is still signed in, sync is started now if it is not running; after a failed wipe the
+     * deletion has restarted it itself, which the guard has to know.
+     */
+    private fun catchUpSync(uid: String, result: DeletionResult) {
+        if (uid() != uid) return
+        when (result) {
+            DeletionResult.Cancelled, is DeletionResult.ReauthFailed -> if (syncedUid != uid) {
+                syncedUid = uid
+                sync.start(uid)
+            }
+            is DeletionResult.DataFailed -> syncedUid = uid
+            // Done: signed out. AccountFailed: sync stays off on purpose. NotSignedIn: not this account.
+            else -> Unit
         }
     }
 
@@ -328,15 +361,27 @@ class AccountsController(
         block: suspend () -> ActionOutcome<R>,
     ): R {
         val answer = CompletableDeferred<R>()
+        val caller = currentCoroutineContext()[Job]
         scope.launch {
             try {
                 answer.complete(runAction(uid, busy, signedOut, clearNotice, outlivesAccount, block))
             } catch (e: Throwable) {
-                // handed to the caller (also a cancelled scope); a failure here must not take the controller's scope down
+                // handed to the caller; a failure here must not take the controller's scope down
                 answer.completeExceptionally(e)
+                if (e !is CancellationException && caller?.isActive == false) reportOrphanFailure(uid, e)
             }
+        }.invokeOnCompletion { cause ->
+            // a body that never ran (the scope was already cancelled) must not leave the caller waiting; a no-op otherwise
+            if (cause != null) answer.completeExceptionally(cause)
         }
         return answer.await()
+    }
+
+    /** The screen that started the action is gone, so nobody can be told of its failure: the person sees a generic notice. */
+    private fun reportOrphanFailure(uid: String, e: Throwable) {
+        if (uid() != uid) return
+        noticeUid = uid
+        _ui.update { it.copy(notice = Notice.ActionFailed(e.message.orEmpty())) }
     }
 
     private suspend fun <R> runAction(
