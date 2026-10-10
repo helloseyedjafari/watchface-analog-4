@@ -35,6 +35,16 @@ const alice = () => env.authenticatedContext('alice').firestore();
 const bob = () => env.authenticatedContext('bob').firestore();
 const anon = () => env.unauthenticatedContext().firestore();
 
+// Documents seeded with the rules switched off, so the read/list/delete tests see data that really exists.
+const seedAlice = () => env.withSecurityRulesDisabled(async (c) => {
+  const db = c.firestore();
+  await setDoc(doc(db, 'users/alice/state/current'), { design: '{}', updatedAt: Timestamp.now(), deviceId: 'd', deviceLabel: '', schema: 1 });
+  await setDoc(doc(db, 'users/alice/backup/signingKey'), {
+    sealed: 'AAAA', kdf: 'pbkdf2-hmac-sha256', iterations: 600000, salt: 'c2FsdHNhbHRzYWx0c2FsdA==',
+    iv: 'aXZpdml2aXZpdml2', version: 1, createdAt: Timestamp.now(), keyFingerprint: '0123456789abcdef',
+  });
+});
+
 describe('designs', () => {
   it('lets the owner create, read, update and delete', async () => {
     const ref = doc(alice(), `users/alice/designs/${ID}`);
@@ -81,6 +91,12 @@ describe('designs', () => {
     const { name, ...missing } = design();
     await assertFails(setDoc(ref, missing));
   });
+  it('rejects a tombstone that still carries the design payload', async () => {
+    await assertFails(setDoc(doc(alice(), `users/alice/designs/${ID}`), design({ deleted: true })));
+  });
+  it('rejects a whitespace-only name', async () => {
+    await assertFails(setDoc(doc(alice(), `users/alice/designs/${ID}`), design({ name: '   ' })));
+  });
   it('rejects a design id that is not 32 lowercase hex characters', async () => {
     await assertFails(setDoc(doc(alice(), 'users/alice/designs/not-an-id'), design()));
     await assertFails(setDoc(doc(alice(), `users/alice/designs/${ID.toUpperCase()}`), design()));
@@ -99,6 +115,27 @@ describe('current design', () => {
     await assertFails(setDoc(doc(alice(), 'users/alice/state/current'), current({ design: 'x'.repeat(950001) })));
     await assertFails(setDoc(doc(bob(), 'users/alice/state/current'), current()));
   });
+  it('denies another signed-in user reading, listing or deleting the current design', async () => {
+    await seedAlice();
+    await assertFails(getDoc(doc(bob(), 'users/alice/state/current')));
+    await assertFails(getDocs(collection(bob(), 'users/alice/state')));
+    await assertFails(deleteDoc(doc(bob(), 'users/alice/state/current')));
+    await assertSucceeds(getDoc(doc(alice(), 'users/alice/state/current')));
+  });
+  it('rejects a client-supplied updatedAt', async () => {
+    await assertFails(setDoc(doc(alice(), 'users/alice/state/current'), current({ updatedAt: Timestamp.fromMillis(1) })));
+  });
+  it('rejects extra, missing and mistyped fields', async () => {
+    const ref = doc(alice(), 'users/alice/state/current');
+    await assertFails(setDoc(ref, current({ extra: 1 })));
+    await assertFails(setDoc(ref, current({ schema: '1' })));
+    await assertFails(setDoc(ref, current({ schema: 0 })));
+    await assertFails(setDoc(ref, current({ schema: 1001 })));
+    await assertFails(setDoc(ref, current({ deviceLabel: 'l'.repeat(81) })));
+    await assertFails(setDoc(ref, current({ deviceId: 'd'.repeat(65) })));
+    const { deviceLabel, ...missing } = current();
+    await assertFails(setDoc(ref, missing));
+  });
 });
 
 describe('signing key backup', () => {
@@ -112,6 +149,33 @@ describe('signing key backup', () => {
   it('denies other users and anonymous callers', async () => {
     await assertFails(setDoc(doc(bob(), 'users/alice/backup/signingKey'), backup()));
     await assertFails(getDoc(doc(anon(), 'users/alice/backup/signingKey')));
+  });
+  it('denies another signed-in user reading, listing or deleting the backup', async () => {
+    await seedAlice();
+    await assertFails(getDoc(doc(bob(), 'users/alice/backup/signingKey')));
+    await assertFails(getDocs(collection(bob(), 'users/alice/backup')));
+    await assertFails(deleteDoc(doc(bob(), 'users/alice/backup/signingKey')));
+    await assertSucceeds(getDoc(doc(alice(), 'users/alice/backup/signingKey')));
+  });
+  it('rejects salt, iv and version outside their bounds', async () => {
+    const ref = doc(alice(), 'users/alice/backup/signingKey');
+    await assertFails(setDoc(ref, backup({ salt: 's'.repeat(15) })));
+    await assertFails(setDoc(ref, backup({ salt: 's'.repeat(129) })));
+    await assertFails(setDoc(ref, backup({ iv: 'i'.repeat(15) })));
+    await assertFails(setDoc(ref, backup({ iv: 'i'.repeat(65) })));
+    await assertFails(setDoc(ref, backup({ version: 0 })));
+    await assertFails(setDoc(ref, backup({ version: 1001 })));
+    await assertFails(setDoc(ref, backup({ version: '1' })));
+  });
+  it('rejects a fingerprint that is not 16 lowercase hex characters', async () => {
+    const ref = doc(alice(), 'users/alice/backup/signingKey');
+    await assertFails(setDoc(ref, backup({ keyFingerprint: 'zzzzzzzzzzzzzzzz' })));
+    await assertFails(setDoc(ref, backup({ keyFingerprint: '0123456789ABCDEF' })));
+    await assertFails(setDoc(ref, backup({ keyFingerprint: '0123456789abcdef0' })));
+  });
+  it('rejects missing fields', async () => {
+    const { iv, ...missing } = backup();
+    await assertFails(setDoc(doc(alice(), 'users/alice/backup/signingKey'), missing));
   });
   it('rejects weak or unknown key derivation and malformed fields', async () => {
     const ref = doc(alice(), 'users/alice/backup/signingKey');

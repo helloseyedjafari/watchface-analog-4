@@ -73,6 +73,12 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Cache the Firestore emulator download
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ hashFiles('firebase/package-lock.json') }}
+
       - name: Firestore rules tests (emulator)
         working-directory: firebase
         run: |
