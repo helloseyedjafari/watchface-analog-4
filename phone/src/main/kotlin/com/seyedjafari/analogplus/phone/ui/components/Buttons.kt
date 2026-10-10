@@ -13,6 +13,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -62,6 +63,14 @@ fun SecondaryButton(
     }
 }
 
+/** A quiet text-only action (no outline, no fill) for something the user can do but is not asked to: "Skip". */
+@Composable
+fun TertiaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    TextButton(onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = Spacing.minTouch), shape = MaterialTheme.shapes.large) {
+        Text(text, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
 @LightDarkPreview
 @Composable
 private fun ButtonsPreview() = PreviewFrame {
@@ -70,5 +79,6 @@ private fun ButtonsPreview() = PreviewFrame {
         PrimaryButton(stringResource(R.string.design_button_send_to_watch), {}, loading = true)
         PrimaryButton(stringResource(R.string.design_button_send_to_watch), {}, enabled = false)
         SecondaryButton(stringResource(R.string.common_cancel), {})
+        TertiaryButton(stringResource(R.string.onboarding_screen_skip), {})
     }
 }

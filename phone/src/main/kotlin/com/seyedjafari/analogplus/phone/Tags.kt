@@ -55,4 +55,9 @@ object Tags {
     /** One onboarding page; [name] is the lowercase page name ("welcome", "pair", "permission", "template", "backup"). */
     fun onboardingPage(name: String) = "onboarding_page_$name"
     const val BACKUP_PLACEHOLDER_DONE = "onboarding_backup_done"
+    const val ONBOARDING_ROOT = "onboarding_root"
+    const val ONBOARDING_SKIP = "onboarding_skip"
+    const val ONBOARDING_BACK = "onboarding_back"
+    const val ONBOARDING_NEXT = "onboarding_next"
+    const val ONBOARDING_PROGRESS = "onboarding_progress"
 }

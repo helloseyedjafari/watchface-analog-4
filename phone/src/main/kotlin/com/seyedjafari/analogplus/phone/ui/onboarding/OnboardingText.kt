@@ -53,6 +53,10 @@ object OnboardingText {
     @StringRes val NAV_CONTINUE = R.string.onboarding_nav_continue
     @StringRes val NAV_FINISH = R.string.onboarding_nav_finish
     @StringRes val NAV_STEP_OF = R.string.onboarding_nav_step_of
+
+    // the screen around the pages
+    @StringRes val SCREEN_SKIP = R.string.onboarding_screen_skip
+    @StringRes val SCREEN_BACK = R.string.onboarding_screen_back
 }
 
 /** The wording of the primary button on [page]; null when the page brings its own buttons (the backup page). */

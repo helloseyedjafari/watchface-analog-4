@@ -338,4 +338,7 @@
     <string name="onboarding_nav_continue">Continue</string>
     <string name="onboarding_nav_finish">Finish</string>
     <string name="onboarding_nav_step_of">Step %1$d of %2$d</string>
+    <!-- Onboarding: the screen around the pages -->
+    <string name="onboarding_screen_skip">Skip</string>
+    <string name="onboarding_screen_back">Back</string>
 </resources>
