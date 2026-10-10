@@ -80,6 +80,12 @@ class RemoteException(val kind: RemoteErrorKind, message: String, cause: Throwab
 /**
  * The few cloud operations sync and backup need. The Firestore implementation is the only code that knows paths and
  * field names; fakes implement this for tests. Functions throw [RemoteException] (and cancellation) only.
+ *
+ * Every call must end promptly when its coroutine is cancelled. The sync engine relies on it: sign-out cancels the running
+ * pass and the next sign-in waits for it, so a call that ignores cancellation delays (or, if it never returns, blocks) the
+ * next account's sync. Implement them with cancellable suspension, for example `await()` of a Firebase `Task` from
+ * kotlinx-coroutines-play-services, and never with a blocking `Tasks.await`. (A write that was already sent may still reach
+ * the server; that cannot be recalled.)
  */
 interface RemoteStore {
     suspend fun fetchDesigns(uid: String): List<RemoteDesign>
