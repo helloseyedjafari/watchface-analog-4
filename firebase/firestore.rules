@@ -43,9 +43,11 @@ service cloud.firestore {
 
     // The backup is always rewritten whole: createdAt is re-stamped on every write and `version` is not
     // checked against the stored one, so the owner's own client could write an older version number.
+    // `writeId` is the document's version token: a random UUID the client generates per write. The client compares it
+    // inside a Firestore transaction before replacing or deleting; the rules only check its shape.
     function validBackup(data) {
-      return data.keys().hasOnly(['sealed', 'kdf', 'iterations', 'salt', 'iv', 'version', 'createdAt', 'keyFingerprint'])
-        && data.keys().hasAll(['sealed', 'kdf', 'iterations', 'salt', 'iv', 'version', 'createdAt', 'keyFingerprint'])
+      return data.keys().hasOnly(['sealed', 'kdf', 'iterations', 'salt', 'iv', 'version', 'createdAt', 'keyFingerprint', 'writeId'])
+        && data.keys().hasAll(['sealed', 'kdf', 'iterations', 'salt', 'iv', 'version', 'createdAt', 'keyFingerprint', 'writeId'])
         && isText(data.sealed, 1, 16384)
         && data.kdf in ['pbkdf2-hmac-sha256']
         && data.iterations is int && data.iterations >= 100000 && data.iterations <= 5000000
@@ -53,6 +55,7 @@ service cloud.firestore {
         && isText(data.iv, 16, 64)
         && data.version is int && data.version >= 1 && data.version <= 1000
         && data.keyFingerprint is string && data.keyFingerprint.matches('[0-9a-f]{16}')
+        && data.writeId is string && data.writeId.matches('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
         && data.createdAt is timestamp && data.createdAt == request.time;
     }
 

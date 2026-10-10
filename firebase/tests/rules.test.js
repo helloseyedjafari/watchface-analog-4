@@ -17,9 +17,10 @@ const design = (over = {}) => ({
 const current = (over = {}) => ({
   design: '{"name":"Mine"}', updatedAt: serverTimestamp(), deviceId: 'dev-1', deviceLabel: 'Pixel 8', schema: 1, ...over,
 });
+const WRITE_ID = '0b1c2d3e-4f50-4162-8374-95a6b7c8d9e0';
 const backup = (over = {}) => ({
   sealed: 'AAAA', kdf: 'pbkdf2-hmac-sha256', iterations: 600000, salt: 'c2FsdHNhbHRzYWx0c2FsdA==',
-  iv: 'aXZpdml2aXZpdml2', version: 1, createdAt: serverTimestamp(), keyFingerprint: '0123456789abcdef', ...over,
+  iv: 'aXZpdml2aXZpdml2', version: 1, createdAt: serverTimestamp(), keyFingerprint: '0123456789abcdef', writeId: WRITE_ID, ...over,
 });
 
 before(async () => {
@@ -41,7 +42,7 @@ const seedAlice = () => env.withSecurityRulesDisabled(async (c) => {
   await setDoc(doc(db, 'users/alice/state/current'), { design: '{}', updatedAt: Timestamp.now(), deviceId: 'd', deviceLabel: '', schema: 1 });
   await setDoc(doc(db, 'users/alice/backup/signingKey'), {
     sealed: 'AAAA', kdf: 'pbkdf2-hmac-sha256', iterations: 600000, salt: 'c2FsdHNhbHRzYWx0c2FsdA==',
-    iv: 'aXZpdml2aXZpdml2', version: 1, createdAt: Timestamp.now(), keyFingerprint: '0123456789abcdef',
+    iv: 'aXZpdml2aXZpdml2', version: 1, createdAt: Timestamp.now(), keyFingerprint: '0123456789abcdef', writeId: WRITE_ID,
   });
 });
 
@@ -181,6 +182,27 @@ describe('signing key backup', () => {
   it('rejects missing fields', async () => {
     const { iv, ...missing } = backup();
     await assertFails(setDoc(doc(alice(), 'users/alice/backup/signingKey'), missing));
+  });
+  it('requires a writeId', async () => {
+    const { writeId, ...missing } = backup();
+    await assertFails(setDoc(doc(alice(), 'users/alice/backup/signingKey'), missing));
+  });
+  it('accepts a lowercase UUID as writeId', async () => {
+    const ref = doc(alice(), 'users/alice/backup/signingKey');
+    await assertSucceeds(setDoc(ref, backup({ writeId: '00000000-0000-4000-8000-000000000000' })));
+    await assertSucceeds(setDoc(ref, backup({ writeId: 'ffffffff-ffff-4fff-bfff-ffffffffffff' })));
+  });
+  it('rejects a writeId that is not a lowercase UUID', async () => {
+    const ref = doc(alice(), 'users/alice/backup/signingKey');
+    for (const bad of [
+      '', 'x', 'not-a-uuid', WRITE_ID.toUpperCase(), WRITE_ID.replaceAll('-', ''), WRITE_ID + '0', ' ' + WRITE_ID,
+      '0b1c2d3e-4f50-4162-8374-95a6b7c8d9eg', '0b1c2d3e-4f50-4162-8374-95a6b7c8d9e', '0b1c2d3e4-f50-4162-8374-95a6b7c8d9e0',
+    ]) await assertFails(setDoc(ref, backup({ writeId: bad })));
+    await assertFails(setDoc(ref, backup({ writeId: 12345 })));
+    await assertFails(setDoc(ref, backup({ writeId: null })));
+  });
+  it('still rejects extra fields next to a valid writeId', async () => {
+    await assertFails(setDoc(doc(alice(), 'users/alice/backup/signingKey'), backup({ extra: 'x' })));
   });
   it('rejects weak or unknown key derivation and malformed fields', async () => {
     const ref = doc(alice(), 'users/alice/backup/signingKey');
