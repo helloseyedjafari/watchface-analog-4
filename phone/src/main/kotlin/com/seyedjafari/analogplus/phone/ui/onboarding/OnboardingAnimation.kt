@@ -24,13 +24,13 @@ import com.airbnb.lottie.compose.rememberLottieDynamicProperties
 import com.airbnb.lottie.compose.rememberLottieDynamicProperty
 import com.seyedjafari.analogplus.phone.ui.theme.rememberAnimationScale
 
-/** Tests read the mode through this key; it has no meaning for screen readers (the animation is decorative). */
-val AnimationModeKey = SemanticsPropertyKey<AnimationMode>("AnimationMode")
-var SemanticsPropertyReceiver.animationMode by AnimationModeKey
+/** Tests read the mode through this key (internal: the instrumented tests share this module's internals); it has no meaning for screen readers (the animation is decorative). */
+internal val AnimationModeKey = SemanticsPropertyKey<AnimationMode>("AnimationMode")
+internal var SemanticsPropertyReceiver.animationMode by AnimationModeKey
 
 /** Test hook like [AnimationModeKey]: reads the progress (0..1) being drawn (call it; only tests do), so a test can see a pause hold it and a resume continue it. */
-val AnimationProgressKey = SemanticsPropertyKey<() -> Float>("AnimationProgress")
-var SemanticsPropertyReceiver.animationProgress by AnimationProgressKey
+internal val AnimationProgressKey = SemanticsPropertyKey<() -> Float>("AnimationProgress")
+internal var SemanticsPropertyReceiver.animationProgress by AnimationProgressKey
 
 /**
  * One of the generated onboarding animations. Colours come from the theme (the files only carry placeholders), reduced

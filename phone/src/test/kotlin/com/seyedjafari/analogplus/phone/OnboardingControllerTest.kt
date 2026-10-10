@@ -162,6 +162,9 @@ class OnboardingControllerTest {
 
         val skipped = freshController(); skipped.reportWatchReady(true); skipped.skip()
         assertTrue("skipping after the watch was found still gets the tip", skipped.sendTipVisible.value)
+
+        val skippedNoWatch = freshController(); skippedNoWatch.skip()
+        assertFalse("skipping without a confirmed watch gets no tip", skippedNoWatch.sendTipVisible.value)
     }
 
     @Test fun aWatchThatLaterStopsBeingReadyCancelsTheTip() {

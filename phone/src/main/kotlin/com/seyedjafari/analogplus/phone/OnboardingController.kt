@@ -9,7 +9,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * Lives in `AppModel`, so rotation keeps it; every transition is stored first, so process death resumes at the page.
  *
  * Meant for the main thread; the mutators are also `@Synchronized` (a read-decide-write each, with the store write
- * inside the lock), so a stray background caller cannot interleave two transitions or see a half-set tip.
+ * inside the lock), so a stray background caller cannot interleave two transitions or see a half-set tip; [dismissTip],
+ * [reportWatchReady] and [restart] take the same lock, so everything that writes the tip or the watch memory is guarded by `this`.
  * Transitions out of an inactive state (Completed, Skipped) are ignored except [restart]: a double tap on Finish must
  * not bring setup back, and a late Skip must not re-arm the tip.
  */
@@ -24,7 +25,11 @@ class OnboardingController(
     val state: StateFlow<OnboardingState> = _state.asStateFlow()
 
     private val _sendTip = MutableStateFlow(false)
-    /** True after finishing (or skipping) when the pairing page had positively confirmed a watch with the app. */
+    /**
+     * True after Finish **or Skip** when the pairing page had positively confirmed a watch with the app. Held in memory
+     * only: it is not persisted, so process death before the user uses or dismisses the tip loses it (accepted; the Send
+     * screen shows the same watch status).
+     */
     val sendTipVisible: StateFlow<Boolean> = _sendTip.asStateFlow()
 
     /** Two genuine states: positively confirmed ready, or not (unknown counts as not confirmed). Guarded by `this`. */
@@ -64,7 +69,7 @@ class OnboardingController(
         set(OnboardingState.InProgress(pages.first()))
     }
 
-    fun dismissTip() { _sendTip.value = false }
+    @Synchronized fun dismissTip() { _sendTip.value = false }
 
     private fun finish(s: OnboardingState) {
         _sendTip.value = watchReady

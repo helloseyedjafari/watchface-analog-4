@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
@@ -113,10 +114,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         private val flushScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         /**
-         * Returns once every save requested before the call (the autosave and the flush from onStop) has been written: the saves share
-         * one single-threaded dispatcher in request order, so an empty task queued behind them runs after them. For tests that put
-         * the real storage back and must not race a late flush.
+         * Test hook, not for production code: returns once every save requested before the call (the autosave and the flush from
+         * onStop) has been written. The saves share one single-threaded dispatcher in request order, so an empty task queued
+         * behind them runs after them. The instrumented tests that put the real storage back call it so they do not race a late flush.
          */
+        @VisibleForTesting
         internal suspend fun awaitPendingSaves() = withContext(saveDispatcher) {}
     }
 }
