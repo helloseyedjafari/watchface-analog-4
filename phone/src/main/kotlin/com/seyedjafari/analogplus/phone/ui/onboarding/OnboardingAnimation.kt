@@ -1,14 +1,18 @@
 package com.seyedjafari.analogplus.phone.ui.onboarding
 
+import android.content.pm.ApplicationInfo
+import android.util.Log
 import androidx.annotation.RawRes
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.SemanticsPropertyReceiver
@@ -53,7 +57,17 @@ fun OnboardingAnimation(
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val lifecycleState by lifecycle.currentStateFlow.collectAsState()
     val mode = resolveAnimationMode(animatorScale, pageVisible, lifecycleState.isAtLeast(Lifecycle.State.STARTED))
-    val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(resId))
+    val result = rememberLottieComposition(LottieCompositionSpec.RawRes(resId))
+    val composition = result.value
+    val context = LocalContext.current
+    // a file that does not parse (a licensed drop-in under the same name) must not just render blank
+    LaunchedEffect(result.error) {
+        reportAnimationError(
+            context.resources.getResourceEntryName(resId), result.error,
+            debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0,
+            log = { message, error -> Log.e(TAG, message, error) },
+        )
+    }
     val properties = brandProperties()
     // read lazily (a State, not a delegated value) so a playing animation does not recompose every frame
     val playing = animateLottieCompositionAsState(
@@ -76,6 +90,21 @@ fun OnboardingAnimation(
         dynamicProperties = properties,
     )
 }
+
+private const val TAG = "OnboardingAnimation"
+
+/**
+ * What a composition that failed to load does: nothing when [error] is null; otherwise it is logged with the resource name, and
+ * a debuggable build also throws, so a broken file is found while developing and not as a blank space on a release.
+ */
+internal fun reportAnimationError(resName: String, error: Throwable?, debuggable: Boolean, log: (String, Throwable) -> Unit) {
+    if (error == null) return
+    log(loadFailure(resName), error)
+    if (debuggable) throw IllegalStateException(loadFailure(resName), error)
+}
+
+/** A developer-facing log line (not shown to the user). */
+private fun loadFailure(resName: String) = "the animation $resName could not be loaded"
 
 /**
  * The colour groups of the generated files and the theme role each one takes (the files carry only loud placeholders, so no
