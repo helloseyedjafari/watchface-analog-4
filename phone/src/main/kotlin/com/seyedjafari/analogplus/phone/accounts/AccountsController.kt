@@ -3,6 +3,7 @@ package com.seyedjafari.analogplus.phone.accounts
 import com.seyedjafari.analogplus.phone.accounts.vault.KeyVault
 import com.seyedjafari.analogplus.phone.accounts.vault.PassphraseAssessment
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,7 +15,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** What the person is waiting for right now. */
-enum class Busy { NONE, BACKING_UP, RESTORING, DELETING }
+enum class Busy { NONE, BACKING_UP, RESTORING, DISCARDING, DELETING }
 
 enum class NoticeKind { INFO, ERROR }
 
@@ -100,11 +101,21 @@ data class AccountsUi(
  * The one object the UI talks to. It joins [AccountManager], [CloudSync] and [BackupService]: signing in starts sync and
  * checks the backup, signing out stops sync, and every action reports through [ui]. Pure Kotlin, no Firebase, no text.
  *
- * Call it from one thread (the main thread). The actions that change the cloud (backup, restore, discard, delete) run one
- * after the other: a second one waits for the first, so that for example deleting the account can never overlap with an
- * upload that would write a backup into the account being deleted. [ui] changes for the account an action started with
- * only: if the person signs out (or in as someone else) while it runs, its result is returned to the caller but does not
- * touch the screen.
+ * Call it from one thread (the main thread).
+ *
+ * Lifecycle: [scope] belongs to whoever owns the controller (the app: it lives as long as the process; Task 12 builds
+ * the controller once). Every cloud-changing action (backup, restore, discard, delete, and sign-out, which waits for
+ * them) runs in that scope, not in the caller's coroutine. Cancelling the caller (the screen rotates, the person leaves
+ * the tab) only stops it waiting for the answer: the action carries on to its end, then writes [ui] (busy, notice,
+ * backup status) as usual, so a deletion is never abandoned halfway. The only way to cancel an action is to cancel
+ * [scope] itself (what a test does with a scope of its own); the caller then gets a `CancellationException`, and the
+ * action's busy state is cleared.
+ *
+ * The actions run one after the other: a second one waits for the first, so that for example deleting the account can
+ * never overlap with an upload that would write a backup into the account being deleted. An action also checks, when its
+ * turn comes, that the account it was asked for is still the signed-in one; if not it does nothing and answers with its
+ * "not signed in" result. [ui] changes for the account an action started with only: if the person signs out (or in as
+ * someone else) while it runs, its result is returned to the caller but does not touch the screen.
  */
 class AccountsController(
     val availability: AccountsAvailability,
@@ -121,6 +132,15 @@ class AccountsController(
 
     /** One cloud-changing action at a time. */
     private val actionLock = Mutex()
+
+    /** The account whose deletion is running (sync must not be started for it meanwhile); null when none. */
+    private var deletingUid: String? = null
+
+    /** The account the notice on screen belongs to; null for a notice that outlives its account (the deletion's). */
+    private var noticeUid: String? = null
+
+    /** The newest backup status that was a real answer (never [BackupStatus.Checking]), put back when a check is cancelled. */
+    private var lastSettled: BackupStatus = BackupStatus.SignedOut
 
     /** The account sync was started for; a repeated [AccountState.SignedIn] of the same account (a new email, say) must not restart it. */
     private var syncedUid: String? = null
@@ -140,7 +160,13 @@ class AccountsController(
         _ui.update { it.copy(account = state) }
         when (state) {
             is AccountState.SignedIn -> {
-                if (syncedUid != state.uid) {
+                // a notice about another account is not this account's
+                if (noticeUid != null && noticeUid != state.uid) {
+                    noticeUid = null
+                    _ui.update { it.copy(notice = null) }
+                }
+                // not while its deletion runs: what sync wrote between now and the end of the wipe would be orphaned
+                if (syncedUid != state.uid && deletingUid != state.uid) {
                     syncedUid = state.uid
                     sync.start(state.uid)
                 }
@@ -150,6 +176,7 @@ class AccountsController(
                 syncedUid = null
                 sync.stop()
                 checkSeq++
+                lastSettled = BackupStatus.SignedOut
                 _ui.update { it.copy(backup = BackupStatus.SignedOut) }
             }
         }
@@ -157,9 +184,13 @@ class AccountsController(
 
     fun signIn() { scope.launch { accounts.signIn() } }
 
-    fun signOut() { scope.launch { accounts.signOut() } }
+    /** Waits for a running cloud action (an upload's rollback cannot run once signed out), then signs out. */
+    fun signOut() { scope.launch { actionLock.withLock { accounts.signOut() } } }
 
-    fun dismissNotice() { _ui.update { it.copy(notice = null) } }
+    fun dismissNotice() {
+        noticeUid = null
+        _ui.update { it.copy(notice = null) }
+    }
 
     fun resolveOffer(choice: OfferChoice) = sync.resolveOffer(choice)
 
@@ -183,16 +214,19 @@ class AccountsController(
     suspend fun refreshBackup() {
         val uid = uid() ?: return
         val seq = ++checkSeq
-        val before = _ui.value.backup
         _ui.update { it.copy(backup = BackupStatus.Checking) }
         val status = try {
             backup.status(uid)
         } catch (e: CancellationException) {
             // nobody will answer: put back what was shown rather than leave "checking" on screen for good
-            if (seq == checkSeq) _ui.update { if (it.backup == BackupStatus.Checking) it.copy(backup = before) else it }
+            // (not what was shown just before: that may be the "checking" of an older check this one replaced)
+            if (seq == checkSeq) _ui.update { if (it.backup == BackupStatus.Checking) it.copy(backup = lastSettled) else it }
             throw e
         }
-        if (seq == checkSeq && uid() == uid) _ui.update { it.copy(backup = status) }
+        if (seq == checkSeq && uid() == uid) {
+            lastSettled = status
+            _ui.update { it.copy(backup = status) }
+        }
     }
 
     /**
@@ -203,7 +237,7 @@ class AccountsController(
      */
     suspend fun upload(passphrase: String, expecting: BackupExpectation): UploadResult {
         val uid = uid() ?: return UploadResult.NotSignedIn
-        return action(uid, Busy.BACKING_UP) {
+        return action(uid, Busy.BACKING_UP, UploadResult.NotSignedIn) {
             val result = backup.upload(uid, passphrase, expecting)
             ActionOutcome(result, noticeFor(result))
         }
@@ -211,7 +245,7 @@ class AccountsController(
 
     suspend fun planRestore(): RestorePlan {
         val uid = uid() ?: return RestorePlan.NotSignedIn
-        return action(uid, Busy.RESTORING, clearNotice = false) {
+        return action(uid, Busy.RESTORING, RestorePlan.NotSignedIn, clearNotice = false) {
             val plan = backup.plan(uid)
             ActionOutcome(
                 plan,
@@ -228,7 +262,7 @@ class AccountsController(
 
     suspend fun restore(passphrase: String, plan: RestorePlan): RestoreResult {
         val uid = uid() ?: return RestoreResult.NotSignedIn
-        return action(uid, Busy.RESTORING) {
+        return action(uid, Busy.RESTORING, RestoreResult.NotSignedIn) {
             val result = backup.restore(uid, passphrase, plan)
             ActionOutcome(result, noticeFor(result))
         }
@@ -240,24 +274,25 @@ class AccountsController(
      * refreshed after [DiscardResult.Deleted] and [DiscardResult.BackupChanged].
      */
     suspend fun discardBackup(writeId: String): DiscardResult {
-        val uid = uid() ?: return DiscardResult.Failed(RemoteErrorKind.AUTH, "")
-        return action(uid, Busy.NONE) {
+        val uid = uid() ?: return DiscardResult.NotSignedIn
+        return action(uid, Busy.DISCARDING, DiscardResult.NotSignedIn) {
             val result = backup.discard(uid, writeId)
             ActionOutcome(
                 result,
                 when (result) {
                     DiscardResult.Deleted -> Notice.BackupDeleted
+                    DiscardResult.NotSignedIn -> Notice.SignInFirst
                     is DiscardResult.BackupChanged -> Notice.BackupChanged
                     is DiscardResult.Failed -> Notice.BackupDeleteFailed(result.kind, result.message)
                 },
-                refresh = result !is DiscardResult.Failed,
+                refresh = result is DiscardResult.Deleted || result is DiscardResult.BackupChanged,
             )
         }
     }
 
     suspend fun deleteAccount(): DeletionResult {
         val uid = uid() ?: return DeletionResult.NotSignedIn
-        return action(uid, Busy.DELETING, showAfterAccountChange = { it == DeletionResult.Done }) {
+        return action(uid, Busy.DELETING, DeletionResult.NotSignedIn, outlivesAccount = { it == DeletionResult.Done }) {
             val result = deletion.delete(uid)
             ActionOutcome(
                 result,
@@ -268,7 +303,8 @@ class AccountsController(
                     is DeletionResult.DataFailed -> Notice.DeleteDataFailed(result.kind, result.message)
                     is DeletionResult.AccountFailed -> Notice.DeleteAccountFailed(result.problem, result.message)
                 },
-                refresh = false,
+                // the wipe may have taken the backup document even though the deletion failed
+                refresh = result is DeletionResult.DataFailed || result is DeletionResult.AccountFailed,
             )
         }
     }
@@ -276,28 +312,60 @@ class AccountsController(
     private class ActionOutcome<R>(val result: R, val notice: Notice?, val refresh: Boolean = true)
 
     /**
-     * Runs one cloud-changing action for [uid]: waits its turn, shows [busy] while it runs (also when it is cancelled or
+     * Runs one cloud-changing action for [uid] in the controller's [scope] (see the class comment) and returns its result;
+     * the caller being cancelled only stops the waiting. The action waits its turn, then checks that [uid] is still the
+     * signed-in account (else it does nothing and the result is [signedOut]), shows [busy] while it runs (also when it
      * throws), and shows its notice and refreshes the backup status only if the signed-in account is still [uid]. The
-     * outcome of an action that finished a deletion is shown even though the account is gone by then
-     * ([showAfterAccountChange]).
+     * outcome of an action for which [outlivesAccount] is true (a finished deletion) is shown although the account is
+     * gone by then, and belongs to no account.
      */
     private suspend fun <R> action(
         uid: String,
         busy: Busy,
+        signedOut: R,
         clearNotice: Boolean = true,
-        showAfterAccountChange: (R) -> Boolean = { false },
+        outlivesAccount: (R) -> Boolean = { false },
+        block: suspend () -> ActionOutcome<R>,
+    ): R {
+        val answer = CompletableDeferred<R>()
+        scope.launch {
+            try {
+                answer.complete(runAction(uid, busy, signedOut, clearNotice, outlivesAccount, block))
+            } catch (e: Throwable) {
+                // handed to the caller (also a cancelled scope); a failure here must not take the controller's scope down
+                answer.completeExceptionally(e)
+            }
+        }
+        return answer.await()
+    }
+
+    private suspend fun <R> runAction(
+        uid: String,
+        busy: Busy,
+        signedOut: R,
+        clearNotice: Boolean,
+        outlivesAccount: (R) -> Boolean,
         block: suspend () -> ActionOutcome<R>,
     ): R = actionLock.withLock {
+        // the account may have changed while this action waited behind another one
+        if (uid() != uid) return@withLock signedOut
         _ui.update { it.copy(busy = busy, notice = if (clearNotice) null else it.notice) }
+        if (clearNotice) noticeUid = null
+        if (busy == Busy.DELETING) deletingUid = uid
         var outcome: ActionOutcome<R>? = null
         try {
             outcome = block()
         } finally {
+            if (busy == Busy.DELETING) deletingUid = null
             _ui.update { it.copy(busy = Busy.NONE) }
         }
         val done = outcome
         val sameAccount = uid() == uid
-        if (done.notice != null && (sameAccount || showAfterAccountChange(done.result))) _ui.update { it.copy(notice = done.notice) }
+        val outlives = outlivesAccount(done.result)
+        if (done.notice != null && (sameAccount || outlives)) {
+            noticeUid = if (outlives) null else uid
+            _ui.update { it.copy(notice = done.notice) }
+        }
         if (sameAccount && done.refresh) refreshBackup()
         done.result
     }

@@ -23,6 +23,9 @@ sealed interface ReauthResult {
     data object Ok : ReauthResult
     data object Cancelled : ReauthResult
 
+    /** Nobody, or another account than the one asked for, is signed in. Nothing was asked of the person. */
+    data object NotSignedIn : ReauthResult
+
     /** [message] is the system's own text, for a detail line only. */
     data class Failed(val message: String) : ReauthResult
 }
@@ -30,6 +33,9 @@ sealed interface ReauthResult {
 sealed interface DeleteUserResult {
     data object Deleted : DeleteUserResult
     data object NeedsRecentLogin : DeleteUserResult
+
+    /** Nobody, or another account than the one asked for, is signed in. Nothing was deleted. */
+    data object NotSignedIn : DeleteUserResult
 
     /** [message] is the system's own text, for a detail line only. */
     data class Failed(val message: String) : DeleteUserResult
@@ -45,11 +51,18 @@ interface AccountManager {
     /** Shows the Google account chooser. Ends in [AccountState.SignedIn], [AccountState.SignedOut] (cancelled) or [AccountState.Failed]. */
     suspend fun signIn()
 
-    /** Asks for the Google account again; required before deleting the account. */
-    suspend fun reauthenticate(): ReauthResult
+    /**
+     * Asks for the Google account again; required before deleting the account. Acts only for [uid]: when nobody, or
+     * another account, is signed in the result is [ReauthResult.NotSignedIn] and the person is not asked.
+     */
+    suspend fun reauthenticate(uid: String): ReauthResult
 
-    /** Deletes the Firebase Auth user. Call [reauthenticate] first. On success [state] becomes [AccountState.SignedOut]. */
-    suspend fun deleteUser(): DeleteUserResult
+    /**
+     * Deletes the Firebase Auth user [uid]. Call [reauthenticate] first. On success [state] becomes
+     * [AccountState.SignedOut]. It must never delete anyone else: when nobody, or another account, is signed in the
+     * result is [DeleteUserResult.NotSignedIn] (not `Deleted`, even though there is then nothing to delete).
+     */
+    suspend fun deleteUser(uid: String): DeleteUserResult
 
     suspend fun signOut()
 }
@@ -63,8 +76,8 @@ class UnavailableAccountManager : AccountManager {
         _state.value = AccountState.Failed(AccountFailure.NOT_CONFIGURED, NOT_CONFIGURED_DETAIL)
     }
 
-    override suspend fun reauthenticate(): ReauthResult = ReauthResult.Failed(NOT_CONFIGURED_DETAIL)
-    override suspend fun deleteUser(): DeleteUserResult = DeleteUserResult.Failed(NOT_CONFIGURED_DETAIL)
+    override suspend fun reauthenticate(uid: String): ReauthResult = ReauthResult.NotSignedIn
+    override suspend fun deleteUser(uid: String): DeleteUserResult = DeleteUserResult.NotSignedIn
     override suspend fun signOut() { _state.value = AccountState.SignedOut }
 }
 

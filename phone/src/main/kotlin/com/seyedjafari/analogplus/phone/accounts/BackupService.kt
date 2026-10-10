@@ -182,6 +182,9 @@ sealed interface RestoreResult {
 sealed interface DiscardResult {
     data object Deleted : DiscardResult
 
+    /** Nobody is signed in. Never returned by [BackupService.discard] (it takes a uid); the controller answers with it. */
+    data object NotSignedIn : DiscardResult
+
     /** The backup is not the one the person was looking at (another phone replaced or removed it); nothing was deleted. */
     data class BackupChanged(val current: CloudBackup) : DiscardResult
     data class Failed(val kind: RemoteErrorKind, val message: String) : DiscardResult

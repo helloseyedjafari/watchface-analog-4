@@ -16,17 +16,28 @@ class FakeAccountManager(initial: AccountState = AccountState.SignedOut) : Accou
     var reauthCalls = 0
     var deleteCalls = 0
 
+    /** The uids [deleteUser] really deleted. */
+    val deleted = ArrayList<String>()
+
     override suspend fun signIn() {
         signInCalls++
         _state.value = AccountState.SigningIn
         _state.value = nextSignIn
     }
 
-    override suspend fun reauthenticate(): ReauthResult { reauthCalls++; return nextReauth }
+    private fun isSignedIn(uid: String) = (_state.value as? AccountState.SignedIn)?.uid == uid
 
-    override suspend fun deleteUser(): DeleteUserResult {
+    /** Counts every call, also one for an account that is not signed in (that one answers [ReauthResult.NotSignedIn]). */
+    override suspend fun reauthenticate(uid: String): ReauthResult {
+        reauthCalls++
+        return if (isSignedIn(uid)) nextReauth else ReauthResult.NotSignedIn
+    }
+
+    /** Like the real one it deletes nobody but [uid]: [deleteCalls] counts every call, [deleted] only the ones that did something. */
+    override suspend fun deleteUser(uid: String): DeleteUserResult {
         deleteCalls++
-        if (nextDelete == DeleteUserResult.Deleted) _state.value = AccountState.SignedOut
+        if (!isSignedIn(uid)) return DeleteUserResult.NotSignedIn
+        if (nextDelete == DeleteUserResult.Deleted) { _state.value = AccountState.SignedOut; deleted += uid }
         return nextDelete
     }
 

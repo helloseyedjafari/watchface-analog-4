@@ -2,6 +2,7 @@ package com.seyedjafari.analogplus.phone.accounts
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -42,8 +43,8 @@ class AccountDeletionTest {
     @Test fun theStepsRunInTheOrderReauthStopSyncWipeDeleteAccount() {
         val log = ArrayList<String>()
         class LoggedAccounts : AccountManager by accounts {
-            override suspend fun reauthenticate(): ReauthResult { log += "reauth"; return accounts.reauthenticate() }
-            override suspend fun deleteUser(): DeleteUserResult { log += "deleteUser"; return accounts.deleteUser() }
+            override suspend fun reauthenticate(uid: String): ReauthResult { log += "reauth"; return accounts.reauthenticate(uid) }
+            override suspend fun deleteUser(uid: String): DeleteUserResult { log += "deleteUser"; return accounts.deleteUser(uid) }
         }
         class LoggedRemote : RemoteStore by remote {
             override suspend fun deleteAllUserData(uid: String) { log += "wipe"; remote.deleteAllUserData(uid) }
@@ -83,8 +84,8 @@ class AccountDeletionTest {
 
     @Test fun aDataFailureDoesNotRestartSyncForAnAccountThatIsNoLongerSignedIn() {
         remote.failDeleteAll = RemoteException(RemoteErrorKind.OFFLINE, "offline")
-        accounts.force(AccountState.SignedOut)       // signed out while the wipe was running
-        assertTrue(delete() is DeletionResult.DataFailed)
+        val d = deletionWithWipeHook { accounts.force(AccountState.SignedOut) }       // signed out while the wipe was running
+        assertTrue(runBlocking { d.delete("u1") } is DeletionResult.DataFailed)
         assertTrue(sync.started.isEmpty())
     }
 
@@ -126,5 +127,87 @@ class AccountDeletionTest {
         val entry = journal.entries().values.single()
         assertNull(entry.baseRemoteAtMs)
         assertEquals(SyncMark.DIRTY, entry.mark)
+    }
+
+    // ---- the account changing under the deletion ----------------------------------------------------------------
+
+    /** A deletion whose wipe first runs [onWipe]: something that happens while the data is being deleted. */
+    private fun deletionWithWipeHook(onWipe: () -> Unit): AccountDeletion {
+        class HookedWipe : RemoteStore by remote {
+            override suspend fun deleteAllUserData(uid: String) { onWipe(); remote.deleteAllUserData(uid) }
+        }
+        return AccountDeletion(accounts, HookedWipe(), sync, journal)
+    }
+
+    @Test fun anotherAccountSignedInDuringTheWipeIsNeverDeleted() {
+        val d = deletionWithWipeHook { accounts.force(AccountState.SignedIn("u2", null)) }
+        assertEquals(DeletionResult.AccountFailed(AccountDeleteProblem.ACCOUNT_CHANGED, ""), runBlocking { d.delete("u1") })
+        assertEquals(0, accounts.deleteCalls)
+        assertTrue(accounts.deleted.isEmpty())
+        assertEquals(AccountState.SignedIn("u2", null), accounts.state.value)
+        assertEquals("u1", journal.boundUid())
+        assertTrue(sync.started.isEmpty())                  // and nothing is started for anybody
+    }
+
+    @Test fun signingOutDuringTheWipeDeletesNoAuthUserAndIsNotDone() {
+        val d = deletionWithWipeHook { accounts.force(AccountState.SignedOut) }
+        val r = runBlocking { d.delete("u1") }
+        assertEquals(DeletionResult.AccountFailed(AccountDeleteProblem.ACCOUNT_CHANGED, ""), r)
+        assertEquals(0, accounts.deleteCalls)
+        assertEquals("u1", journal.boundUid())              // the account still exists: not forgotten
+    }
+
+    @Test fun signingOutDuringTheGooglePromptTouchesNothing() {
+        class SignsOutWhileAsking : AccountManager by accounts {
+            override suspend fun reauthenticate(uid: String): ReauthResult {
+                accounts.force(AccountState.SignedOut)
+                return ReauthResult.Ok
+            }
+        }
+        val d = AccountDeletion(SignsOutWhileAsking(), remote, sync, journal)
+        assertEquals(DeletionResult.NotSignedIn, runBlocking { d.delete("u1") })
+        assertEquals(0, sync.stops)
+        assertNull(remote.deletedAllFor)
+        assertEquals(1, remote.designsOf("u1").size)
+    }
+
+    @Test fun nobodySignedInAsksNothing() {
+        accounts.force(AccountState.SignedOut)
+        assertEquals(DeletionResult.NotSignedIn, delete())
+        assertEquals(0, accounts.reauthCalls)
+        assertEquals(0, sync.stops)
+    }
+
+    @Test fun aDeletionForAnAccountThatIsNotTheSignedInOneTouchesNothing() {
+        accounts.force(AccountState.SignedIn("u2", null))
+        assertEquals(DeletionResult.NotSignedIn, delete())          // asked for u1
+        assertEquals(0, accounts.reauthCalls)
+        assertEquals(0, sync.stops)
+        assertNull(remote.deletedAllFor)
+    }
+
+    @Test fun theAccountManagerRefusesToReauthenticateOrDeleteAnotherAccountThanTheOneAsked() = runBlocking {
+        assertEquals(ReauthResult.NotSignedIn, accounts.reauthenticate("u2"))
+        assertEquals(DeleteUserResult.NotSignedIn, accounts.deleteUser("u2"))
+        assertEquals(AccountState.SignedIn("u1", "me@example.com"), accounts.state.value)
+    }
+
+    @Test fun theJournalIsUnboundOnTheIoDispatcherNotOnTheCaller() {
+        class ThreadKv(val inner: MemoryKeyValueStore = MemoryKeyValueStore()) : com.seyedjafari.analogplus.phone.KeyValueStore by inner {
+            val threads = HashSet<String>()
+            override fun putString(key: String, value: String) { threads += Thread.currentThread().name; inner.putString(key, value) }
+        }
+        val kv = ThreadKv()
+        val j = SyncJournal(kv)
+        j.bindTo("u1")
+        kv.threads.clear()
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "io-test") }
+        try {
+            val d = AccountDeletion(accounts, remote, sync, j, executor.asCoroutineDispatcher())
+            assertEquals(DeletionResult.Done, runBlocking { d.delete("u1") })
+            assertTrue(kv.threads.isNotEmpty() && kv.threads.all { it.startsWith("io-test") })
+        } finally {
+            executor.shutdown()
+        }
     }
 }

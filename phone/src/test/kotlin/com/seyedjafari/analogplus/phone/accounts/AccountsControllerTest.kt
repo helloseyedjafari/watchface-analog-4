@@ -5,6 +5,9 @@ import com.seyedjafari.analogplus.phone.accounts.vault.KeyVault
 import com.seyedjafari.analogplus.phone.accounts.vault.SealedKey
 import com.seyedjafari.analogplus.phone.keyFingerprint
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancelAndJoin
@@ -12,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -33,6 +37,11 @@ class AccountsControllerTest {
     /** Lets a test hold a call of the cloud open to act while the controller waits for it. */
     private class GatedRemote(val inner: FakeRemoteStore) : RemoteStore by inner {
         var putGate: CompletableDeferred<Unit>? = null
+        var deleteGate: CompletableDeferred<Unit>? = null
+        var wipeGate: CompletableDeferred<Unit>? = null
+
+        /** Runs when the wipe of the user's data starts (before [wipeGate]). */
+        var onWipe: (suspend () -> Unit)? = null
 
         /** Each [getBackup] reads the cloud at once, then waits for the next gate in this list (if any) before it answers. */
         val getGates = ArrayDeque<CompletableDeferred<Unit>>()
@@ -43,17 +52,31 @@ class AccountsControllerTest {
             return seen
         }
 
+        override suspend fun deleteBackup(uid: String, replacing: BackupPrecondition): BackupRemoval {
+            deleteGate?.await()
+            return inner.deleteBackup(uid, replacing)
+        }
+
+        override suspend fun deleteAllUserData(uid: String) {
+            onWipe?.invoke()
+            wipeGate?.await()
+            inner.deleteAllUserData(uid)
+        }
+
         override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
             putGate?.await()
             return inner.putBackup(uid, sealed, writeId, replacing)
         }
     }
 
-    private fun TestScope.controller(manager: AccountManager = accounts) = AccountsController(
+    private fun TestScope.controller(manager: AccountManager = accounts, scope: CoroutineScope = backgroundScope) = AccountsController(
         AccountsAvailability.AVAILABLE, manager, sync,
         BackupService(remote, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
-        AccountDeletion(manager, remote, sync, journal), backgroundScope,
+        AccountDeletion(manager, remote, sync, journal, Dispatchers.Unconfined), scope,
     )
+
+    /** A scope of the controller's own, as the app owns one: cancelling it is the only way to cancel an action. */
+    private fun TestScope.ownScope() = CoroutineScope(backgroundScope.coroutineContext + Job())
 
     private fun backedUp(c: AccountsController) = c.ui.value.backup as BackupStatus.BackedUp
 
@@ -410,13 +433,46 @@ class AccountsControllerTest {
         assertNull(inner.backupOf("u1"))                         // the upload landed first, then the wipe took it
     }
 
-    @Test fun cancellingAnUploadLeavesNoBusyStateBehind() = runTest(UnconfinedTestDispatcher()) {
+    @Test fun aCancelledCallerDoesNotCancelTheUploadAndBusyClearsWhenItReallyEnds() = runTest(UnconfinedTestDispatcher()) {
         val c = controller()
+        c.signIn()
+        val gate = CompletableDeferred<Unit>().also { remote.putGate = it }
+        val job = launch { c.upload(passphrase, BackupExpectation.None) }
+        assertEquals(Busy.BACKING_UP, c.ui.value.busy)
+        job.cancelAndJoin()                                      // the screen left
+        assertEquals(Busy.BACKING_UP, c.ui.value.busy)           // the upload is still running
+        gate.complete(Unit)
+        assertEquals(Busy.NONE, c.ui.value.busy)
+        assertEquals(Notice.KeyBackedUp(fpA), c.ui.value.notice) // and its notice and status still arrive
+        assertEquals(fpA, backedUp(c).fingerprint)
+    }
+
+    @Test fun aCancelledCallerDoesNotAbandonAnAccountDeletionHalfway() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        val gate = CompletableDeferred<Unit>().also { remote.wipeGate = it }
+        val stopsBefore = sync.stops
+        val job = launch { c.deleteAccount() }
+        assertEquals(Busy.DELETING, c.ui.value.busy)
+        job.cancelAndJoin()                                      // rotation while the data is being deleted
+        assertEquals(stopsBefore + 1, sync.stops)
+        assertTrue(sync.started.size == 1)                       // sync was not restarted over a half-wiped cloud
+        gate.complete(Unit)
+        assertEquals(listOf("u1"), accounts.deleted)
+        assertEquals(Notice.AccountDeleted, c.ui.value.notice)
+        assertEquals(Busy.NONE, c.ui.value.busy)
+    }
+
+    @Test fun cancellingTheControllersOwnScopeEndsARunningActionAndClearsBusy() = runTest(UnconfinedTestDispatcher()) {
+        val own = ownScope()
+        val c = controller(scope = own)
         c.signIn()
         remote.putGate = CompletableDeferred()
         val job = launch { c.upload(passphrase, BackupExpectation.None) }
         assertEquals(Busy.BACKING_UP, c.ui.value.busy)
-        job.cancelAndJoin()
+        own.cancel()
+        job.join()
+        assertTrue(job.isCancelled)                              // the waiting caller learns the action was cancelled
         assertEquals(Busy.NONE, c.ui.value.busy)
     }
 
@@ -443,6 +499,157 @@ class AccountsControllerTest {
         slow.complete(Unit)
         stale.join()
         assertTrue(c.ui.value.backup is BackupStatus.BackedUp)
+    }
+
+    @Test fun aCheckCancelledWhileAnOlderOneWasStillUnansweredRestoresTheLastRealAnswer() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        assertEquals(BackupStatus.NotBackedUp, c.ui.value.backup)
+        val first = CompletableDeferred<Unit>().also { remote.getGates += it }
+        val second = CompletableDeferred<Unit>().also { remote.getGates += it }
+        val a = launch { c.refreshBackup() }
+        val b = launch { c.refreshBackup() }                   // starts while A's "checking" is on screen
+        first.complete(Unit)
+        a.join()                                               // A's answer is stale and dropped
+        b.cancelAndJoin()
+        assertEquals(BackupStatus.NotBackedUp, c.ui.value.backup)
+        second.complete(Unit)
+    }
+
+    // ---- the account changing under the actions -----------------------------------------------------------------
+
+    @Test fun aDeletionQueuedBehindAnUploadDoesNothingIfTheAccountChangedMeanwhile() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        val gate = CompletableDeferred<Unit>().also { remote.putGate = it }
+        val upload = launch { c.upload(passphrase, BackupExpectation.None) }
+        var deleted: DeletionResult? = null
+        val delete = launch { deleted = c.deleteAccount() }
+        accounts.force(AccountState.SignedIn("u2", "other@example.com"))
+        val stopsBefore = sync.stops
+        gate.complete(Unit)
+        upload.join(); delete.join()
+        assertEquals(DeletionResult.NotSignedIn, deleted)
+        assertEquals(0, accounts.reauthCalls)                    // u2 was not asked for anything
+        assertEquals(stopsBefore, sync.stops)                    // and u2's sync was not stopped
+        assertEquals(SyncStatus.Syncing, c.ui.value.sync)
+        assertEquals(listOf("u1", "u2"), sync.started)
+        assertEquals(Busy.NONE, c.ui.value.busy)
+    }
+
+    @Test fun signingOutWaitsForARunningCloudActionAndThenSignsOut() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        val gate = CompletableDeferred<Unit>().also { remote.putGate = it }
+        val upload = launch { c.upload(passphrase, BackupExpectation.None) }
+        c.signOut()
+        assertEquals(AccountState.SignedIn("u1", "me@example.com"), accounts.state.value)   // still waiting its turn
+        gate.complete(Unit)
+        upload.join()
+        assertEquals(AccountState.SignedOut, accounts.state.value)
+        assertEquals(Notice.KeyBackedUp(fpA), c.ui.value.notice)  // the upload finished (and was proven) while still signed in
+    }
+
+    @Test fun signingInAgainDuringADeletionDoesNotStartSyncForTheAccountBeingDeleted() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        assertEquals(listOf("u1"), sync.started)
+        remote.onWipe = {
+            accounts.force(AccountState.SignedOut)
+            yield()                                               // the controller sees the sign-out ...
+            accounts.force(AccountState.SignedIn("u1", "me@example.com"))
+            yield()                                               // ... and the sign-in again
+        }
+        c.deleteAccount()
+        assertEquals(listOf("u1"), sync.started)                  // nothing was written back during the wipe
+    }
+
+    @Test fun afterADeletionThatDidNotHappenSyncStartsAgainForTheAccountOnTheNextSignIn() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        accounts.nextReauth = ReauthResult.Failed("no network")
+        c.deleteAccount()
+        c.signOut(); c.signIn()
+        assertEquals(listOf("u1", "u1"), sync.started)
+    }
+
+    @Test fun anActionQueuedBehindAnotherDoesNothingIfTheAccountChangedMeanwhile() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        val gate = CompletableDeferred<Unit>().also { remote.putGate = it }
+        val first = launch { c.upload(passphrase, BackupExpectation.None) }
+        var second: UploadResult? = null
+        val queued = launch { second = c.upload(passphrase, BackupExpectation.SameKey) }
+        accounts.force(AccountState.SignedIn("u2", "other@example.com"))
+        gate.complete(Unit)
+        first.join(); queued.join()
+        assertEquals(UploadResult.NotSignedIn, second)
+        assertEquals(1, inner.backupWrites.size)                  // only the first upload wrote anything
+    }
+
+    // ---- notices belong to their account ------------------------------------------------------------------------
+
+    @Test fun aNoticeAboutOneAccountIsGoneWhenAnotherAccountSignsIn() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        inner.failWith = RemoteException(RemoteErrorKind.OFFLINE, "no route")
+        c.upload(passphrase, BackupExpectation.None)
+        inner.failWith = null
+        assertTrue(c.ui.value.notice != null)
+        accounts.force(AccountState.SignedIn("u2", "other@example.com"))
+        assertNull(c.ui.value.notice)
+    }
+
+    @Test fun aNoticeSurvivesSigningOutAndBackInAsTheSameAccount() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        c.upload(passphrase, BackupExpectation.None)
+        val notice = c.ui.value.notice
+        accounts.force(AccountState.SignedOut)
+        assertEquals(notice, c.ui.value.notice)
+        accounts.force(AccountState.SignedIn("u1", "me@example.com"))
+        assertEquals(notice, c.ui.value.notice)
+    }
+
+    @Test fun theAccountDeletedNoticeBelongsToNoAccountAndStays() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        c.deleteAccount()
+        accounts.force(AccountState.SignedIn("u2", null))
+        assertEquals(Notice.AccountDeleted, c.ui.value.notice)
+    }
+
+    // ---- after a failed deletion --------------------------------------------------------------------------------
+
+    @Test fun theBackupStatusIsRefreshedAfterAWipeThatLeftTheAccountStanding() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        c.upload(passphrase, BackupExpectation.None)
+        assertTrue(c.ui.value.backup is BackupStatus.BackedUp)
+        accounts.nextDelete = DeleteUserResult.Failed("later")
+        c.deleteAccount()
+        assertEquals(BackupStatus.NotBackedUp, c.ui.value.backup)  // the wipe took the backup document
+    }
+
+    // ---- discarding ---------------------------------------------------------------------------------------------
+
+    @Test fun discardingSignedOutIsARealNotSignedInWithoutBusyOrNotice() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        assertEquals(DiscardResult.NotSignedIn, c.discardBackup("w"))
+        assertEquals(Busy.NONE, c.ui.value.busy)
+        assertNull(c.ui.value.notice)
+    }
+
+    @Test fun discardingShowsItsOwnBusyStateWhileTheCloudIsWritten() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn(); c.upload(passphrase, BackupExpectation.None)
+        val id = backedUp(c).writeId
+        val gate = CompletableDeferred<Unit>().also { remote.deleteGate = it }
+        val job = launch { c.discardBackup(id) }
+        assertEquals(Busy.DISCARDING, c.ui.value.busy)
+        gate.complete(Unit)
+        job.join()
+        assertEquals(Busy.NONE, c.ui.value.busy)
     }
 
     // ---- no Firebase in the build -------------------------------------------------------------------------------
