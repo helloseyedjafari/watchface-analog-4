@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.dp
 
 private fun c(argb: Int) = Color(argb)
 
-private val LightScheme = lightColorScheme(
+internal val LightScheme = lightColorScheme(
     primary = c(Palette.lightPrimary), onPrimary = c(Palette.lightOnPrimary),
     primaryContainer = c(Palette.lightPrimaryContainer), onPrimaryContainer = c(Palette.lightOnPrimaryContainer),
     inversePrimary = c(Palette.lightInversePrimary),
@@ -34,7 +34,7 @@ private val LightScheme = lightColorScheme(
     surfaceContainerLowest = c(Palette.lightSurfaceContainerLowest),
 )
 
-private val DarkScheme = darkColorScheme(
+internal val DarkScheme = darkColorScheme(
     primary = c(Palette.darkPrimary), onPrimary = c(Palette.darkOnPrimary),
     primaryContainer = c(Palette.darkPrimaryContainer), onPrimaryContainer = c(Palette.darkOnPrimaryContainer),
     inversePrimary = c(Palette.darkInversePrimary),

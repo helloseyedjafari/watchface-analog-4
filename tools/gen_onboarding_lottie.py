@@ -6,9 +6,12 @@ gen_assets, the four complication slot boxes come from build_face. The compositi
 capture, so reference pixels are composition pixels; everything is drawn around the centre and shrunk by SCALE so the
 outer dots keep a margin.
 
-Colours: every fill and stroke sits in a group named accent / ink / track / onaccent. The app recolours those groups
-at run time with Lottie dynamic properties (brand colours, light and dark). The colours written here are deliberately
-loud placeholders (magenta, yellow, cyan, orange): if a group is ever not matched by the app, it shows.
+Colours: every fill and stroke sits in a group named after a theme role: accent (primary), accent2 (tertiary),
+accent3 (secondary), ink (onSurface), track (outline), onaccent (onPrimary). The app recolours those groups at run
+time with Lottie dynamic properties (theme colours, light and dark), so no colour is baked in. The colours written here
+are deliberately loud placeholders (magenta, lime, azure, yellow, cyan, orange): if a group is ever not matched by the
+app, it shows. Only the welcome animation uses accent2 and accent3: it morphs through four colour schemes
+(Classic, Midnight, Neon, Minimal) by cross-fading four copies of the face, each drawn with other roles.
 
     python3 tools/gen_onboarding_lottie.py            # writes the four files
     python3 tools/gen_onboarding_lottie.py --out DIR  # writes them somewhere else
@@ -37,7 +40,19 @@ PLACEHOLDER = {
     "ink": [1, 0.9, 0, 1],
     "track": [0, 0.9, 0.9, 1],
     "onaccent": [1, 0.5, 0, 1],
+    "accent2": [0.5, 1, 0, 1],
+    "accent3": [0, 0.5, 1, 1],
 }
+
+# The welcome animation's colour schemes, in order: (name, role of the accent parts, role of the ink parts). Each scheme is a
+# full copy of the face; the copies cross-fade, one scheme per quarter of the loop.
+SCHEMES = [
+    ("classic", "accent", "ink"),          # primary + onSurface
+    ("midnight", "accent3", "accent"),     # secondary + primary
+    ("neon", "accent2", "accent"),         # tertiary + primary
+    ("minimal", "ink", "track"),           # onSurface + outline
+]
+FADE = 20                                  # frames a cross-fade takes: the last FADE frames of each quarter
 
 EASE_I = {"x": [0.3], "y": [1]}
 EASE_O = {"x": [0.2], "y": [0]}
@@ -158,9 +173,25 @@ def slot_geometry(slot):
 
 # ---- the four animations ---------------------------------------------------------------------------------------
 
+def scheme_opacity(k, op, quarter):
+    """Opacity of scheme k's copy of the face over the loop: full during its quarter, a linear cross-fade with the next
+    scheme in the last FADE frames of it (and in with the previous one in the last FADE frames of the quarter before).
+    Scheme 0 fades in at the end of the loop, so the last frame equals the first and the loop seam is clean."""
+    start, end = k * quarter, (k + 1) * quarter
+    if k == 0:
+        pts = {0: 100, end - FADE: 100, end: 0, op - FADE: 0, op: 100}
+    else:
+        pts = {0: 0, start - FADE: 0, start: 100, end - FADE: 100, end: 0}
+        pts[op] = 0                                          # (for the last scheme, end == op: the same key)
+    return anim(sorted(pts.items()), linear=True)
+
+
 def welcome():
-    """Loop (8 s): the hands sweep, the ring morphs full -> halves -> quarters -> full, the slots pop in and out."""
+    """Loop (8 s): the hands sweep, the ring morphs full -> halves -> quarters -> full, the slots pop in and out, and the
+    colours cycle Classic -> Midnight -> Neon -> Minimal: four copies of the face drawn with other theme roles (SCHEMES)
+    cross-fade, one per quarter of the loop."""
     op = 240
+    quarter = op // len(SCHEMES)
     times = [(0, 40), (60, 100), (120, 160), (180, 240)]
     layouts = [0, 1, 2, 0]                                  # which of the three (start, end) pairs below: full, halves, quarters
     layout = {                                              # arc -> (start %, end %) per layout
@@ -169,32 +200,49 @@ def welcome():
         2: [(50, 50), (50, 50), (50, 73)],
         3: [(75, 75), (75, 75), (75, 98)],
     }
-    arcs = []
-    for i in range(4):
-        s_pts, e_pts = [], []
-        for (t0, t1), li in zip(times, layouts):
-            s, e = layout[i][li]
-            s_pts += [(t0, s), (t1, s)]
-            e_pts += [(t0, e), (t1, e)]
-        name = "accent" if i % 2 == 0 else "ink"
-        arcs.append(group(name, [ellipse(RING_R), trim(anim(s_pts), anim(e_pts)), stroke(name, RING_W, cap=1)]))
-    layers = [
-        layer(1, "cap", cap(), op),
-        layer(2, "second hand", [hand(g.SECOND_LEN, g.SECOND_TAIL, g.SECOND_W, "accent")], op, rot=anim([(0, 0), (op, 1440)], linear=True)),
-        layer(3, "minute hand", [hand(g.MINUTE_LEN, g.HAND_BASE, g.HAND_W, "ink")], op, rot=anim([(0, 0), (op, 720)], linear=True)),
-        layer(4, "hour hand", [hand(g.HOUR_LEN, g.HAND_BASE, g.HAND_W, "ink")], op, rot=anim([(0, 0), (op, 360)], linear=True)),
-    ]
     full = SCALE * 100
-    for n, slot in enumerate(bf.SLOTS):
-        cx, cy, w, h = slot_geometry(slot)
+
+    def arcs(accent, ink):
+        out = []
+        for i in range(4):
+            s_pts, e_pts = [], []
+            for (t0, t1), li in zip(times, layouts):
+                s, e = layout[i][li]
+                s_pts += [(t0, s), (t1, s)]
+                e_pts += [(t0, e), (t1, e)]
+            name = accent if i % 2 == 0 else ink
+            out.append(group(name, [ellipse(RING_R), trim(anim(s_pts), anim(e_pts)), stroke(name, RING_W, cap=1)]))
+        return out
+
+    def slot_scale(n):
         t0 = 70 + 8 * n
-        pop = anim([(0, [0, 0, 100]), (t0, [0, 0, 100]), (t0 + 20, [full, full, 100]),
-                    (215, [full, full, 100]), (235, [0, 0, 100]), (op, [0, 0, 100])])
-        shapes = [group("ink", [rrect(w, h, 14), stroke("ink", 3, opacity=80)]),
-                  group("accent", [rrect(w, h, 14), fill("accent", 16)])]
-        layers.append(layer(5 + n, f"slot {slot.name}", shapes, op, pos=to_comp(cx, cy), scale_anim=pop))
-    layers.append(layer(9, "ring", arcs + [ring_track()], op))
-    layers.append(layer(10, "dial", [hour_dots("track")], op))
+        return anim([(0, [0, 0, 100]), (t0, [0, 0, 100]), (t0 + 20, [full, full, 100]),
+                     (215, [full, full, 100]), (235, [0, 0, 100]), (op, [0, 0, 100])])
+
+    def elements(accent, ink):
+        """(layer name, shapes, extra layer arguments) of every part of the face drawn in this scheme, top of the stack first."""
+        els = [
+            ("cap", [group("onaccent", [ellipse(3.5), fill("onaccent")]), group(accent, [ellipse(g.CAP_RED_R), fill(accent)])], {}),
+            ("second hand", [hand(g.SECOND_LEN, g.SECOND_TAIL, g.SECOND_W, accent)], {"rot": anim([(0, 0), (op, 1440)], linear=True)}),
+            ("minute hand", [hand(g.MINUTE_LEN, g.HAND_BASE, g.HAND_W, ink)], {"rot": anim([(0, 0), (op, 720)], linear=True)}),
+            ("hour hand", [hand(g.HOUR_LEN, g.HAND_BASE, g.HAND_W, ink)], {"rot": anim([(0, 0), (op, 360)], linear=True)}),
+        ]
+        for n, slot in enumerate(bf.SLOTS):
+            cx, cy, w, h = slot_geometry(slot)
+            shapes = [group(ink, [rrect(w, h, 14), stroke(ink, 3, opacity=80)]),
+                      group(accent, [rrect(w, h, 14), fill(accent, 16)])]
+            els.append((f"slot {slot.name}", shapes, {"pos": to_comp(cx, cy), "scale_anim": slot_scale(n)}))
+        els.append(("ring", arcs(accent, ink) + [ring_track()], {}))
+        return els
+
+    per_scheme = [elements(accent, ink) for _, accent, ink in SCHEMES]
+    layers, ind = [], 1
+    for e in range(len(per_scheme[0])):                     # element-major: the copies of one part sit together, so the drawing order is the same as with one scheme
+        for k, (scheme, _, _) in enumerate(SCHEMES):
+            name, shapes, extra = per_scheme[k][e]
+            layers.append(layer(ind, f"{name} {scheme}", shapes, op, opacity=scheme_opacity(k, op, quarter), **extra))
+            ind += 1
+    layers.append(layer(ind, "dial", [hour_dots("track")], op))
     return composition("onboarding welcome", op, layers)
 
 

@@ -79,11 +79,11 @@ after Completed and after Skipped). Choosing a template on the template page ask
 The animations are Lottie files drawn from the watch-face geometry, recoloured with the app's brand colours in light and
 dark. They ignore the system animator scale inside Lottie; the page decides: with animations turned off in the system
 (animator scale 0, "reduced motion") each page shows its last frame as a still image and pages change without sliding.
-They also pause when the page is not visible and when the app is in the background. To regenerate them:
+The welcome face also cycles its colours (Classic, Midnight, Neon, Minimal, all theme colours; `onboarding-welcome-colour-morph-{light,dark}.png`). The animations also pause when the page is not visible and when the app is in the background. To regenerate them:
 `python3 tools/gen_onboarding_lottie.py` rewrites `phone/src/main/res/raw/onboarding_{welcome,searching,found,permission}.json`
 (`--out DIR` writes elsewhere). `tests/test_onboarding_lottie.py` and a JVM test fail when the committed files and the
 generator disagree, so edit the generator, not the JSON. To use licensed animations instead, drop files under the same four
-names into `res/raw` (keep them under 100 KB; the colour groups named accent / ink / track / onaccent are what the app
+names into `res/raw` (keep them under 100 KB; the colour groups named accent / accent2 / accent3 / ink / track / onaccent are what the app
 recolours, so licensed files get their own colours unless they use those group names, and the generator test then no
 longer applies and should be deleted with them).
 

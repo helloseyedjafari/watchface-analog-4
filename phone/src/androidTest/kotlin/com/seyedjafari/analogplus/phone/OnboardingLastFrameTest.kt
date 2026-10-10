@@ -47,11 +47,11 @@ class OnboardingLastFrameTest {
         }
     }
 
-    private fun assertNotBlankAtTheLastFrame(name: String, @RawRes resId: Int) {
+    private fun assertNotBlankAtTheLastFrame(name: String, @RawRes resId: Int, progress: Float = 1f) {
         rule.setContent {
             AnalogTheme(darkTheme = false) {
                 Box(Modifier.size(240.dp).testTag("box").background(background)) {
-                    OnboardingAnimation(resId, Tags.onboardingAnimation(name), Modifier.fillMaxSize(), animatorScale = 0f)
+                    OnboardingAnimation(resId, Tags.onboardingAnimation(name), Modifier.fillMaxSize(), animatorScale = 0f, stillProgress = progress)
                 }
             }
         }
@@ -68,6 +68,16 @@ class OnboardingLastFrameTest {
     @Test fun searchingIsDrawnInReducedMotion() = assertNotBlankAtTheLastFrame("searching", R.raw.onboarding_searching)
     @Test fun foundIsDrawnInReducedMotion() = assertNotBlankAtTheLastFrame("found", R.raw.onboarding_found)
     @Test fun permissionIsDrawnInReducedMotion() = assertNotBlankAtTheLastFrame("permission", R.raw.onboarding_permission)
+
+    // The welcome face morphs through four colour schemes by cross-fading copies of itself (240 frames, a 20 frame fade at the
+    // end of each quarter): in the middle of every scheme, halfway through two of the fades, and on the seam it must be a whole face.
+    private fun welcomeAt(frame: Int) = assertNotBlankAtTheLastFrame("welcome", R.raw.onboarding_welcome, frame / 240f)
+    @Test fun welcomeIsDrawnInTheMiddleOfTheClassicScheme() = welcomeAt(20)
+    @Test fun welcomeIsDrawnInTheMiddleOfTheMidnightScheme() = welcomeAt(80)
+    @Test fun welcomeIsDrawnInTheMiddleOfTheNeonScheme() = welcomeAt(140)
+    @Test fun welcomeIsDrawnInTheMiddleOfTheMinimalScheme() = welcomeAt(200)
+    @Test fun welcomeIsDrawnHalfwayThroughTheClassicToMidnightFade() = welcomeAt(50)
+    @Test fun welcomeIsDrawnHalfwayThroughTheMinimalToClassicFadeAtTheSeam() = welcomeAt(230)
 
     private companion object {
         /** A real drawing, not anti-aliasing dust (the real assets draw 17k to 87k pixels at 240 dp on the emulator). */
