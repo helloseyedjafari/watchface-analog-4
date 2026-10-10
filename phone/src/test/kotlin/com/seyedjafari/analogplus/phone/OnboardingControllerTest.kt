@@ -150,6 +150,15 @@ class OnboardingControllerTest {
         assertFalse(c.state.value.isActive)
     }
 
+    @Test fun theTipIsNotStoredSoANewProcessAfterFinishingShowsNone() {
+        val c = controller()
+        c.reportWatchReady(true); repeat(4) { c.advance() }
+        assertTrue(c.sendTipVisible.value)
+        val afterRestart = controller()                       // a new controller on the same store: the process was restarted
+        assertEquals(OnboardingState.Completed, afterRestart.state.value)
+        assertFalse("the tip is a one-time card held in memory", afterRestart.sendTipVisible.value)
+    }
+
     @Test fun theSendTipAppearsOnlyWhenTheWatchWasConfirmedReady() {
         val ready = freshController()
         ready.reportWatchReady(true); repeat(4) { ready.advance() }
