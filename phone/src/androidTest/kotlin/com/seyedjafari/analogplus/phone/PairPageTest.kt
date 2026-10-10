@@ -22,6 +22,7 @@ import com.seyedjafari.analogplus.phone.ui.send.CheckStatus
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatus
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
+import com.seyedjafari.analogplus.phone.ui.theme.LocalAnimationScale
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -43,7 +44,9 @@ class PairPageTest {
     ) {
         rule.setContent {
             val base = LocalDensity.current
-            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle, LocalDensity provides Density(base.density, fontScale)) {
+            CompositionLocalProvider(
+                LocalLifecycleOwner provides lifecycle, LocalDensity provides Density(base.density, fontScale), LocalAnimationScale provides 1f,
+            ) {
                 PinnedWindow(window) {
                     AnalogTheme { PairPage(watch, onStatus, pageVisible = true, checkTimeoutMs = timeoutMs) }
                 }
@@ -181,7 +184,7 @@ class PairPageTest {
         val lifecycle = TestLifecycle()
         val tester = StateRestorationTester(rule)
         tester.setContent {
-            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
+            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle, LocalAnimationScale provides 1f) {
                 AnalogTheme { PairPage(watch, {}, pageVisible = true) }
             }
         }

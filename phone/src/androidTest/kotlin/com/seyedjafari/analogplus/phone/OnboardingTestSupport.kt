@@ -1,6 +1,7 @@
 package com.seyedjafari.analogplus.phone
 
 import android.os.ParcelFileDescriptor
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
@@ -13,6 +14,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatus
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
+import com.seyedjafari.analogplus.phone.ui.theme.LocalAnimationScale
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.awaitCancellation
 import org.junit.rules.TestWatcher
@@ -73,8 +75,14 @@ internal class ShellFixture(
         watch: WatchStatusChecker = watchReady,
         window: WindowDp = PHONE_PORTRAIT,
         pendingLink: DesignSettings? = null,
+        animationScale: Float? = 1f,
     ) {
-        rule.setContent { PinnedWindow(window) { AppShell(state, store, send, watch, pendingLink) {} } }
+        // pinned, so the result does not depend on the emulator's animator_duration_scale; null reads the device's setting
+        rule.setContent {
+            CompositionLocalProvider(LocalAnimationScale provides animationScale) {
+                PinnedWindow(window) { AppShell(state, store, send, watch, pendingLink) {} }
+            }
+        }
     }
 }
 

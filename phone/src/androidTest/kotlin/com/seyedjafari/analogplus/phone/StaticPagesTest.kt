@@ -3,6 +3,7 @@ package com.seyedjafari.analogplus.phone
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
@@ -23,6 +24,7 @@ import com.seyedjafari.analogplus.phone.ui.onboarding.OnboardingText
 import com.seyedjafari.analogplus.phone.ui.onboarding.PermissionPage
 import com.seyedjafari.analogplus.phone.ui.onboarding.WelcomePage
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
+import com.seyedjafari.analogplus.phone.ui.theme.LocalAnimationScale
 import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -42,7 +44,10 @@ class StaticPagesTest {
     ) {
         rule.setContent {
             val base = LocalDensity.current
-            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle, LocalDensity provides Density(base.density, fontScale)) {
+            // the animation scale is pinned: the modes asserted here must not depend on the emulator's animator_duration_scale
+            CompositionLocalProvider(
+                LocalLifecycleOwner provides lifecycle, LocalDensity provides Density(base.density, fontScale), LocalAnimationScale provides 1f,
+            ) {
                 PinnedWindow(window) { AnalogTheme { content() } }
             }
         }
@@ -59,6 +64,23 @@ class StaticPagesTest {
         rule.onNodeWithTag(Tags.onboardingAnimation("welcome")).assertExists()
     }
 
+    @Test fun theTitlesAreHeadingsAndTheAnimationsAreDecorative() {
+        show { WelcomePage(pageVisible = true) }
+        rule.onNodeWithText(text(OnboardingText.WELCOME_TITLE)).assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
+        rule.onNodeWithTag(Tags.onboardingAnimation("welcome")).assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.ContentDescription))
+    }
+
+    @Test fun thePermissionTitleIsAHeadingAndItsAnimationIsDecorative() {
+        show { PermissionPage(pageVisible = true) }
+        rule.onNodeWithText(text(OnboardingText.PERMISSION_TITLE)).assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
+        rule.onNodeWithTag(Tags.onboardingAnimation("permission")).assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.ContentDescription))
+    }
+
+    @Test fun theBackupTitleIsAHeading() {
+        show { BackupPagePlaceholder {} }
+        rule.onNodeWithText(text(OnboardingText.BACKUP_TITLE)).assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
+    }
+
     @Test fun theAnimationNeverGrowsPastItsCapInAWideWindow() {
         var density = 1f
         show(window = WindowDp(1280, 800)) { density = LocalDensity.current.density; WelcomePage(pageVisible = true) }
@@ -70,7 +92,7 @@ class StaticPagesTest {
     @Test fun permissionExplainsTheOneTimePromptAndTheRecovery() {
         show { PermissionPage(pageVisible = true) }
         rule.onNodeWithText(text(OnboardingText.PERMISSION_TITLE)).assertExists()
-        OnboardingText.PERMISSION_STEPS.forEach { rule.onNodeWithText(text(it)).assertExists() }
+        OnboardingText.PERMISSION_STEPS.forEach { rule.onNodeWithText(text(it.res)).assertExists() }
         rule.onNodeWithTag(Tags.onboardingAnimation("permission")).assertExists()
     }
 
@@ -113,12 +135,12 @@ class StaticPagesTest {
 
     @Test fun inAShortWideWindowEveryPermissionStepIsReachable() {
         show(window = PHONE_LANDSCAPE) { PermissionPage(pageVisible = true) }
-        OnboardingText.PERMISSION_STEPS.forEach { rule.onNodeWithText(text(it)).performScrollTo().assertIsDisplayed() }
+        OnboardingText.PERMISSION_STEPS.forEach { rule.onNodeWithText(text(it.res)).performScrollTo().assertIsDisplayed() }
     }
 
     @Test fun atFontScaleTwoEveryPermissionStepIsReachable() {
         show(fontScale = 2f) { PermissionPage(pageVisible = true) }
-        OnboardingText.PERMISSION_STEPS.forEach { rule.onNodeWithText(text(it)).performScrollTo().assertIsDisplayed() }
+        OnboardingText.PERMISSION_STEPS.forEach { rule.onNodeWithText(text(it.res)).performScrollTo().assertIsDisplayed() }
     }
 
     @Test fun theWelcomeLineIsReachableInAShortWideWindowAtFontScaleTwo() {

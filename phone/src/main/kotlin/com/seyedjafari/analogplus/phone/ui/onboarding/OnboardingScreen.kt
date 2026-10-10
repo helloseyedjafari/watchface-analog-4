@@ -88,7 +88,7 @@ fun OnboardingScreen(
 
             AnimatedContent(page, Modifier.weight(1f).fillMaxWidth(), transitionSpec = rememberSharedAxis<OnboardingPage>()) { shown ->
                 val visible = shown == page
-                Box(Modifier.fillMaxSize().testTag(Tags.onboardingPage(shown.name.lowercase()))) {
+                Box(Modifier.fillMaxSize().testTag(Tags.onboardingPage(shown))) {
                     when (shown) {
                         OnboardingPage.WELCOME -> WelcomePage(visible)
                         OnboardingPage.PAIR -> PairPage(watch, onStatus = { controller.reportWatchReady(watchIsReady(it)) }, pageVisible = visible)

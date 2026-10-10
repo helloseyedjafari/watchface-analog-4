@@ -38,7 +38,7 @@ class OnboardingScreenTest {
         watch: ControllableWatch = ControllableWatch(ready),
         window: WindowDp = PHONE_PORTRAIT,
         fontScale: Float = 1f,
-        animationScale: Float? = null,
+        animationScale: Float? = 1f,      // pinned: the result must not depend on the emulator's animator_duration_scale
     ): ShellFixture {
         rule.setContent {
             val base = LocalDensity.current
@@ -57,7 +57,7 @@ class OnboardingScreenTest {
         return f
     }
 
-    private fun page(name: String) = rule.onNodeWithTag(Tags.onboardingPage(name))
+    private fun page(page: OnboardingPage) = rule.onNodeWithTag(Tags.onboardingPage(page))
     private fun next() = rule.onNodeWithTag(Tags.ONBOARDING_NEXT)
 
     /** Moves to [p] through the controller (what the buttons do), from the first page. */
@@ -68,7 +68,7 @@ class OnboardingScreenTest {
 
     @Test fun startsOnTheWelcomePageWithProgressAndNoBack() {
         show()
-        page("welcome").assertIsDisplayed()
+        page(OnboardingPage.WELCOME).assertIsDisplayed()
         rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 1 of 4")
         next().assertTextEquals("Get started")
         rule.onNodeWithTag(Tags.ONBOARDING_BACK).assertDoesNotExist()
@@ -78,11 +78,11 @@ class OnboardingScreenTest {
     @Test fun theLabelsAndProgressFollowThePages() {
         show()
         next().performClick(); rule.waitForIdle()
-        page("pair").assertExists(); rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 2 of 4"); next().assertTextEquals("Continue")
+        page(OnboardingPage.PAIR).assertExists(); rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 2 of 4"); next().assertTextEquals("Continue")
         next().performClick(); rule.waitForIdle()
-        page("permission").assertExists(); rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 3 of 4")
+        page(OnboardingPage.PERMISSION).assertExists(); rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 3 of 4")
         next().performClick(); rule.waitForIdle()
-        page("template").assertExists(); rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 4 of 4"); next().assertTextEquals("Finish")
+        page(OnboardingPage.TEMPLATE).assertExists(); rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 4 of 4"); next().assertTextEquals("Finish")
     }
 
     @Test fun finishCompletesTheSetup() {
@@ -96,7 +96,7 @@ class OnboardingScreenTest {
         next().performClick(); rule.waitForIdle()
         next().performClick(); rule.waitForIdle()
         rule.onNodeWithTag(Tags.ONBOARDING_BACK).performClick(); rule.waitForIdle()
-        page("pair").assertExists()
+        page(OnboardingPage.PAIR).assertExists()
     }
 
     @Test fun theSystemBackButtonGoesBackAPage() {
@@ -119,7 +119,7 @@ class OnboardingScreenTest {
 
     private fun skipFrom(p: OnboardingPage) {
         val f = show(ShellFixture(startAt = OnboardingState.InProgress(p)))
-        page(p.name.lowercase()).assertExists()
+        page(p).assertExists()
         val before = f.state.design
         rule.onNodeWithTag(Tags.ONBOARDING_SKIP).performClick(); rule.waitForIdle()
         assertEquals("skip from $p", OnboardingState.Skipped, f.controller.state.value)
@@ -174,7 +174,7 @@ class OnboardingScreenTest {
         show(watch = watch)
         rule.waitForIdle()
         assertEquals("welcome page shown: no check yet", 0, watch.calls.get())
-        page("pair").assertDoesNotExist()
+        page(OnboardingPage.PAIR).assertDoesNotExist()
         next().performClick(); rule.waitForIdle()
         rule.waitForTag(Tags.PAIR_ADVICE)
         assertEquals(1, watch.calls.get())
@@ -192,7 +192,7 @@ class OnboardingScreenTest {
         show(watch = watch)
         next().performClick(); rule.waitForIdle(); rule.waitForTag(Tags.PAIR_ADVICE)
         rule.onNodeWithTag(Tags.ONBOARDING_BACK).performClick(); rule.waitForIdle()
-        page("pair").assertDoesNotExist()
+        page(OnboardingPage.PAIR).assertDoesNotExist()
         assertEquals(1, watch.calls.get())
     }
 
@@ -203,11 +203,11 @@ class OnboardingScreenTest {
         rule.mainClock.autoAdvance = false
         next().performClick()
         rule.mainClock.advanceTimeByFrame(); rule.mainClock.advanceTimeByFrame()
-        page("welcome").assertExists()
-        page("pair").assertExists()
+        page(OnboardingPage.WELCOME).assertExists()
+        page(OnboardingPage.PAIR).assertExists()
         rule.mainClock.autoAdvance = true
         rule.waitForIdle()
-        page("welcome").assertDoesNotExist()
+        page(OnboardingPage.WELCOME).assertDoesNotExist()
     }
 
     @Test fun withAnimationsOffThePageSnapsInOneFrame() {
@@ -215,15 +215,15 @@ class OnboardingScreenTest {
         rule.mainClock.autoAdvance = false
         next().performClick()
         rule.mainClock.advanceTimeByFrame(); rule.mainClock.advanceTimeByFrame()
-        page("pair").assertExists()
-        page("welcome").assertDoesNotExist()
+        page(OnboardingPage.PAIR).assertExists()
+        page(OnboardingPage.WELCOME).assertDoesNotExist()
     }
 
     // --- the controller is the single source of truth (rotation and process death come back to the stored page) ---
 
     @Test fun theStoredPageIsTheOneShown() {
         show(ShellFixture(startAt = OnboardingState.InProgress(OnboardingPage.PERMISSION)))
-        page("permission").assertIsDisplayed()
+        page(OnboardingPage.PERMISSION).assertIsDisplayed()
         rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 3 of 4")
         rule.onNodeWithTag(Tags.ONBOARDING_BACK).assertExists()
     }
@@ -232,21 +232,21 @@ class OnboardingScreenTest {
         val f = show()
         rule.runOnUiThread { f.controller.advance() }
         rule.waitForIdle()
-        page("pair").assertExists()
+        page(OnboardingPage.PAIR).assertExists()
     }
 
     @Test fun aNewScreenOverTheSameControllerShowsTheSamePage() {
         val f = ShellFixture()
         f.controller.advance(); f.controller.advance()
         show(f)
-        page("permission").assertExists()
+        page(OnboardingPage.PERMISSION).assertExists()
     }
 
     // --- the optional backup page ---
 
     @Test fun theBackupPageBringsItsOwnButtonAndDoneFinishesSetup() {
         val f = show(ShellFixture(accounts = true, startAt = OnboardingState.InProgress(OnboardingPage.BACKUP)))
-        page("backup").assertExists()
+        page(OnboardingPage.BACKUP).assertExists()
         rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 5 of 5")
         next().assertDoesNotExist()
         rule.onNodeWithTag(Tags.ONBOARDING_BACK).assertExists()
@@ -267,7 +267,7 @@ class OnboardingScreenTest {
         rule.onNodeWithTag(Tags.ONBOARDING_SKIP).assertIsDisplayed()
         next().assertIsDisplayed()
         if (p != OnboardingPage.WELCOME) rule.onNodeWithTag(Tags.ONBOARDING_BACK).assertIsDisplayed()
-        page(p.name.lowercase()).assertIsDisplayed()
+        page(p).assertIsDisplayed()
     }
 
     private fun everyPageHasItsControls(window: WindowDp, fontScale: Float) {

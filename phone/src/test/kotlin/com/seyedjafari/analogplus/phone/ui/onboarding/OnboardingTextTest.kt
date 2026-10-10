@@ -2,6 +2,7 @@ package com.seyedjafari.analogplus.phone.ui.onboarding
 
 import com.seyedjafari.analogplus.phone.OnboardingPage
 import com.seyedjafari.analogplus.phone.StringsXml
+import com.seyedjafari.analogplus.phone.Tags
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -26,6 +27,13 @@ class OnboardingTextTest {
         assertEquals("Continue", label(OnboardingPage.PERMISSION, isLast = true))
     }
 
+    @Test fun everyPageHasItsLowercaseTag() {
+        assertEquals(
+            listOf("onboarding_page_welcome", "onboarding_page_pair", "onboarding_page_permission", "onboarding_page_template", "onboarding_page_backup"),
+            OnboardingPage.entries.map { Tags.onboardingPage(it) },
+        )
+    }
+
     @Test fun theBackupPageBringsItsOwnButtons() = assertNull(OnboardingText.primaryLabel(OnboardingPage.BACKUP, isLast = true))
 
     @Test fun everyPageButTheBackupPageHasAPrimaryLabel() {
@@ -47,7 +55,7 @@ class OnboardingTextTest {
     }
 
     @Test fun permissionCopyPromisesNothingTheAppDoesNotDo() {
-        val all = OnboardingText.PERMISSION_STEPS.joinToString(" ") { StringsXml.text(it) }
+        val all = OnboardingText.PERMISSION_STEPS.joinToString(" ") { StringsXml.text(it.res) }
         assertTrue(all.contains("Allow"))
         assertTrue(all.contains("press and hold"))
         assertTrue(all.contains("Analog Plus"))

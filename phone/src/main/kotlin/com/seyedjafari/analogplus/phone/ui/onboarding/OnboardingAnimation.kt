@@ -57,6 +57,9 @@ fun OnboardingAnimation(
         isPlaying = mode == AnimationMode.PLAYING,
         restartOnPlay = false,                        // resuming after a pause continues instead of restarting
         iterations = if (loop) LottieConstants.IterateForever else 1,
+        // "animations off" is decided above ([resolveAnimationMode], which also honours an injected scale); Lottie's own read of
+        // the system setting would divide the speed by 0 and jump to the last frame whenever the two disagree
+        ignoreSystemAnimatorScale = true,
     )
     val shown = { if (mode == AnimationMode.STATIC_LAST_FRAME) 1f else playing.value }
     LottieAnimation(

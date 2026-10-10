@@ -36,12 +36,8 @@ object OnboardingText {
 
     // permission page
     @StringRes val PERMISSION_TITLE = R.string.onboarding_permission_title
-    /** The three lines of the permission page, in reading order (each a string resource id). */
-    val PERMISSION_STEPS: List<Int> = listOf(
-        R.string.onboarding_permission_step_allow,
-        R.string.onboarding_permission_step_deny,
-        R.string.onboarding_permission_step_later,
-    )
+    /** The three lines of the permission page, in reading order. */
+    val PERMISSION_STEPS: List<PermissionStep> = PermissionStep.entries
 
     // backup page
     @StringRes val BACKUP_TITLE = R.string.onboarding_backup_title
@@ -74,3 +70,10 @@ class StepText(@StringRes val res: Int, val number: Int, val count: Int) {
 }
 
 fun OnboardingText.stepOf(index: Int, count: Int): StepText = StepText(NAV_STEP_OF, index + 1, count)
+
+/** One line of the permission page; the type keeps anything but a string resource id out of the list. */
+enum class PermissionStep(@StringRes val res: Int) {
+    ALLOW(R.string.onboarding_permission_step_allow),
+    DENY(R.string.onboarding_permission_step_deny),
+    LATER(R.string.onboarding_permission_step_later),
+}

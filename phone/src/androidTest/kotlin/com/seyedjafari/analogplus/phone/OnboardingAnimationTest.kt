@@ -50,6 +50,10 @@ class OnboardingAnimationTest {
     @Test fun pausingKeepsTheProgressAndResumingContinuesFromIt() {
         val lifecycle = TestLifecycle()
         val welcome = Tags.onboardingAnimation("welcome")
+        // animations run on the test clock: with auto-advance a finite animation would be fast-forwarded to its end. This has to be
+        // off before the content is set: a composition Lottie already holds (an earlier test in the process used it) starts
+        // playing during setContent, which would fast-forward it
+        rule.mainClock.autoAdvance = false
         rule.setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
                 AnalogTheme { OnboardingAnimation(R.raw.onboarding_welcome, welcome, Modifier.size(200.dp), loop = false, animatorScale = 1f) }
@@ -57,8 +61,6 @@ class OnboardingAnimationTest {
         }
         fun progressNow(): Float = rule.onNodeWithTag(welcome).fetchSemanticsNode().config[AnimationProgressKey]()
         fun frames(n: Int) = repeat(n) { rule.mainClock.advanceTimeByFrame() }
-        // animations run on the test clock: with auto-advance a finite animation would be fast-forwarded to its end
-        rule.mainClock.autoAdvance = false
         rule.onNodeWithTag(welcome).assert(SemanticsMatcher.expectValue(AnimationModeKey, AnimationMode.PLAYING))
         rule.waitUntil(10_000) { frames(1); progressNow() > 0f }                  // the file is parsed off the main thread
         rule.mainClock.advanceTimeBy(1_000)

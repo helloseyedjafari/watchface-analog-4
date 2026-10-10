@@ -17,6 +17,7 @@ import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.Templates
 import com.seyedjafari.analogplus.phone.ui.onboarding.TemplatePage
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
+import com.seyedjafari.analogplus.phone.ui.theme.LocalAnimationScale
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -33,7 +34,7 @@ class TemplatePageTest {
     private fun show(state: EditorState, window: WindowDp = PHONE_PORTRAIT, fontScale: Float = 1f) {
         rule.setContent {
             val base = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides Density(base.density, fontScale)) {
+            CompositionLocalProvider(LocalDensity provides Density(base.density, fontScale), LocalAnimationScale provides 1f) {
                 PinnedWindow(window) { AnalogTheme { TemplatePage(state) } }
             }
         }

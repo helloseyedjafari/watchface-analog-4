@@ -18,7 +18,7 @@ fun PermissionPage(pageVisible: Boolean, modifier: Modifier = Modifier) {
         animation = { PageAnimation(PageArt.PERMISSION, pageVisible, loop = false) },
     ) {
         SectionCard(title = null) {
-            OnboardingText.PERMISSION_STEPS.forEach { Text(stringResource(it), style = MaterialTheme.typography.bodyLarge) }
+            OnboardingText.PERMISSION_STEPS.forEach { Text(stringResource(it.res), style = MaterialTheme.typography.bodyLarge) }
         }
     }
 }
