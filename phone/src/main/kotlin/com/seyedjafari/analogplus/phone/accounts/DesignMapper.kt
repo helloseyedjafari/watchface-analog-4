@@ -3,8 +3,8 @@ package com.seyedjafari.analogplus.phone.accounts
 import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.phone.canonicalDesignName
 import java.security.MessageDigest
-import java.text.Normalizer
 
 /** Version of the `design` JSON written to Firestore (the `schema` field). */
 const val DESIGN_SCHEMA = 1
@@ -34,8 +34,7 @@ sealed interface MappedDesign {
  * save "Night" meet in the same document, and a rename is a tombstone for the old id plus a new document.
  */
 fun designId(name: String): String {
-    val normalised = Normalizer.normalize(name.trim(), Normalizer.Form.NFC)
-    val digest = MessageDigest.getInstance("SHA-256").digest(normalised.toByteArray(Charsets.UTF_8))
+    val digest = MessageDigest.getInstance("SHA-256").digest(canonicalDesignName(name).toByteArray(Charsets.UTF_8))
     return digest.take(16).joinToString("") { "%02x".format(it) }
 }
 

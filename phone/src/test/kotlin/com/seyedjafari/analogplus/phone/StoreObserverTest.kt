@@ -110,6 +110,26 @@ class StoreObserverTest {
         assertEquals(listOf(true, true, true, true), reached)    // saved, renamed, deleted, current
     }
 
+    @Test fun anObserverThrowingAnErrorDoesNotBreakTheWriteOrSilenceTheOthers() {
+        val s = store(); val r = Recorder()
+        s.addObserver(object : StoreObserver {
+            override fun onSavedDesignChanged(change: SavedChange, origin: ChangeOrigin) { throw NotImplementedError("an Error, not an Exception") }
+        })
+        s.addObserver(r)
+        s.saveNamed("Night", d)
+        assertEquals(listOf("Night"), s.savedDesigns().map { it.name })
+        assertEquals(1, r.saved.size)
+    }
+
+    @Test fun aVirtualMachineErrorFromAnObserverIsNotSwallowedButTheWriteIsAlreadyStored() {
+        val s = store()
+        s.addObserver(object : StoreObserver {
+            override fun onSavedDesignChanged(change: SavedChange, origin: ChangeOrigin) { throw OutOfMemoryError("test") }
+        })
+        org.junit.Assert.assertThrows(OutOfMemoryError::class.java) { s.saveNamed("Night", d) }
+        assertEquals(listOf("Night"), s.savedDesigns().map { it.name })
+    }
+
     @Test fun aRemovedObserverHearsNothingMore() {
         val s = store(); val r = Recorder(); s.addObserver(r); s.removeObserver(r)
         s.saveNamed("Night", d)

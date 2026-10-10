@@ -7,6 +7,7 @@ import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import java.io.File
 import java.io.IOException
+import java.text.Normalizer
 import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.serialization.json.Json
@@ -42,6 +43,12 @@ class VersionCounterException(cause: Throwable) : RuntimeException(
 )
 
 data class SavedDesign(val name: String, val design: DesignSettings)
+
+/**
+ * The name a saved design is stored under: trimmed and NFC-normalised. The name is also the design's identity in the
+ * cloud (`designId` hashes exactly this text), so "Cafe" + combining accent and "Café" are one design, not two.
+ */
+fun canonicalDesignName(name: String): String = Normalizer.normalize(name.trim(), Normalizer.Form.NFC)
 
 /** Who made a change: the user in this app, or the sync engine applying something that came from the cloud. */
 enum class ChangeOrigin { USER, SYNC }
@@ -87,7 +94,13 @@ class Store(
     fun removeObserver(observer: StoreObserver) { observers.remove(observer) }
 
     private fun notifyObservers(call: (StoreObserver) -> Unit) {
-        for (o in observers) try { call(o) } catch (e: Exception) { /* a faulty observer must not break saving */ }
+        for (o in observers) try {
+            call(o)
+        } catch (e: VirtualMachineError) {
+            throw e // out of memory and the like: the process is in trouble, do not hide it (the write is already stored)
+        } catch (e: Throwable) {
+            // a faulty observer (even one that throws an Error) must not break saving or silence the others
+        }
     }
 
     private var lastPhotoWritten: ByteArray? = null
@@ -178,7 +191,7 @@ class Store(
 
     /** Saves [d] under [name] (the photo is not saved). An existing design with that name is replaced. */
     fun saveNamed(name: String, d: DesignSettings, origin: ChangeOrigin = ChangeOrigin.USER) {
-        val clean = name.trim()
+        val clean = canonicalDesignName(name)
         require(clean.isNotEmpty()) { "Give the design a name" }
         synchronized(LOCK) {
             val all = LinkedHashMap(readSaved())
@@ -189,16 +202,18 @@ class Store(
     }
 
     fun deleteNamed(name: String, origin: ChangeOrigin = ChangeOrigin.USER) {
+        val clean = canonicalDesignName(name)
         val removed = synchronized(LOCK) {
             val all = LinkedHashMap(readSaved())
-            (all.remove(name) != null).also { if (it) writeSaved(all) }
+            (all.remove(clean) != null).also { if (it) writeSaved(all) }
         }
-        if (removed) notifyObservers { it.onSavedDesignChanged(SavedChange.Deleted(name), origin) }
+        if (removed) notifyObservers { it.onSavedDesignChanged(SavedChange.Deleted(clean), origin) }
     }
 
     /** Throws [IllegalArgumentException] when [old] does not exist, [new] is blank or already taken. */
-    fun renameNamed(old: String, new: String) {
-        val clean = new.trim()
+    fun renameNamed(oldName: String, new: String) {
+        val old = canonicalDesignName(oldName)
+        val clean = canonicalDesignName(new)
         require(clean.isNotEmpty()) { "Give the design a name" }
         val changed = synchronized(LOCK) {
             val all = readSaved()
@@ -214,7 +229,8 @@ class Store(
         return try {
             val obj = Json.parseToJsonElement(text).jsonObject
             val out = LinkedHashMap<String, String>()
-            for ((k, v) in obj) v.jsonPrimitive.contentOrNull?.let { out[k] = it }
+            // keys written by an earlier version may be un-normalised; two forms of one name collapse (the later wins)
+            for ((k, v) in obj) v.jsonPrimitive.contentOrNull?.let { out[canonicalDesignName(k)] = it }
             out
         } catch (e: Exception) {
             emptyMap()
