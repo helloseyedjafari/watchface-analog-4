@@ -13,3 +13,5 @@ phone/build
 watch/build
 **/target/
 packjni/src/main/jniLibs/
+# Firebase client config (not a secret, but kept out of a possibly public history; see docs/accounts/owner-prerequisites.md)
+phone/google-services.json
