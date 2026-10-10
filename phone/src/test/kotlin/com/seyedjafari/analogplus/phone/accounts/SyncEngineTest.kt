@@ -75,6 +75,9 @@ class SyncEngineTest {
         /** The designs listener waits here (cancellation-proof) and then dies with OTHER: a listener of a signed-out account. */
         var dyingListenerGate: CompletableDeferred<Unit>? = null
 
+        /** What the dying listener dies of: a [RemoteException] by default, or any other exception. */
+        var dyingListenerError: Exception = RemoteException(RemoteErrorKind.OTHER, "late")
+
         /** The first snapshot of a designs listener arrives this late. */
         var snapshotDelayMs = 0L
 
@@ -90,7 +93,7 @@ class SyncEngineTest {
 
         override fun observeDesigns(uid: String): Flow<List<RemoteDesign>> = flow {
             designListens++
-            dyingListenerGate?.let { gate -> withContext(NonCancellable) { gate.await() }; throw RemoteException(RemoteErrorKind.OTHER, "late") }
+            dyingListenerGate?.let { gate -> withContext(NonCancellable) { gate.await() }; throw dyingListenerError }
             listenFailure?.let { throw it }
             if (snapshotDelayMs > 0) delay(snapshotDelayMs)
             emitAll(merge(inner.observeDesigns(uid), injected))
@@ -1051,7 +1054,16 @@ class SyncEngineTest {
 
     /** N7: a listener of the signed-out account that dies late must not touch the new account's status or backoff. */
     @Test fun aDyingListenerOfTheOldAccountDoesNotScheduleARetryForTheNewOne() = runTest {
+        aListenerOfTheOldAccountDiesLate(RemoteException(RemoteErrorKind.OTHER, "late"))
+    }
+
+    @Test fun aListenerOfTheOldAccountThatDiesWithAnUnexpectedExceptionDoesNotScheduleARetryEither() = runTest {
+        aListenerOfTheOldAccountDiesLate(IllegalStateException("odd"))
+    }
+
+    private suspend fun TestScope.aListenerOfTheOldAccountDiesLate(error: Exception) {
         val (_, flaky, a) = flakyPhone()
+        flaky.dyingListenerError = error
         flaky.dyingListenerGate = CompletableDeferred()
         val gate = flaky.dyingListenerGate!!
         a.engine.start("u1"); runCurrent()                   // the designs listener of u1 is waiting to die

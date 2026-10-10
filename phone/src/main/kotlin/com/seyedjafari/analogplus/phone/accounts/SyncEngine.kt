@@ -53,8 +53,8 @@ import kotlinx.coroutines.withTimeout
  * retry after [retryMs] doubled for every failure in a row, up to [maxRetryMs], each wait randomised by [random] (0 to 1:
  * the wait is 50% to 100% of the backoff) so that phones do not retry in step. A pass that gets through, or a local edit,
  * starts the backoff over, except that a pass does not while a listener that died of a retried error is still down (it
- * starts over when that listener delivers again), so a listener that keeps dying does not retry every half minute. [setForeground]: in the background no listener runs
- * and nothing is retried; edits still get their (debounced) pass.
+ * starts over when that listener delivers again), so a listener that keeps dying does not retry every half minute.
+ * [setForeground]: in the background no listener runs and nothing is retried; edits still get their (debounced) pass.
  */
 class SyncEngine(
     private val store: Store,
@@ -119,7 +119,10 @@ class SyncEngine(
     /** True from a first sign-in on an empty phone until the cloud's current design has been looked at. */
     @Volatile private var restorePending = false
 
-    /** What the cloud knows of the design in the editor, kept so that a pass about the saved designs cannot report "synced" over it. */
+    /**
+     * What the cloud knows of the design in the editor, kept so that a pass about the saved designs cannot report "synced"
+     * over it.
+     */
     private enum class CurrentSync { IN_SYNC, RETRY_PENDING, TOO_LARGE }
 
     @Volatile private var currentSync = CurrentSync.IN_SYNC
@@ -128,10 +131,11 @@ class SyncEngine(
     @Volatile private var currentFailure: SyncStatus = SyncStatus.Offline
 
     /**
-     * A list update from the listener that had to wait for a pass is older than what that pass did or read. [fetchSeq] counts
-     * full fetches (started), [writeSeq] counts the saved-design writes that succeeded (a failed write, and the current design,
-     * change nothing in that list). An update is dropped when either changed while it waited: a newer fetch is at least as
-     * fresh, and a successful write of this phone makes the cloud send a fresh list anyway. Acting on the old list could push past [MAX_SYNCED_DESIGNS].
+     * A list update from the listener that had to wait for a pass is older than what that pass did or read. [fetchSeq]
+     * counts full fetches (started), [writeSeq] counts the saved-design writes that succeeded (a failed write, and the
+     * current design, change nothing in that list). An update is dropped when either changed while it waited: a newer
+     * fetch is at least as fresh, and a successful write of this phone makes the cloud send a fresh list anyway. Acting
+     * on the old list could push past [MAX_SYNCED_DESIGNS].
      */
     private val fetchSeq = AtomicLong()
     private val writeSeq = AtomicLong()
@@ -151,10 +155,10 @@ class SyncEngine(
         bound = ready
         // Lazy, so that `session` is set before the body can run (an immediate dispatcher would start it inside `launch`).
         val job = scope.launch(start = CoroutineStart.LAZY) {
-            // The previous account's session, and every pass running in it, must be completely over before the journal is
-            // re-bound: a dying pass would otherwise stamp entries of the new account with the old account's cloud times.
-            // NonCancellable: a session that is itself stopped while it waits (start, stop, start, stop, start) must go on
-            // waiting, so that the next one still waits for the first account's pass.
+            // Every earlier session, and every pass running in it, must be completely over before the journal is re-bound:
+            // a dying pass would otherwise stamp entries of the new account with the old account's cloud times. The `dying`
+            // list is what makes a chain (start, stop, start, stop, start) wait for the first account; NonCancellable
+            // only makes a session that is stopped while it waits end after the sessions it waited for.
             withContext(NonCancellable) { waitFor.forEach { it.join() } }
             withContext(io) {
                 restorePending = journal.boundUid() != uid && isEmptyDevice()
@@ -297,7 +301,10 @@ class SyncEngine(
         reconcile(id, call { remote.fetchDesigns(id) })
     }
 
-    /** One pass over the designs (the caller holds [passLock]). Returns what to tell the user when something could not be synced, otherwise null. */
+    /**
+     * One pass over the designs (the caller holds [passLock]). Returns what to tell the user when something could not be
+     * synced, otherwise null.
+     */
     private suspend fun reconcile(id: String, remoteList: List<RemoteDesign>): Problem? {
         val (local, planned) = withContext(io) {
             val entries = localEntries()
@@ -358,8 +365,8 @@ class SyncEngine(
      *
      * This is a check followed by the store write, not one atomic step: an edit that lands in the few microseconds between
      * the check and the store write is overwritten by the cloud copy. What follows the write is conditional ([markApplied]:
-     * the planned edit time, or "still no entry" for a design new from the cloud), so an edit after the write is never marked as synced. The store has no compare-and-set to close
-     * the first window completely; it is accepted.
+     * the planned edit time, or "still no entry" for a design new from the cloud), so an edit after the write is never
+     * marked as synced. The store has no compare-and-set to close the first window completely; it is accepted.
      */
     private fun unchangedSince(id: String, planned: LocalDesignEntry?): Boolean {
         val now = journal.entries()[id]
@@ -517,7 +524,8 @@ class SyncEngine(
             if (rc.deviceId == deviceId) { noteCurrentSeen(rc.updatedAtMs); return }
             if (rc.updatedAtMs <= seenCurrentAtMs) return
             if (_offer.value?.remoteUpdatedAtMs == rc.updatedAtMs) return
-            val design = withContext(io) { designFromRemoteJson(rc.designJson) } ?: return   // up to ~900 kB of JSON: not on the caller's thread
+            // up to ~900 kB of JSON: not on the caller's thread
+            val design = withContext(io) { designFromRemoteJson(rc.designJson) } ?: return
             val mine = currentDesign()
             if (design == mine) { noteCurrentSeen(rc.updatedAtMs); return }
             val silent = restorePending && mine == DesignSettings()
@@ -599,7 +607,10 @@ class SyncEngine(
         RemoteErrorKind.OTHER -> SyncStatus.Error(SyncProblem.FAILED, detail = e.message.orEmpty())
     }
 
-    /** Runs [block], turning failures into [status]; an offline or sign-in failure schedules one retry. */
+    /**
+     * Runs [block], turning failures into [status]; an offline, sign-in or quota failure schedules one retry (with the
+     * backoff).
+     */
     private suspend fun guarded(id: String, block: suspend () -> Unit) {
         try {
             block()
@@ -687,7 +698,10 @@ class SyncEngine(
         }
     }
 
-    /** A listener delivered: it is up. When it was the last one that was down, the retries have done their job: start the backoff over. */
+    /**
+     * A listener delivered: it is up. When it was the last one that was down, the retries have done their job: start the
+     * backoff over.
+     */
     private fun listenerDelivered(which: Watch) {
         if (failingListeners.remove(which) && failingListeners.isEmpty()) resetBackoff()
     }
