@@ -49,7 +49,7 @@ class OnboardingRealActivityTest {
     private var startIntent: Intent? = null
     private val neon = Templates.all.first { it.name == "Neon" }
 
-    @Before fun emptyTheStore() { snapshot.backUp() }
+    @Before fun emptyTheStore() { awaitNoMainActivities(); snapshot.backUp() }
 
     @After fun putTheStoreBack() {
         try {
@@ -57,6 +57,7 @@ class OnboardingRealActivityTest {
             // after onNewIntent the scenario no longer recognises its activity: give it back the intent it started with (as DeepLinkTest does)
             if (startIntent != null) scenario?.onActivity { it.intent = startIntent }
             scenario?.close()
+            awaitNoMainActivities()                                       // leave none alive for the next test
             runBlocking { AppModel.awaitPendingSaves() }
         } finally {
             snapshot.restore()
@@ -229,8 +230,14 @@ class OnboardingRealActivityTest {
     @Test fun walkingThroughSetupNeverPutsASystemPermissionPromptInFrontOfTheApp() {
         launch()
         for (i in 1..4) {
+            // a window gets focus a moment after the activity is RESUMED (more so right after another test's activity went
+            // away); a system dialog in front would keep the focus away for good, so waiting a few seconds still finds one
+            val deadline = System.currentTimeMillis() + 5_000
             var focused = false
-            scenario!!.onActivity { focused = it.hasWindowFocus() }
+            while (!focused && System.currentTimeMillis() < deadline) {
+                scenario!!.onActivity { focused = it.hasWindowFocus() }
+                if (!focused) Thread.sleep(50)
+            }
             assertTrue("page $i keeps the window focus, so no system dialog is on top", focused)
             assertEquals(Lifecycle.State.RESUMED, scenario!!.state)
             next()

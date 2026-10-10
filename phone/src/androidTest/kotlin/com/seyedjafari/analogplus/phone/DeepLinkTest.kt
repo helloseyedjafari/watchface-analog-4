@@ -12,8 +12,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
-import androidx.test.runner.lifecycle.Stage
 import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.Templates
@@ -57,6 +55,8 @@ class DeepLinkTest {
     }
 
     @Before fun makeSureTheStoredDesignIsNotNeon() {
+        // an activity that an earlier test left alive would be counted below, or take the intent meant for this test
+        awaitNoMainActivities()
         // the tests compare against Neon: start from a design that differs from it
         ActivityScenario.launch(MainActivity::class.java).use { s ->
             s.onActivity {
@@ -73,6 +73,7 @@ class DeepLinkTest {
         // intent is another one (which onNewIntent does with setIntent): give it back the start intent so that close() sees the end.
         scenario?.onActivity { it.intent = startIntent }
         scenario?.close()
+        awaitNoMainActivities()   // the next test starts from no activity at all
     }
 
     @Test fun aLinkTappedWhileTheAppIsClosedAsksBeforeReplacingAndKeepMineChangesNothing() {
@@ -99,10 +100,16 @@ class DeepLinkTest {
         rule.onNodeWithTag(Destination.ACCOUNT.tag).performClick()
         rule.onNodeWithTag(Destination.ACCOUNT.tag).assertIsSelected()
         // what another app does when a link is tapped: start the VIEW intent; the activity is singleTop, so the open one gets it in onNewIntent
-        scenario!!.onActivity { it.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(DesignJson.shareLink(neon))).setClass(it, MainActivity::class.java)) }
+        val link = DesignJson.shareLink(neon)
+        var open: MainActivity? = null
+        scenario!!.onActivity { open = it; it.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)).setClass(it, MainActivity::class.java)) }
         rule.waitUntil(10_000) { rule.onAllNodesWithTagCount(Tags.field("link_dialog")) == 1 }
         rule.onNodeWithTag(Destination.ACCOUNT.tag).assertIsSelected()
-        assertEquals("the link went to the open activity, not to a second one", 1, mainActivitiesAlive())
+        // the link went to the activity that was open, not to a second one: that same instance now holds the link as its intent
+        var delivered: String? = null
+        scenario!!.onActivity { delivered = open!!.intent.dataString }
+        assertEquals(link, delivered)
+        rule.waitUntil(10_000) { mainActivitiesAlive() == 1 }   // a second activity, if one had been started, would stay alive
         assertEquals("nothing is replaced before the answer", original, design())
         rule.onNodeWithTag(Tags.field("qr_keep")).performClick()
         rule.waitForIdle()
@@ -118,16 +125,6 @@ class DeepLinkTest {
         rule.waitForIdle()
         rule.onNodeWithTag(Tags.field("link_dialog")).assertDoesNotExist()
         assertEquals(original, design())
-    }
-
-    private fun mainActivitiesAlive(): Int {
-        var count = 0
-        InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            count = Stage.values().sumOf { stage ->
-                ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(stage).count { it is MainActivity && stage != Stage.DESTROYED }
-            }
-        }
-        return count
     }
 
     private fun androidx.compose.ui.test.junit4.ComposeTestRule.onAllNodesWithTagCount(tag: String) =
