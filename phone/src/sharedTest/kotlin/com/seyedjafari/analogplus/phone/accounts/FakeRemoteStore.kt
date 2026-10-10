@@ -32,6 +32,8 @@ class FakeRemoteStore(var serverNow: Long = 1_000_000) : RemoteStore {
     fun seedCurrent(uid: String, c: RemoteCurrent) { currents.value = currents.value + (uid to c) }
     fun backupOf(uid: String): RemoteBackup? = backups[uid]
     fun seedBackup(uid: String, b: RemoteBackup) { backups[uid] = b }
+    /** Another phone removed the backup. */
+    fun deleteBackupDirectly(uid: String) { backups.remove(uid) }
 
     override suspend fun fetchDesigns(uid: String): List<RemoteDesign> { check(); return designsOf(uid).values.toList() }
 

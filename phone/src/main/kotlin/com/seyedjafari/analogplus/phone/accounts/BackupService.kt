@@ -185,7 +185,7 @@ sealed interface DiscardResult {
     /** Nobody is signed in. Never returned by [BackupService.discard] (it takes a uid); the controller answers with it. */
     data object NotSignedIn : DiscardResult
 
-    /** The backup is not the one the person was looking at (another phone replaced or removed it); nothing was deleted. */
+    /** A different backup is there now (another phone replaced it); nothing was deleted. No backup at all is [Deleted]. */
     data class BackupChanged(val current: CloudBackup) : DiscardResult
     data class Failed(val kind: RemoteErrorKind, val message: String) : DiscardResult
 }
@@ -376,12 +376,15 @@ class BackupService(
      * Forgotten passphrase: the backup can never be opened, so it is deleted. [writeId] is the version of the backup the
      * person was looking at ([BackupStatus.BackedUp.writeId]); if the cloud holds any other (another phone replaced or
      * re-sealed it meanwhile, even with the same key) nothing is deleted and [DiscardResult.BackupChanged] says what is
-     * there. Does not touch this phone's key.
+     * there. If the cloud holds none at all (another phone removed it first) the answer is [DiscardResult.Deleted]: the
+     * person's goal, no backup, holds. Does not touch this phone's key.
      */
     suspend fun discard(uid: String, writeId: String): DiscardResult = try {
         when (val removal = remote.deleteBackup(uid, BackupPrecondition.Version(writeId))) {
             BackupRemoval.Removed -> DiscardResult.Deleted
-            is BackupRemoval.Conflict -> DiscardResult.BackupChanged(removal.current)
+            // the goal, no backup, holds: another phone may have removed it first. A different backup still stops the call.
+            is BackupRemoval.Conflict ->
+                if (removal.current == CloudBackup.Absent) DiscardResult.Deleted else DiscardResult.BackupChanged(removal.current)
         }
     } catch (e: RemoteException) {
         DiscardResult.Failed(e.kind, e.message.orEmpty())

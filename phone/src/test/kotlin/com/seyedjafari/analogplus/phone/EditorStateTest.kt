@@ -32,4 +32,12 @@ class EditorStateTest {
         val state = EditorState(photoDesign.copy(accent = "red"), PhotoLoad.LOADING)
         assertEquals(listOf("accent"), state.shownErrors.map { it.field })
     }
+
+    @Test fun onlyReplacingTheWholeDesignIsCountedNotEditingIt() {
+        val state = EditorState()
+        state.update { it.copy(accent = "#FF00FF00") }
+        assertEquals(0, state.replacements)
+        state.replace(DesignSettings(name = "Other"))
+        assertEquals(1, state.replacements)
+    }
 }

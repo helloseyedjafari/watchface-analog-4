@@ -37,12 +37,19 @@ import org.junit.rules.TemporaryFolder
 class CurrentPersistenceTest {
     @get:Rule val tmp = TemporaryFolder()
 
-    private val kv = MemoryKeyValueStore()
+    private val kv = RefusingKv()
     private val photoFile by lazy { File(tmp.newFolder(), "background.jpg") }
     private val photo = ByteArray(10) { (it + 1).toByte() }
     private val night = DesignSettings(name = "Night", accent = "#FF1E6BFF")
     private val withPhoto = DesignSettings(accent = "#FF123456", background = BackgroundDesign(kind = BackgroundKind.PHOTO, photoJpeg = photo))
     private val remote = FakeRemoteStore()
+
+    /** Preferences that can run out of room: a refused write reports it, as `commit()` does. */
+    private class RefusingKv(val inner: MemoryKeyValueStore = MemoryKeyValueStore()) : KeyValueStore by inner {
+        var refuseWrites = false
+        override fun putString(key: String, value: String) { if (!refuseWrites) inner.putString(key, value) }
+        override fun putStringChecked(key: String, value: String): Boolean { putString(key, value); return !refuseWrites }
+    }
 
     /** The installed app before this launch: [design] was the design being edited when it was last closed. */
     private fun leftBehind(design: DesignSettings) {
@@ -80,9 +87,9 @@ class CurrentPersistenceTest {
         }
 
         /** The photo read-back runs; then the state change it made is announced to the autosave, as the running app's UI does. */
-        fun finishLoading(scope: TestScope) {
+        fun finishLoading(scope: TestScope, advance: Boolean = true) {
             attach.start(); scope.runCurrent()
-            Snapshot.sendApplyNotifications(); scope.runCurrent()
+            Snapshot.sendApplyNotifications(); if (advance) scope.runCurrent()
         }
 
         /** What the app does when it leaves the screen. */
@@ -150,16 +157,80 @@ class CurrentPersistenceTest {
         assertArrayEquals(photo, pushed.background.photoJpeg)
     }
 
-    @Test fun aBackgroundChangedWhilePhotoLoadsGetsNoPhotoAndNeverReachesTheCloudAsAPhotoDesignWithoutBytes() = runTest {
+    @Test fun aBackgroundChangedWhilePhotoLoadsKeepsThePhotoAndIsPushedCompleteWithIt() = runTest {
         leftBehind(withPhoto)
         val app = Launch(this)
         app.edit { it.copy(background = it.background.copy(dimPercent = 30)) }
-        app.finishLoading(this)
-        assertNull(app.state.design.background.photoJpeg)    // not the background that was loaded: the photo is not put back
-        advanceTimeBy(5_000); runCurrent()
-        app.flush()
-        advanceTimeBy(5_000); runCurrent()
+        advanceTimeBy(5_000); runCurrent()                   // saved without the photo meanwhile: not announced
         assertEquals(emptyList<DesignSettings>(), app.pushed())
+        app.finishLoading(this)
+        advanceTimeBy(5_000); runCurrent()
+        val pushed = app.pushed().single()
+        assertEquals(30, pushed.background.dimPercent)
+        assertArrayEquals(photo, pushed.background.photoJpeg)
+        assertArrayEquals(photo, app.state.design.background.photoJpeg)
+        assertArrayEquals(photo, Store(kv, photoFile).readPhotoFile())    // the file on disk is still there
+    }
+
+    @Test fun switchingTheBackgroundToAColourWhilePhotoLoadsDoesNotThrowThePhotoAway() = runTest {
+        leftBehind(withPhoto)
+        val app = Launch(this)
+        app.edit { it.copy(background = it.background.copy(kind = BackgroundKind.SOLID)) }
+        app.finishLoading(this)
+        advanceTimeBy(5_000); runCurrent()
+        assertArrayEquals(photo, app.state.design.background.photoJpeg)    // as when the photo is already loaded, the bytes stay
+        assertArrayEquals(photo, Store(kv, photoFile).readPhotoFile())
+        app.edit { it.copy(background = it.background.copy(kind = BackgroundKind.PHOTO)) }
+        advanceTimeBy(5_000); runCurrent()
+        assertArrayEquals(photo, app.pushed().last().background.photoJpeg)  // switching back needs no new photo
+    }
+
+    @Test fun aDesignReplacedWhilePhotoLoadsDropsThePhotoAndTheEngineHearsOfItOnceTheLoadIsOver() = runTest {
+        leftBehind(withPhoto)
+        val app = Launch(this)
+        app.state.replace(night)                                // a template, say
+        Snapshot.sendApplyNotifications()
+        advanceTimeBy(5_000); runCurrent()                     // saved while the photo is pending: kept on disk, not announced
+        assertEquals(emptyList<DesignSettings>(), app.pushed())
+        app.finishLoading(this)
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(listOf(night), app.pushed())
+        assertNull(app.state.design.background.photoJpeg)
+    }
+
+    @Test fun anEditRevertedWhilePhotoLoadsIsNotMistakenForTheLoadedDesign() = runTest {
+        leftBehind(withPhoto)
+        val app = Launch(this)
+        app.edit { it.copy(accent = "#FF00FF00") }
+        advanceTimeBy(1_000); runCurrent()                     // the autosave wrote the edit (without the photo)
+        app.edit { it.copy(accent = withPhoto.accent) }         // and the person changed it back
+        app.finishLoading(this, advance = false)
+        app.flush()                                             // what onStop does
+        val stored = DesignJson.fromJson(kv.getString("current_design")!!)
+        assertEquals(withPhoto.accent, stored.accent)           // not the edit that was reverted
+    }
+
+    @Test fun aWriteThePreferencesRefusedIsWrittenAgainNextTime() = runTest {
+        leftBehind(night)
+        val app = Launch(this)
+        attachNothing(app)
+        kv.refuseWrites = true
+        app.edit { it.copy(accent = "#FF00FF00") }
+        advanceTimeBy(5_000); runCurrent()
+        kv.refuseWrites = false
+        app.flush()
+        assertEquals("#FF00FF00", DesignJson.fromJson(kv.getString("current_design")!!).accent)
+    }
+
+    @Test fun theLoadedMarkChangesNothingOnceAnythingWasPersisted() {
+        val store = Store(kv, photoFile)
+        val start = night
+        val persistence = CurrentPersistence(store, start)
+        val edited = night.copy(accent = "#FF00FF00")
+        persistence.persist(edited)                                                   // the autosave of an edit, complete
+        persistence.markLoaded(start, start.copy(name = "with photo"))               // the read-back ends: too late to claim the disk
+        persistence.persist(start.copy(name = "with photo"))
+        assertEquals("with photo", DesignJson.fromJson(kv.getString("current_design")!!).name)
     }
 
     /** A launch without a saved photo has nothing to read back, but the app still ends the photo load. */

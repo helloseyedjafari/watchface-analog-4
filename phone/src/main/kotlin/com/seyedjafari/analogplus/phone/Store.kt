@@ -24,6 +24,10 @@ interface KeyValueStore {
     fun getLong(key: String, default: Long): Long
     /** Must be durable when it returns (SharedPreferences `commit`). Best effort: a failed write is not reported. */
     fun putString(key: String, value: String)
+
+    /** Like [putString] but says whether the write is durable. A store that cannot fail keeps this default. */
+    fun putStringChecked(key: String, value: String): Boolean { putString(key, value); return true }
+
     /** Must be durable when it returns; throws [IOException] when the write failed (the version counter relies on it). */
     fun putLong(key: String, value: Long)
 }
@@ -31,7 +35,8 @@ interface KeyValueStore {
 class PrefsKeyValueStore(private val prefs: SharedPreferences) : KeyValueStore {
     override fun getString(key: String): String? = try { prefs.getString(key, null) } catch (e: ClassCastException) { null }
     override fun getLong(key: String, default: Long): Long = try { prefs.getLong(key, default) } catch (e: ClassCastException) { default }
-    override fun putString(key: String, value: String) { prefs.edit().putString(key, value).commit() }
+    override fun putString(key: String, value: String) { putStringChecked(key, value) }
+    override fun putStringChecked(key: String, value: String): Boolean = prefs.edit().putString(key, value).commit()
     override fun putLong(key: String, value: Long) {
         if (!prefs.edit().putLong(key, value).commit()) throw IOException("the preferences could not be written")
     }
@@ -110,22 +115,28 @@ class Store(
 
     // ---- current design -----------------------------------------------------------------------------------
 
-    fun saveCurrent(d: DesignSettings, origin: ChangeOrigin = ChangeOrigin.USER) {
-        val complete = synchronized(LOCK) { saveCurrentLocked(d) }
+    /**
+     * What a [saveCurrent] did. [complete] is false when the design was saved without its photo only because the stored photo
+     * has not been loaded yet. [durable] is false when the preferences could not write it (a full disk).
+     */
+    data class CurrentSave(val complete: Boolean, val durable: Boolean)
+
+    fun saveCurrent(d: DesignSettings, origin: ChangeOrigin = ChangeOrigin.USER): CurrentSave {
+        val saved = synchronized(LOCK) { saveCurrentLocked(d) }
         // A design saved while its stored photo is still being read lacks that photo: observers must not mistake it for the real one.
-        if (complete) notifyObservers { it.onCurrentSaved(d, origin) }
+        if (saved.complete) notifyObservers { it.onCurrentSaved(d, origin) }
+        return saved
     }
 
-    /** Returns false when [d] was saved without its photo only because the stored photo has not been loaded yet. */
-    private fun saveCurrentLocked(d: DesignSettings): Boolean {
+    private fun saveCurrentLocked(d: DesignSettings): CurrentSave {
         // While the stored photo is still being read, a design without photo must not delete it.
         val photoStillLoading = photoPending && d.background.photoJpeg == null
         if (!photoStillLoading) {
             if (d.background.photoJpeg != null) photoPending = false
             savePhoto(d.background.photoJpeg)
         }
-        kv.putString(KEY_CURRENT, DesignJson.toJson(withoutPhoto(d)))
-        return !photoStillLoading
+        val durable = kv.putStringChecked(KEY_CURRENT, DesignJson.toJson(withoutPhoto(d)))
+        return CurrentSave(complete = !photoStillLoading, durable = durable)
     }
 
     /** True when a current design has been saved before (false on a new install, or when nothing was ever autosaved). */

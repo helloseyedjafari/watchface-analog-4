@@ -700,7 +700,15 @@ class BackupServiceTest {
         val r = run { service(FakeKeySource(null)).discard("u1", seen) }
         assertEquals(DiscardResult.BackupChanged(held(pemC)), r)
         assertEquals(before, remote.backupOf("u1"))
-        assertEquals(DiscardResult.BackupChanged(CloudBackup.Absent), run { service(FakeKeySource(null)).discard("nobody", seen) })
+    }
+
+    @Test fun discardAnswersDeletedWhenTheBackupIsAlreadyGoneBecauseTheGoalHolds() {
+        run { service(FakeKeySource(pemA)).upload("u1", passphrase, SameKey) }
+        val seen = writeIdOf()
+        remote.deleteBackupDirectly("u1")                                    // another phone removed it first
+        assertEquals(DiscardResult.Deleted, run { service(FakeKeySource(null)).discard("u1", seen) })
+        assertEquals(DiscardResult.Deleted, run { service(FakeKeySource(null)).discard("nobody", seen) })
+        assertNull(remote.backupOf("u1"))
     }
 
     @Test fun discardIsPinnedToTheVersionSeenNotToTheKey() {

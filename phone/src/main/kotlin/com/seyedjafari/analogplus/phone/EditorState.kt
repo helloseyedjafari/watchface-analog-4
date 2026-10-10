@@ -49,8 +49,17 @@ class EditorState(initial: DesignSettings = DesignSettings(), photoLoad: PhotoLo
         design = transform(design)
     }
 
+    /**
+     * How often the whole design was replaced (template, share link, saved design, a design from the cloud). An edit with
+     * [update] does not count. The start-up photo read uses it to tell "the person replaced the design" from "the person
+     * edited it": only a replacement means the saved photo is no longer wanted.
+     */
+    @Volatile var replacements: Int = 0
+        private set
+
     /** Replaces the whole design (template, share link, saved design). */
     fun replace(d: DesignSettings) {
+        replacements++
         design = d
     }
 
