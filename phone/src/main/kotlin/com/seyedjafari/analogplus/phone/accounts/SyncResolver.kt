@@ -1,6 +1,7 @@
 package com.seyedjafari.analogplus.phone.accounts
 
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.phone.canonicalDesignName
 
 /** One saved design as the phone knows it: the store's design joined with the journal entry. [design] is null for a tombstone. */
 data class LocalDesignEntry(
@@ -140,13 +141,14 @@ private class Planner(
  * It is [base] that is cut (never in the middle of a surrogate pair), so the suffix and the counter always survive.
  */
 fun uniqueName(base: String, taken: Set<String>, suffix: String = "", maxLength: Int = MAX_DESIGN_NAME_CHARS): String {
+    val takenIds = taken.mapTo(HashSet()) { canonicalDesignName(it) }
     var n = 1
     while (true) {
         val tail = suffix + if (n == 1) "" else " $n"
         var stem = base.take((maxLength - tail.length).coerceAtLeast(0))
         if (stem.length < base.length && stem.isNotEmpty() && stem.last().isHighSurrogate()) stem = stem.dropLast(1)
         val candidate = stem + tail
-        if (candidate !in taken) return candidate
+        if (canonicalDesignName(candidate) !in takenIds) return candidate
         n++
     }
 }

@@ -24,14 +24,6 @@ fun interface PhotoDownscaler {
 }
 
 /** The outcome of mapping a design for the cloud. Never a silent loss: every way the cloud copy differs has its own case. */
-/** The `design` string that would be written for this result (a design with a dropped photo counts), null when nothing can be written. */
-val MappedDesign.remoteJson: String?
-    get() = when (this) {
-        is MappedDesign.Ok -> json
-        is MappedDesign.PhotoDropped -> json
-        is MappedDesign.TooLarge -> null
-    }
-
 sealed interface MappedDesign {
     /** The whole design, photo included if it has one. */
     data class Ok(val json: String) : MappedDesign
@@ -42,6 +34,14 @@ sealed interface MappedDesign {
     /** Too large for one document; nothing is pushed. */
     data class TooLarge(val bytes: Int) : MappedDesign
 }
+
+/** The `design` string that would be written for this result (a design with a dropped photo counts), null when nothing can be written. */
+val MappedDesign.remoteJson: String?
+    get() = when (this) {
+        is MappedDesign.Ok -> json
+        is MappedDesign.PhotoDropped -> json
+        is MappedDesign.TooLarge -> null
+    }
 
 /**
  * The Firestore document id of a saved design: 32 lowercase hex characters from the SHA-256 of its trimmed, NFC-normalised

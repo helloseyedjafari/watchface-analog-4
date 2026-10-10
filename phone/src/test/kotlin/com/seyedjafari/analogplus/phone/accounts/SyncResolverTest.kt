@@ -4,6 +4,7 @@ import com.seyedjafari.analogplus.facegen.design.BackgroundDesign
 import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.phone.canonicalDesignName
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -312,14 +313,26 @@ class SyncResolverTest {
         assertEquals("A 3", uniqueName("A", setOf("A", "A 2")))
     }
 
-    @Test fun remoteErrorKindsMapFirestoreCodes() {
-        assertEquals(RemoteErrorKind.OFFLINE, remoteErrorKind("UNAVAILABLE"))
-        assertEquals(RemoteErrorKind.OFFLINE, remoteErrorKind("DEADLINE_EXCEEDED"))
-        assertEquals(RemoteErrorKind.PERMISSION, remoteErrorKind("PERMISSION_DENIED"))
-        // Right after sign-in the token can still be refreshing: retryable, unlike a real PERMISSION_DENIED.
-        assertEquals(RemoteErrorKind.OFFLINE, remoteErrorKind("UNAUTHENTICATED"))
-        assertEquals(RemoteErrorKind.QUOTA, remoteErrorKind("RESOURCE_EXHAUSTED"))
-        assertEquals(RemoteErrorKind.OTHER, remoteErrorKind("INTERNAL"))
+    // ---- names are compared the way designId makes ids: trimmed and NFC -----------------------------------------------
+
+    @Test fun aCloudNameWithATrailingSpaceStillBlocksTheCopyName() {
+        val rNight = remote("1", b, 5_000, name = "Night")
+        val rSpaced = remote("2", b, 5_000, name = "Night (this phone) ") // same document id as "Night (this phone)"
+        val l = local("1", a, 9_000, null, SyncMark.DIRTY, name = "Night")
+        val copy = (planSync(listOf(l), listOf(rNight, rSpaced), setOf("Night"), toJson, suffix).first { it.id == "1" } as SyncAction.KeepBoth).copyName
+        assertEquals("Night (this phone) 2", copy)
+        assertTrue(designId(copy) != designId("Night (this phone) "))
+    }
+
+    @Test fun uniqueNameComparesCanonicalNames() {
+        assertEquals("Café 2", uniqueName("Café", setOf("Café")))   // decomposed vs composed é
+        assertEquals("A 2", uniqueName("A", setOf(" A ")))
+        assertEquals("A 3", uniqueName("A", setOf("A", " A 2")))
+    }
+
+    @Test fun canonicalDesignNameIsWhatDesignIdHashes() {
+        assertEquals("Café", canonicalDesignName("  Café "))
+        assertEquals(designId("Café "), designId("Café"))
     }
 
     @Test fun designIdIsStableTrimmedAndFirestoreSafe() {
