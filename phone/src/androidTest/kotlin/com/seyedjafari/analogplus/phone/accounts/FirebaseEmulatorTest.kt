@@ -115,9 +115,12 @@ class FirebaseEmulatorTest {
     private fun sealed(seed: String = "emu"): SealedKey = FakeKeySource.samplePem(seed).let { vault.seal(it, passphrase, keyFingerprint(it)) }
     private fun newId() = UUID.randomUUID().toString()
 
+    /** The project the app talks to: the fake one in emulator mode, or the owner's id when google-services.json exists. */
+    private val projectId: String get() = db.app.options.projectId!!
+
     /** 200 -> true, 404 -> false, read with the emulator's owner token, which skips the rules. */
     private fun exists(path: String): Boolean {
-        val url = URL("http://${FirebaseProvider.EMULATOR_HOST}:${FirebaseProvider.FIRESTORE_EMULATOR_PORT}/v1/projects/${FirebaseProvider.EMULATOR_PROJECT_ID}/databases/(default)/documents/$path")
+        val url = URL("http://${FirebaseProvider.EMULATOR_HOST}:${FirebaseProvider.FIRESTORE_EMULATOR_PORT}/v1/projects/$projectId/databases/(default)/documents/$path")
         val c = url.openConnection() as HttpURLConnection
         c.setRequestProperty("Authorization", "Bearer owner")
         try {
@@ -131,7 +134,7 @@ class FirebaseEmulatorTest {
 
     /** How many documents the collection holds, read with the owner token. */
     private fun count(collectionPath: String): Int {
-        val url = URL("http://${FirebaseProvider.EMULATOR_HOST}:${FirebaseProvider.FIRESTORE_EMULATOR_PORT}/v1/projects/${FirebaseProvider.EMULATOR_PROJECT_ID}/databases/(default)/documents/$collectionPath?pageSize=100")
+        val url = URL("http://${FirebaseProvider.EMULATOR_HOST}:${FirebaseProvider.FIRESTORE_EMULATOR_PORT}/v1/projects/$projectId/databases/(default)/documents/$collectionPath?pageSize=100")
         val c = url.openConnection() as HttpURLConnection
         c.setRequestProperty("Authorization", "Bearer owner")
         try {
@@ -689,20 +692,6 @@ class FirebaseEmulatorTest {
         var met = false
         for (attempt in 1..5) { if (fetchWhileOwnWritesAreUnsettled("fetch-pending-$attempt")) { met = true; break } }
         assertTrue("the read never met an unsettled write in 5 tries, so the rule was not exercised", met)
-    }
-
-    /** The same for the backup: a delete of it that is still on its way must not read as "no backup" before it has landed. */
-    @Test fun getBackupWaitsForAQueuedDeleteInsteadOfReadingNoBackupBeforeItLanded() = inTest {
-        repeat(4) { attempt ->
-            val uid = signInAs(unique("backup-pending-$attempt"))
-            remote.putBackup(uid, sealed(), newId(), BackupPrecondition.NoBackup)
-            db.disableNetwork().await()
-            db.document("users/$uid/backup/signingKey").delete() // queued; not awaited
-            db.enableNetwork()
-            val read = remote.getBackup(uid)
-            assertNull("try $attempt: the queued delete counts", read)
-            assertFalse("try $attempt: 'no backup' was answered before the server's copy was gone", exists("users/$uid/backup/signingKey"))
-        }
     }
 
     // ---- a write's read-back is its own document ----------------------------------------------------------------

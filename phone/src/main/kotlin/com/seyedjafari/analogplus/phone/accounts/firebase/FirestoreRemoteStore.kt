@@ -68,10 +68,11 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  * **Reads see our own unsettled writes as unsettled.** A document that still has a write of this client waiting has no
  * server time yet. [fetchDesigns] and [getCurrent] then fail with [RemoteErrorKind.OFFLINE] ("earlier writes are still
- * being sent") instead of returning a list from which that document is missing; the engine retries. [getBackup] cannot
- * use document metadata for this (a document with a pending delete is simply absent), so it first waits, within
- * [readTimeoutMs], until all writes of this client are settled; a delete of the backup that is still on its way then does not
- * read as "no backup" (a timeout is OFFLINE).
+ * being sent") instead of returning a list from which that document is missing; the engine retries. [getBackup] has no such
+ * rule: a document with a delete of ours still on its way is simply absent (no metadata flag to test), and waiting for all
+ * pending writes first could not be shown by any test to change an answer, while it would make every status check wait
+ * behind unrelated slow writes. The status display may therefore say "no backup" for a moment before a queued delete of
+ * the backup has landed; backup writes are not affected (their transactions read the server).
  *
  * **Read-backs are checked.** [putDesign] and [putCurrent] return the document as the server stored it, read right after
  * the acknowledgement. If it is not what was written (another phone wrote in between) the call fails with
@@ -170,9 +171,6 @@ class FirestoreRemoteStore(
     }
 
     override suspend fun getBackup(uid: String): RemoteBackup? = mapErrors {
-        // A pending local DELETE leaves no document whose metadata could say so (the read would be "absent"), so wait until
-        // every write of this client is settled; the read then shows what the server holds.
-        bounded(readTimeoutMs) { db.waitForPendingWrites().await() }
         toBackup(bounded(readTimeoutMs) { backupDoc(uid).get(Source.SERVER).await() })
     }
 
