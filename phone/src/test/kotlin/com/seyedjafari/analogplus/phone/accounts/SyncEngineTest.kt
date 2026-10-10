@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -26,6 +27,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -47,6 +49,9 @@ class SyncEngineTest {
     private class FlakyRemote(val inner: FakeRemoteStore) : RemoteStore by inner {
         var hangPuts = false
         var putGate: CompletableDeferred<Unit>? = null
+
+        /** Like [putGate] but a pass that is cancelled while waiting stays here (a real write in flight cannot be recalled). */
+        var stickyGate: CompletableDeferred<Unit>? = null
         var failPutCurrent: RemoteException? = null
         var throwOnFetch: Exception? = null
         var onPutDesign: (() -> Unit)? = null
@@ -87,6 +92,7 @@ class SyncEngineTest {
 
         override suspend fun putDesign(uid: String, id: String, name: String, designJson: String, state: DesignState, schema: Int): RemoteDesign {
             if (hangPuts) awaitCancellation()
+            stickyGate?.let { withContext(NonCancellable) { it.await() } }
             putGate?.await()
             attemptedNames += name
             refuse?.invoke(name)?.let { throw it }
@@ -953,6 +959,48 @@ class SyncEngineTest {
         assertEquals(emptyList<String>(), a.names())
         assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
         assertTrue(a.journal.entries().isEmpty())
+    }
+
+    // ---- fix round 2 ---------------------------------------------------------------------------------------------------------
+
+    /** A: a sign-out followed by a sign-in (what Firebase Auth's listener does within milliseconds) must wait for the old pass too. */
+    @Test fun aSignOutThenSignInDoesNotBindTheNewAccountWhileTheOldPassIsStillRunning() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.engine.start("u1"); runCurrent()
+        a.store.saveNamed("Night", night)
+        val gate = CompletableDeferred<Unit>()
+        flaky.stickyGate = gate
+        val pass = launch { a.engine.syncNow() }; runCurrent()      // the u1 pass is inside the put and cannot be recalled
+        a.engine.stop(); a.engine.start("u2"); runCurrent()
+        assertEquals("nothing is re-bound while the old pass lives", "u1", a.journal.boundUid())
+        assertNull(a.journal.entries().getValue(designId("Night")).baseRemoteAtMs)
+        gate.complete(Unit); runCurrent(); pass.join(); advanceTimeBy(2_000); runCurrent()
+        assertEquals("u2", a.journal.boundUid())
+        val doc = remote.designsOf("u2").getValue(designId("Night"))
+        assertEquals(doc.updatedAtMs, a.journal.entries().getValue(designId("Night")).baseRemoteAtMs)   // recorded against u2's time
+    }
+
+    /** B: a listener's first snapshot for the new account must not be planned against the old account's bases. */
+    @Test fun aListenerSnapshotOfTheNewAccountWaitsForTheJournalToBeBoundToIt() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.store.saveNamed("Night", night)
+        a.engine.start("u1"); runCurrent()                           // Night is synced against u1 (clean, with u1's base)
+        a.store.saveNamed("Zed", day)
+        val gate = CompletableDeferred<Unit>()
+        flaky.stickyGate = gate
+        val pass = launch { a.engine.syncNow() }; runCurrent()      // the u1 pass sits inside the put of Zed
+        val theirs = night.copy(accent = "#FF222222")
+        remote.seedDesign("u2", RemoteDesign(designId("Night"), "Night", DesignJson.toJson(theirs), 9_000_000, DesignState.LIVE, 1))
+        a.engine.start("u2")                                         // no stop in between
+        a.engine.setForeground(false); a.engine.setForeground(true); runCurrent()   // brings the listeners up before the binding
+        assertEquals("Night must not be overwritten using u1's base", night, a.store.savedDesigns().first { it.name == "Night" }.design)
+        gate.complete(Unit); runCurrent(); pass.join(); advanceTimeBy(2_000); runCurrent()
+        assertEquals(theirs, a.store.savedDesigns().first { it.name == "Night" }.design)
+        assertEquals(night, a.store.savedDesigns().first { it.name == "Night (this phone)" }.design)   // kept both ways
     }
 
     @Test fun aPassStillRunningWhenTheUserSignsOutDoesNotBringTheStatusBack() = runTest {

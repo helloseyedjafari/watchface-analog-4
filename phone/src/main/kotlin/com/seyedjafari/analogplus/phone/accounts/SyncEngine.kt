@@ -85,7 +85,10 @@ class SyncEngine(
     private val watchLock = Any()
 
     @Volatile private var uid: String? = null
-    private var session: Job? = null
+    @Volatile private var session: Job? = null
+
+    /** The session that [stop] cancelled; the next [start] waits for it too (a sign-out then sign-in has no running session to join). */
+    @Volatile private var retired: Job? = null
     private var retryJob: Job? = null
     private val watchJobs = HashMap<Watch, Job>()
     private val attempt = AtomicInteger()
@@ -125,8 +128,9 @@ class SyncEngine(
     private val withoutPhoto: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     override fun start(uid: String) {
-        val previous = session
+        val previous = session ?: retired
         stop()
+        retired = null
         this.uid = uid
         _status.value = SyncStatus.Syncing
         val channel = Channel<Unit>(Channel.CONFLATED)
@@ -159,7 +163,7 @@ class SyncEngine(
     }
 
     override fun stop() {
-        session?.cancel()
+        session?.let { it.cancel(); retired = it }
         session = null
         cancelRetry()
         cancelListeners()
@@ -252,6 +256,8 @@ class SyncEngine(
     private class Problem(val kind: SyncProblem, val count: Int = 0, val detail: String = "")
 
     private suspend fun onRemoteDesigns(id: String, list: List<RemoteDesign>) {
+        if (uid != id) return
+        bound?.await()   // the journal must be bound to this account before a list is planned against it
         if (uid != id) return
         if (signatureOf(list) == lastRemoteSignature) return
         val fetchesThen = fetchSeq.get()
@@ -624,6 +630,8 @@ class SyncEngine(
      * asks for a retry, which restarts it. "Sync now" ([syncNow]) also restarts a listener that is down.
      */
     private suspend fun listen(id: String, which: Watch) {
+        bound?.await()   // nothing is planned (or applied) against the previous account's journal
+        if (uid != id) return
         try {
             when (which) {
                 Watch.DESIGNS -> remote.observeDesigns(id).collect { onRemoteDesigns(id, it) }
