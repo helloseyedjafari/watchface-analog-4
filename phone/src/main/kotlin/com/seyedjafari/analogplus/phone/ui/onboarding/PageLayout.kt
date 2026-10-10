@@ -2,9 +2,12 @@ package com.seyedjafari.analogplus.phone.ui.onboarding
 
 import androidx.annotation.RawRes
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -22,11 +25,15 @@ import androidx.compose.ui.text.style.TextAlign
 import com.seyedjafari.analogplus.phone.R
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.ui.theme.Dimens
+import com.seyedjafari.analogplus.phone.ui.theme.ScreenLayout
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import com.seyedjafari.analogplus.phone.ui.theme.rememberScreenLayout
 
 /**
- * The shared look of every page: optional animation on top, a heading, then content. It scrolls, so a short window (a
- * phone held sideways) and large text never clip anything. [title] is already resolved text (`stringResource`).
+ * The shared look of every page: optional animation, a heading, then content. It scrolls, so large text never clips
+ * anything. [title] is already resolved text (`stringResource`). In a window with no room for the stacked arrangement (a
+ * phone held sideways, see [rememberScreenLayout]) a page with an [animation] puts it beside the heading and content, which
+ * scroll on their own, instead of above them.
  */
 @Composable
 internal fun PageLayout(
@@ -35,15 +42,42 @@ internal fun PageLayout(
     animation: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(
-        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Spacing.lg, vertical = Spacing.md),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Spacing.lg),
-    ) {
-        animation?.invoke()
-        Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.semantics { heading() })
-        content()
+    if (animation != null && rememberScreenLayout() == ScreenLayout.SIDE_BY_SIDE) {
+        Row(
+            modifier.fillMaxSize().padding(horizontal = Spacing.lg, vertical = Spacing.md),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.xl), verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { animation() }
+            Box(Modifier.weight(SIDE_TEXT_WEIGHT).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                PageText(title, Modifier.verticalScroll(rememberScrollState()), content)
+            }
+        }
+    } else {
+        Column(
+            modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Spacing.lg, vertical = Spacing.md),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Spacing.lg),
+        ) {
+            animation?.invoke()
+            PageTextContent(title, content)
+        }
     }
+}
+
+/** How much wider than the animation the text beside it is (the animation takes 1). */
+private const val SIDE_TEXT_WEIGHT = 1.4f
+
+@Composable
+private fun PageText(title: String, modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Spacing.lg)) {
+        PageTextContent(title, content)
+    }
+}
+
+@Composable
+private fun ColumnScope.PageTextContent(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.semantics { heading() })
+    content()
 }
 
 /** The four generated animations; the test tag is `Tags.onboardingAnimation(art.tagName)` ("welcome", "searching", "found", "permission"). */
@@ -60,7 +94,8 @@ internal val PageArt.tagName: String get() = name.lowercase()
 internal fun PageAnimation(art: PageArt, pageVisible: Boolean, loop: Boolean) {
     OnboardingAnimation(
         art.resId, Tags.onboardingAnimation(art.tagName),
-        Modifier.fillMaxWidth().widthIn(max = Dimens.OnboardingAnimationMax).aspectRatio(1f),
+        // widthIn first: after fillMaxWidth the incoming (fixed) width would win and the cap would do nothing
+        Modifier.widthIn(max = Dimens.OnboardingAnimationMax).fillMaxWidth().aspectRatio(1f),
         loop = loop, pageVisible = pageVisible,
     )
 }

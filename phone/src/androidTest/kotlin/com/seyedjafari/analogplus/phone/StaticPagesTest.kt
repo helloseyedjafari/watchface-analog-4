@@ -23,7 +23,9 @@ import com.seyedjafari.analogplus.phone.ui.onboarding.OnboardingText
 import com.seyedjafari.analogplus.phone.ui.onboarding.PermissionPage
 import com.seyedjafari.analogplus.phone.ui.onboarding.WelcomePage
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
+import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -55,6 +57,14 @@ class StaticPagesTest {
         rule.onNodeWithText(text(OnboardingText.WELCOME_TITLE)).assertExists()
         rule.onNodeWithText(text(OnboardingText.WELCOME_BODY)).assertExists()
         rule.onNodeWithTag(Tags.onboardingAnimation("welcome")).assertExists()
+    }
+
+    @Test fun theAnimationNeverGrowsPastItsCapInAWideWindow() {
+        var density = 1f
+        show(window = WindowDp(1280, 800)) { density = LocalDensity.current.density; WelcomePage(pageVisible = true) }
+        val box = rule.onNodeWithTag(Tags.onboardingAnimation("welcome")).fetchSemanticsNode().size
+        assertEquals("a square", box.width, box.height)
+        assertTrue("capped at ${Dimens.OnboardingAnimationMax}: ${box.width / density} dp", box.width / density <= Dimens.OnboardingAnimationMax.value + 1.5f)    // whole pixels at the reduced density
     }
 
     @Test fun permissionExplainsTheOneTimePromptAndTheRecovery() {
