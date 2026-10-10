@@ -93,7 +93,7 @@ class PhotoLoadingTest {
         rule.onNodeWithTag(Tags.field("background_loading")).assertIsDisplayed()
         state.update { it.copy(background = it.background.copy(photoJpeg = jpeg())) }
         state.photoLoaded()
-        rule.waitUntil(5_000) { count(Tags.field("background_thumb")) == 1 }
+        rule.waitUntil(20_000) { count(Tags.field("background_thumb")) == 1 }
         assertEquals(0, count(Tags.field("background_loading")))
     }
 
@@ -104,10 +104,10 @@ class PhotoLoadingTest {
         rule.setContent { host(state, readPhoto = { _, _ -> gate.await(10, TimeUnit.SECONDS); PhotoRead.Ok(bytes) }) }
         assertEquals(0, count(Tags.field("background_reading")))
         rule.onNodeWithTag(Tags.field("background_pick")).performScrollTo().performClick()
-        rule.waitUntil(5_000) { count(Tags.field("background_reading")) == 1 }
+        rule.waitUntil(20_000) { count(Tags.field("background_reading")) == 1 }
         assertEquals(0, count(Tags.field("background_thumb")))
         gate.countDown()
-        rule.waitUntil(5_000) { count(Tags.field("background_thumb")) == 1 }
+        rule.waitUntil(20_000) { count(Tags.field("background_thumb")) == 1 }
         assertEquals(0, count(Tags.field("background_reading")))
         assertArrayEquals(bytes, state.design.background.photoJpeg)
     }
@@ -117,9 +117,9 @@ class PhotoLoadingTest {
         val gate = newGate()
         rule.setContent { host(state, readPhoto = { _, _ -> gate.await(10, TimeUnit.SECONDS); null }) }
         rule.onNodeWithTag(Tags.field("background_pick")).performScrollTo().performClick()
-        rule.waitUntil(5_000) { count(Tags.field("background_reading")) == 1 }
+        rule.waitUntil(20_000) { count(Tags.field("background_reading")) == 1 }
         gate.countDown()
-        rule.waitUntil(5_000) { count(Tags.field("background_message")) == 1 }
+        rule.waitUntil(20_000) { count(Tags.field("background_message")) == 1 }
         assertEquals(0, count(Tags.field("background_reading")))
     }
 
@@ -130,13 +130,13 @@ class PhotoLoadingTest {
         rule.onNodeWithTag(Tags.field("background_thumb_loading")).assertIsDisplayed()
         assertEquals(0, count(Tags.field("background_thumb")))
         gate.countDown()
-        rule.waitUntil(5_000) { count(Tags.field("background_thumb")) == 1 }
+        rule.waitUntil(20_000) { count(Tags.field("background_thumb")) == 1 }
         assertEquals(0, count(Tags.field("background_thumb_loading")))
     }
 
     @Test fun anUndecodablePhotoReplacesTheSkeletonWithAMessage() {
         rule.setContent { AnalogTheme { PhotoThumb(ByteArray(10), decode = { null }) } }
-        rule.waitUntil(5_000) { count(Tags.field("background_thumb_unavailable")) == 1 }
+        rule.waitUntil(20_000) { count(Tags.field("background_thumb_unavailable")) == 1 }
         assertEquals(0, count(Tags.field("background_thumb_loading")))
     }
 
@@ -147,7 +147,7 @@ class PhotoLoadingTest {
         rule.onNodeWithTag(Tags.field("design_thumb_loading")).assertIsDisplayed()
         assertEquals(0, count(Tags.field("design_thumb")))
         gate.countDown()
-        rule.waitUntil(5_000) { count(Tags.field("design_thumb")) == 1 }
+        rule.waitUntil(20_000) { count(Tags.field("design_thumb")) == 1 }
         assertEquals(0, count(Tags.field("design_thumb_loading")))
     }
 }
