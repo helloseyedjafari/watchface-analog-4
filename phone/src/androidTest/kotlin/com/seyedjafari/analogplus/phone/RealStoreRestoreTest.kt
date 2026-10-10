@@ -25,7 +25,16 @@ class RealStoreRestoreTest {
     private val tmpAside = File(context.cacheDir, "restore_test_background.jpg.test-backup")
     private fun snapshot() = RealStoreSnapshot(context, tmp, tmpBackup, tmpPhoto)
 
+    private val syncName = "restore_test_sync"
+    private val syncBackupName = "restore_test_sync_backup"
+    private val syncPrefs = context.getSharedPreferences(syncName, Context.MODE_PRIVATE)
+    private fun syncSnapshot() = RealStoreSnapshot(
+        context, syncName, syncBackupName, File(context.cacheDir, "restore_test_no_photo.jpg"), RealStoreSnapshot.SYNC_USER_DATA_KEYS,
+    )
+
     @After fun cleanUp() {
+        syncPrefs.edit().clear().commit()
+        context.getSharedPreferences(syncBackupName, Context.MODE_PRIVATE).edit().clear().commit()
         tmpPhoto.delete(); tmpAside.delete()
         tmpPrefs.edit().clear().commit()
         context.getSharedPreferences(tmpBackup, Context.MODE_PRIVATE).edit().clear().commit()
@@ -108,9 +117,44 @@ class RealStoreRestoreTest {
 
     /** The rule over throwaway files: it marks setup as skipped in [tmpPrefs], and what the test does there is what an activity does to the real store. */
     private fun runRuleOverThrowawayFiles(body: () -> Unit) {
-        val rule = SetupSkippedRule(snapshot()) { tmpPrefs.edit().putString("onboarding_state", OnboardingState.Skipped.encode()).commit() }
+        val rule = SetupSkippedRule(snapshot(), markSkipped = { tmpPrefs.edit().putString("onboarding_state", OnboardingState.Skipped.encode()).commit() })
         val description = Description.createTestDescription(RealStoreRestoreTest::class.java, "x")
         rule.apply(object : Statement() { override fun evaluate() = body() }, description).evaluate()
+    }
+
+    @Test fun theSetupSkippedRulePutsTheSyncPreferencesBackAndSignsOutFirst() {
+        syncPrefs.edit().putString("sync_journal_v1", "the owner's journal").putString("device_id", "d1").commit()
+        var signedOutBeforeTheTest = false
+        var signOuts = 0
+        val rule = SetupSkippedRule(snapshot(), {}, syncSnapshot(), { signOuts++ })
+        val description = Description.createTestDescription(RealStoreRestoreTest::class.java, "x")
+        rule.apply(object : Statement() {
+            override fun evaluate() {
+                signedOutBeforeTheTest = signOuts == 1 && syncPrefs.all.isEmpty()
+                syncPrefs.edit().putString("sync_journal_v1", "a test's tombstone").putString("device_id", "d-test").commit()   // what an activity does
+            }
+        }, description).evaluate()
+        assertEquals("signed out, and the journal not visible to the test", true, signedOutBeforeTheTest)
+        assertEquals(mapOf("sync_journal_v1" to "the owner's journal", "device_id" to "d1"), syncPrefs.all)
+    }
+
+    @Test fun aSyncBackupLeftByARunThatDiedIsKeptWhenOnlyTheDeviceIdWasWrittenSince() {
+        syncPrefs.edit().putString("sync_journal_v1", "owner").putString("device_id", "d1").commit()
+        syncSnapshot().backUp()                                      // died
+        syncPrefs.edit().putString("device_id", "d-test").commit()   // a launch
+        syncSnapshot().backUp()
+        syncSnapshot().restore()
+        assertEquals(mapOf("sync_journal_v1" to "owner", "device_id" to "d1"), syncPrefs.all)
+    }
+
+    @Test fun aSyncBackupLeftByARunThatDiedIsDiscardedWhenTheJournalWasUsedSince() {
+        syncPrefs.edit().putString("sync_journal_v1", "old").commit()
+        syncSnapshot().backUp()                                      // died
+        syncPrefs.edit().putString("sync_journal_v1", "newer, from real use").commit()
+        val second = syncSnapshot()
+        second.backUp()
+        second.restore()
+        assertEquals(mapOf("sync_journal_v1" to "newer, from real use"), syncPrefs.all)
     }
 
     @Test fun theSetupSkippedRulePutsTheWholeStoreBackNotOnlyTheOnboardingKey() {

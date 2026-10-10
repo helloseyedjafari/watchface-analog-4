@@ -18,6 +18,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseTestSession
 import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.facegen.design.Templates
@@ -45,11 +46,15 @@ class OnboardingRealActivityTest {
     @get:Rule val rule = createEmptyComposeRule()
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val snapshot = RealStoreSnapshot(context)
+    private val syncSnapshot = RealStoreSnapshot.forSync(context)   // the journal and device id the launched app writes
     private var scenario: ActivityScenario<MainActivity>? = null
     private var startIntent: Intent? = null
     private val neon = Templates.all.first { it.name == "Neon" }
 
-    @Before fun emptyTheStore() { awaitNoMainActivities(); snapshot.backUp() }
+    @Before fun emptyTheStore() {
+        awaitNoMainActivities(); snapshot.backUp(); syncSnapshot.backUp()
+        FirebaseTestSession.signOut(context)
+    }
 
     @After fun putTheStoreBack() {
         try {
@@ -60,7 +65,7 @@ class OnboardingRealActivityTest {
             awaitNoMainActivities()                                       // leave none alive for the next test
             runBlocking { AppModel.awaitPendingSaves() }
         } finally {
-            snapshot.restore()
+            try { snapshot.restore() } finally { syncSnapshot.restore() }
         }
     }
 

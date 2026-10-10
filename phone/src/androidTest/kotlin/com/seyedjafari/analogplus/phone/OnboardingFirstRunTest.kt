@@ -13,6 +13,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseTestSession
 import com.seyedjafari.analogplus.facegen.design.Templates
 import com.seyedjafari.analogplus.phone.ui.nav.Destination
 import kotlinx.coroutines.runBlocking
@@ -35,10 +36,13 @@ class OnboardingFirstRunTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val prefs = context.getSharedPreferences(RealStoreSnapshot.PREFS, Context.MODE_PRIVATE)
     private val snapshot = RealStoreSnapshot(context)
+    private val syncSnapshot = RealStoreSnapshot.forSync(context)   // the journal and device id the launched app writes
     private var scenario: ActivityScenario<MainActivity>? = null
 
     @Before fun emptyTheStore() {
         snapshot.backUp()
+        syncSnapshot.backUp()
+        FirebaseTestSession.signOut(context)
     }
 
     /**
@@ -52,7 +56,7 @@ class OnboardingFirstRunTest {
             scenario?.close()
             runBlocking { AppModel.awaitPendingSaves() }
         } finally {
-            snapshot.restore()
+            try { snapshot.restore() } finally { syncSnapshot.restore() }
         }
     }
 

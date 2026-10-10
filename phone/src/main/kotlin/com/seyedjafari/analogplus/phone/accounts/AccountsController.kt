@@ -175,7 +175,7 @@ class AccountsController(
             is AccountState.SignedIn -> {
                 if (settledUid != state.uid) {
                     settledUid = state.uid
-                    lastSettled = BackupStatus.SignedOut
+                    lastSettled = BackupStatus.NotChecked
                 }
                 // a notice about another account is not this account's
                 if (noticeUid != null && noticeUid != state.uid) {

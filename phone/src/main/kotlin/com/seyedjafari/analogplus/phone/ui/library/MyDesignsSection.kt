@@ -10,6 +10,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -35,12 +36,15 @@ import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import androidx.compose.ui.res.stringResource
 import com.seyedjafari.analogplus.phone.R
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private fun show(into: MutableList<SavedDesign>, list: List<SavedDesign>) { into.clear(); into.addAll(list) }
 
 /** Saves and deletes run one at a time in the order they were asked for (a delete never overtakes the save before it). */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -50,13 +54,32 @@ private val storeDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParalle
  * Store writes do disk work (the preferences, and what the sync journal writes in answer), which is not for the main thread.
  * Not cancellable: leaving the section just after a tap must not drop the save or the delete that was asked for.
  */
-private suspend fun <T> onDisk(block: () -> T): T = withContext(storeDispatcher + NonCancellable) { block() }
+private suspend fun <T> onDisk(block: () -> T): T {
+    pendingWrites.incrementAndGet()
+    try {
+        return withContext(storeDispatcher + NonCancellable) { block() }
+    } finally {
+        pendingWrites.decrementAndGet()
+    }
+}
+
+/**
+ * Writes asked for and not finished. A section that opens while one is under way must not read the list first (it would show
+ * the list from before the write and never learn of it): it reads behind the write instead.
+ */
+private val pendingWrites = AtomicInteger(0)
 
 /** Naming and saving the current design, and the designs saved in [store]; [askToReplace] is called when one is chosen. */
 @Composable
 internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (String, DesignSettings) -> Unit) {
-    val saved = remember { mutableStateListOf<SavedDesign>().also { it.addAll(store.savedDesigns()) } }
-    fun show(list: List<SavedDesign>) { saved.clear(); saved.addAll(list) }
+    // nothing is being written: read the list now (no empty state flashes); otherwise read behind the write, see [pendingWrites]
+    val readNow = remember { pendingWrites.get() == 0 }
+    val saved = remember { mutableStateListOf<SavedDesign>().also { if (readNow) it.addAll(store.savedDesigns()) } }
+    var loaded by remember { mutableStateOf(readNow) }
+    LaunchedEffect(Unit) {
+        if (!loaded) { show(saved, onDisk { store.savedDesigns() }); loaded = true }
+    }
+    var saving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var name by rememberSaveable { mutableStateOf("") }
     // Store.saveNamed refuses only a blank name (an IllegalArgumentException); its English text is not shown
@@ -79,12 +102,17 @@ internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (S
                 val design = state.design
                 if (canonicalDesignName(given).isEmpty()) {
                     nameRequired = true
-                } else scope.launch {
-                    try {
-                        show(onDisk { store.saveNamed(given, design); store.savedDesigns() })
-                        name = ""
-                    } catch (e: IllegalArgumentException) {
-                        nameRequired = true
+                } else if (!saving) {   // a second tap while the first save is under way saves nothing twice
+                    saving = true
+                    scope.launch {
+                        try {
+                            show(saved, onDisk { store.saveNamed(given, design); store.savedDesigns() })
+                            if (name == given) name = ""   // not what the person typed meanwhile
+                        } catch (e: IllegalArgumentException) {
+                            nameRequired = true
+                        } finally {
+                            saving = false
+                        }
                     }
                 }
             },
@@ -93,7 +121,7 @@ internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (S
         Text(stringResource(R.string.mydesigns_photos_note), style = MaterialTheme.typography.bodySmall)
     }
 
-    if (saved.isEmpty()) {
+    if (loaded && saved.isEmpty()) {
         EmptyState(stringResource(R.string.mydesigns_empty_title), stringResource(R.string.mydesigns_empty_body))
     }
     saved.forEach { s ->
@@ -105,7 +133,7 @@ internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (S
                     .wrapContentHeight(Alignment.CenterVertically).testTag(Tags.saved(s.name)),
             )
             SecondaryButton(stringResource(R.string.mydesigns_button_load), { askToReplace(s.name, s.design) }, Modifier.testTag(Tags.field("saved_load_${s.name}")))
-            SecondaryButton(stringResource(R.string.mydesigns_button_delete), { scope.launch { show(onDisk { store.deleteNamed(s.name); store.savedDesigns() }) } }, Modifier.testTag(Tags.savedDelete(s.name)))
+            SecondaryButton(stringResource(R.string.mydesigns_button_delete), { scope.launch { show(saved, onDisk { store.deleteNamed(s.name); store.savedDesigns() }) } }, Modifier.testTag(Tags.savedDelete(s.name)))
         }
     }
 }

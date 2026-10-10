@@ -23,6 +23,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.test.platform.app.InstrumentationRegistry
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseTestSession
 import com.seyedjafari.analogplus.phone.ui.onboarding.BackupPageSlot
 import com.seyedjafari.analogplus.phone.ui.onboarding.OnboardingHost
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatus
@@ -171,20 +172,29 @@ class AnimatorScaleRule(private val scale: String) : TestWatcher() {
  * way an update from the POC lands), and puts the WHOLE store back as it was when the test is over: preferences (the onboarding
  * value, the current design the activity autosaves, saved designs, the version counter) and the background photo. Restoring
  * only the onboarding key would leave the autosaved default design behind, and on a new install the next real launch would
- * then see prior use and skip onboarding. The onboarding tests that want the first run build their own state.
+ * then see prior use and skip onboarding. The sync preferences (`analogplus_sync`: the journal, the restore-attempt counters,
+ * the device id) are put back the same way, and whoever is signed in is signed out first, so that a test that saves or deletes
+ * a design through the real activity cannot leave a deletion for the owner's next sync to push, nor start a sync against real
+ * data. The onboarding tests that want the first run build their own state.
  * [snapshot] and [markSkipped] are parameters so a test can run the rule over throwaway files.
  */
 class SetupSkippedRule internal constructor(
     private val snapshot: RealStoreSnapshot,
     private val markSkipped: () -> Unit,
+    private val syncSnapshot: RealStoreSnapshot? = null,
+    private val signOut: () -> Unit = {},
 ) : TestWatcher() {
     constructor() : this(
         RealStoreSnapshot(InstrumentationRegistry.getInstrumentation().targetContext),
         { Store(InstrumentationRegistry.getInstrumentation().targetContext).saveOnboardingState(OnboardingState.Skipped) },
+        RealStoreSnapshot.forSync(InstrumentationRegistry.getInstrumentation().targetContext),
+        { FirebaseTestSession.signOut(InstrumentationRegistry.getInstrumentation().targetContext) },
     )
 
     override fun starting(description: Description) {
         snapshot.backUp()
+        syncSnapshot?.backUp()
+        signOut()
         markSkipped()
     }
 
@@ -193,7 +203,7 @@ class SetupSkippedRule internal constructor(
         try {
             runBlocking { AppModel.awaitPendingSaves() }
         } finally {
-            snapshot.restore()
+            try { snapshot.restore() } finally { syncSnapshot?.restore() }
         }
     }
 }
@@ -206,7 +216,7 @@ class SetupSkippedRule internal constructor(
  * idempotent.
  *
  * A copy left by a run that died is trusted only while the store is still in the state that run left (a launched app writes
- * the current design and the onboarding state, nothing else). If the store holds the owner's own data since (saved designs,
+ * the current design and the onboarding state, and into the sync preferences its device id; nothing else). If the store holds the owner's own data since (saved designs,
  * a version counter, the key fingerprint of a send), the old copy is older than that use and is discarded, with a log line,
  * and a fresh copy of what is there is taken instead: restoring the old one would overwrite newer data.
  */
@@ -215,6 +225,7 @@ internal class RealStoreSnapshot(
     prefsName: String = PREFS,
     backupName: String = "analogplus_store_test_backup",
     private val photoFile: File = File(context.filesDir, "background.jpg"),
+    private val userDataKeys: Set<String> = USER_DATA_KEYS,
 ) {
     private val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
     private val backup = context.getSharedPreferences(backupName, Context.MODE_PRIVATE)
@@ -223,8 +234,8 @@ internal class RealStoreSnapshot(
     /** Copies the real preferences and photo aside (unless a run that died left its copy and the store is untouched since) and empties them. */
     fun backUp() {
         val stale = backup.getBoolean(MARKER, false)
-        if (stale && prefs.all.keys.any { it in USER_DATA_KEYS }) {
-            Log.w(TAG, "discarding the backup left by a run that died: the store has been used since (${prefs.all.keys.filter { it in USER_DATA_KEYS }})")
+        if (stale && prefs.all.keys.any { it in userDataKeys }) {
+            Log.w(TAG, "discarding the backup left by a run that died: the store has been used since (${prefs.all.keys.filter { it in userDataKeys }})")
             check(backup.edit().clear().commit())
             photoAside.delete()
         }
@@ -267,5 +278,15 @@ internal class RealStoreSnapshot(
         private const val TAG = "RealStoreSnapshot"
         /** What a launch of the app on an empty store never writes: the owner's saved designs, version counter and send fingerprint. */
         private val USER_DATA_KEYS = setOf("saved_designs", "version_counter", "sent_key_fingerprint")
+
+        const val SYNC_PREFS = "analogplus_sync"
+
+        /** What the owner's use leaves in the sync preferences (a launch alone writes only the device id): the journal and the restore-attempt counters. */
+        val SYNC_USER_DATA_KEYS = setOf("sync_journal_v1", "restore_failures", "restore_last_failure_at")
+
+        /** The snapshot of the sync preferences (no photo: the file named here never exists). */
+        fun forSync(context: Context) = RealStoreSnapshot(
+            context, SYNC_PREFS, "analogplus_sync_test_backup", File(context.cacheDir, "no-sync-photo.jpg"), SYNC_USER_DATA_KEYS,
+        )
     }
 }

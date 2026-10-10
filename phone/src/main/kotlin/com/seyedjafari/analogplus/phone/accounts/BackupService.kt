@@ -61,6 +61,9 @@ sealed interface BackupExpectation {
 sealed interface BackupStatus {
     data object SignedOut : BackupStatus
     data object Checking : BackupStatus
+
+    /** Signed in, but the cloud has not answered yet (a first check was cancelled, or another account just took over). Not "signed out". */
+    data object NotChecked : BackupStatus
     data object NotBackedUp : BackupStatus
 
     /**
