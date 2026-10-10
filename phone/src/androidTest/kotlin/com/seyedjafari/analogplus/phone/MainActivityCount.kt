@@ -21,13 +21,14 @@ fun mainActivitiesAlive(): Int {
 
 /** Waits until no [MainActivity] is alive; a leftover that does not go away in [timeoutMs] is finished explicitly, and the wait repeated. */
 fun awaitNoMainActivities(timeoutMs: Long = 10_000) {
-    val deadline = System.currentTimeMillis() + timeoutMs
+    var deadline = System.currentTimeMillis() + timeoutMs
     var finished = false
     while (mainActivitiesAlive() > 0) {
         if (System.currentTimeMillis() > deadline) {
             if (finished) throw AssertionError("a MainActivity is still alive after $timeoutMs ms and after being finished")
             finishLeftovers()
             finished = true
+            deadline = System.currentTimeMillis() + timeoutMs   // a second full wait for the finished activities to be destroyed
         }
         Thread.sleep(50)
     }

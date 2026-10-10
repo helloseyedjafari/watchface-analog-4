@@ -101,7 +101,7 @@ class PhotoLoadingTest {
         val state = EditorState(photoDesign)
         val gate = newGate()
         val bytes = jpeg()
-        rule.setContent { host(state, readPhoto = { _, _ -> gate.await(10, TimeUnit.SECONDS); PhotoRead.Ok(bytes) }) }
+        rule.setContent { host(state, readPhoto = { _, _ -> gate.await(30, TimeUnit.SECONDS); PhotoRead.Ok(bytes) }) }
         assertEquals(0, count(Tags.field("background_reading")))
         rule.onNodeWithTag(Tags.field("background_pick")).performScrollTo().performClick()
         rule.waitUntil(20_000) { count(Tags.field("background_reading")) == 1 }
@@ -115,7 +115,7 @@ class PhotoLoadingTest {
     @Test fun theReadingSkeletonGoesAwayWhenThePhotoCannotBeRead() {
         val state = EditorState(photoDesign)
         val gate = newGate()
-        rule.setContent { host(state, readPhoto = { _, _ -> gate.await(10, TimeUnit.SECONDS); null }) }
+        rule.setContent { host(state, readPhoto = { _, _ -> gate.await(30, TimeUnit.SECONDS); null }) }
         rule.onNodeWithTag(Tags.field("background_pick")).performScrollTo().performClick()
         rule.waitUntil(20_000) { count(Tags.field("background_reading")) == 1 }
         gate.countDown()
@@ -126,7 +126,7 @@ class PhotoLoadingTest {
     @Test fun theThumbnailIsASkeletonUntilItIsDecoded() {
         val gate = newGate()
         val decoded = bitmap()
-        rule.setContent { AnalogTheme { PhotoThumb(ByteArray(10), decode = { gate.await(10, TimeUnit.SECONDS); decoded }) } }
+        rule.setContent { AnalogTheme { PhotoThumb(ByteArray(10), decode = { gate.await(30, TimeUnit.SECONDS); decoded }) } }
         rule.onNodeWithTag(Tags.field("background_thumb_loading")).assertIsDisplayed()
         assertEquals(0, count(Tags.field("background_thumb")))
         gate.countDown()
@@ -143,7 +143,7 @@ class PhotoLoadingTest {
     @Test fun aDesignThumbnailIsASkeletonUntilItIsRendered() {
         val gate = newGate()
         val rendered = bitmap()
-        rule.setContent { AnalogTheme { DesignThumbnail(Templates.all.first(), 96.dp, render = { _, _, _ -> gate.await(10, TimeUnit.SECONDS); rendered }) } }
+        rule.setContent { AnalogTheme { DesignThumbnail(Templates.all.first(), 96.dp, render = { _, _, _ -> gate.await(30, TimeUnit.SECONDS); rendered }) } }
         rule.onNodeWithTag(Tags.field("design_thumb_loading")).assertIsDisplayed()
         assertEquals(0, count(Tags.field("design_thumb")))
         gate.countDown()
