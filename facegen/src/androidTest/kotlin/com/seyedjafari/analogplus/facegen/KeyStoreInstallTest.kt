@@ -18,20 +18,20 @@ class KeyStoreInstallTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val name = "install-test-${System.nanoTime()}.pem"
     private lateinit var store: KeyStore
-    private val pemA = samplePem("A")
-    private val pemB = samplePem("B")
-
-    /** A PEM-shaped text that differs per [seed]: a certificate block and a private key block, each with a long enough base64 body. */
-    private fun samplePem(seed: String): String {
-        fun body(kind: String) = java.util.Base64.getEncoder().encodeToString("$kind-$seed-0123456789abcdef0123456789".toByteArray())
-        return "-----BEGIN CERTIFICATE-----\n${body("cert")}\n-----END CERTIFICATE-----\n" +
-            "-----BEGIN PRIVATE KEY-----\n${body("key")}\n-----END PRIVATE KEY-----\n"
-    }
+    private val pemA get() = REAL_A
+    private val pemB get() = REAL_B
 
     @Before fun setUp() { store = KeyStore(context, name) }
 
     @After fun cleanUp() {
-        listOf(name, "$name.bak", "$name.tmp").forEach { File(context.filesDir, it).deleteRecursively() }
+        listOf(name, "$name.bak", "$name.bak.tmp", "$name.tmp").forEach { File(context.filesDir, it).deleteRecursively() }
+    }
+
+    private fun block(pem: String, label: String) =
+        Regex("-----BEGIN $label-----[^-]*-----END $label-----\n?").find(pem)!!.value
+
+    private fun refused(pem: String) {
+        assertThrows(SigningKeyException::class.java) { store.installPem(pem) }
     }
 
     @Test fun installsAKeyOnAPhoneWithoutOne() {
@@ -39,6 +39,12 @@ class KeyStoreInstallTest {
         store.installPem(pemA)
         assertTrue(store.hasKey())
         assertEquals(pemA, store.pem())
+    }
+
+    @Test fun aRealGeneratedKeyIsAcceptedAndReadBackByteForByte() {
+        val real = PackNative.generateKeysPem()
+        store.installPem(real)
+        assertEquals(real, store.pem())
     }
 
     @Test fun replacingKeepsTheOldKeyAsABackupCopy() {
@@ -50,8 +56,40 @@ class KeyStoreInstallTest {
 
     @Test fun anIncompleteKeyIsRefusedAndTheExistingKeyIsUntouched() {
         store.installPem(pemA)
-        assertThrows(SigningKeyException::class.java) { store.installPem("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n") }
-        assertThrows(SigningKeyException::class.java) { store.installPem("") }
+        refused("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n")
+        refused("")
+        assertEquals(pemA, store.pem())
+    }
+
+    @Test fun aCertificateOnlyOrAKeyOnlyPemIsRefused() {
+        store.installPem(pemA)
+        refused(block(pemB, "CERTIFICATE"))
+        refused(block(pemB, "PRIVATE KEY"))
+        assertEquals(pemA, store.pem())
+    }
+
+    @Test fun shapedGarbageIsRefusedEvenThoughItPassesTheShapeCheck() {
+        store.installPem(pemA)
+        val garbage = "AAAA".repeat(11)                       // 44 characters: valid base64 of 33 zero bytes, not a certificate
+        val shaped = "-----BEGIN CERTIFICATE-----\n$garbage\n-----END CERTIFICATE-----\n" +
+            "-----BEGIN PRIVATE KEY-----\n$garbage\n-----END PRIVATE KEY-----\n"
+        refused(shaped)
+        assertEquals(pemA, store.pem())
+        assertFalse(File(context.filesDir, "$name.bak").exists())
+    }
+
+    @Test fun illegalCharactersInsideTheBase64AreRefusedNotIgnored() {
+        store.installPem(pemA)
+        val cert = block(pemB, "CERTIFICATE")
+        val damaged = pemB.replace(cert, cert.replaceFirst("\n", "\n*!*"))   // the MIME decoder would skip these
+        assertTrue(damaged != pemB)
+        refused(damaged)
+        assertEquals(pemA, store.pem())
+    }
+
+    @Test fun aCertificateWithTheWrongPrivateKeyIsRefused() {
+        store.installPem(pemA)
+        refused(block(pemA, "CERTIFICATE") + block(pemB, "PRIVATE KEY"))
         assertEquals(pemA, store.pem())
     }
 
@@ -64,21 +102,35 @@ class KeyStoreInstallTest {
 
     @Test fun noTempFileIsLeftBehind() {
         store.installPem(pemA)
+        store.installPem(pemB)
         assertFalse(File(context.filesDir, "$name.tmp").exists())
+        assertFalse(File(context.filesDir, "$name.bak.tmp").exists())
     }
 
     @Test fun ifTheOldKeyCannotBeKeptNothingIsReplaced() {
         store.installPem(pemA)
-        // a non-empty directory where the backup copy must go makes the copy fail
+        // a non-empty directory where the backup copy must go makes the move into place fail
         File(context.filesDir, "$name.bak").apply { mkdir(); File(this, "blocker").writeText("x") }
-        assertThrows(SigningKeyException::class.java) { store.installPem(pemB) }
+        refused(pemB)
         assertEquals(pemA, store.pem())
         assertFalse(File(context.filesDir, "$name.tmp").exists())
+        assertFalse(File(context.filesDir, "$name.bak.tmp").exists())
     }
 
-    @Test fun aRealGeneratedKeyIsAcceptedAndReadBackByteForByte() {
-        val real = PackNative.generateKeysPem()
-        store.installPem(real)
-        assertEquals(real, store.pem())
+    @Test fun aFailureWhileCopyingLeavesThePreviousBackupIntact() {
+        store.installPem(pemA)
+        store.installPem(pemB)                                   // live = B, backup = A
+        // a non-empty directory where the temporary copy must go makes the copy itself fail
+        File(context.filesDir, "$name.bak.tmp").apply { mkdir(); File(this, "blocker").writeText("x") }
+        refused(REAL_C)
+        assertEquals(pemB, store.pem())
+        assertEquals(pemA, File(context.filesDir, "$name.bak").readText())
+    }
+
+    private companion object {
+        // RSA key generation takes about a second each: make three once for the whole class
+        val REAL_A: String by lazy { PackNative.generateKeysPem() }
+        val REAL_B: String by lazy { PackNative.generateKeysPem() }
+        val REAL_C: String by lazy { PackNative.generateKeysPem() }
     }
 }

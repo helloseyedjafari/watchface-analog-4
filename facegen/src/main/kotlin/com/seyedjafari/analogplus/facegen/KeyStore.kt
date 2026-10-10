@@ -2,10 +2,16 @@ package com.seyedjafari.analogplus.facegen
 
 import android.content.Context
 import com.seyedjafari.analogplus.packjni.PackNative
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.security.KeyFactory
+import java.security.cert.CertificateFactory
+import java.security.interfaces.RSAPrivateKey
+import java.security.interfaces.RSAPublicKey
+import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Base64
 
 /**
@@ -65,23 +71,34 @@ class KeyStore(context: Context, val fileName: String = DEFAULT_FILE_NAME) {
     }
 
     /**
-     * Makes [pem] (restored from a backup) the signing key. It must hold a complete certificate and private key. The key
-     * being replaced, if there is one, is first copied to `<fileName>.bak` (one generation) so a mistaken restore can be
-     * undone by hand; if that copy fails nothing is replaced. The new file is written atomically (the text is stored
-     * verbatim, so the key fingerprint, a hash of the PEM text, is the one the backup was taken with).
-     * @throws SigningKeyException if [pem] is not a complete key, or the old key could not be kept, or the write failed
+     * Makes [pem] (restored from a backup) the signing key. It must hold a certificate that parses as X.509 and an RSA
+     * PKCS#8 private key that parses and belongs to that certificate; nothing is touched otherwise. The key being
+     * replaced, if there is one, is first copied to `<fileName>.bak` (one generation, copied to a temporary file and
+     * moved into place, so a failure keeps the previous copy) so a mistaken restore can be undone by hand; if that
+     * fails nothing is replaced. The new file is written atomically (the text is stored verbatim, so the key fingerprint,
+     * a hash of the PEM text, is the one the backup was taken with).
+     * @throws SigningKeyException if [pem] is not a usable key, or the old key could not be kept, or the write failed
      */
     fun installPem(pem: String) {
         synchronized(LOCK) {
-            if (!looksLikeKeyPem(pem)) throw SigningKeyException("That is not a complete signing key (certificate and private key).")
+            if (!isUsableKeyPem(pem)) {
+                throw SigningKeyException("That is not a complete, valid signing key (certificate and matching private key).")
+            }
             val f = file
+            val backupTmp = appContext.getFileStreamPath("$fileName.bak.tmp")
             try {
                 if (f.exists()) {
-                    Files.copy(f.toPath(), appContext.getFileStreamPath("$fileName.bak").toPath(), StandardCopyOption.REPLACE_EXISTING)
+                    Files.copy(f.toPath(), backupTmp.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                    Files.move(
+                        backupTmp.toPath(), appContext.getFileStreamPath("$fileName.bak").toPath(),
+                        StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING,
+                    )
                 }
                 writeAtomically(pem)
             } catch (e: IOException) {
-                appContext.getFileStreamPath("$fileName.tmp").delete() // never leave a half-written temp file behind
+                // never leave a half-written temp file behind (the previous .bak and the live key are untouched)
+                backupTmp.delete()
+                appContext.getFileStreamPath("$fileName.tmp").delete()
                 throw SigningKeyException("The restored key could not be saved (${e.message}).", e)
             }
         }
@@ -109,6 +126,26 @@ class KeyStore(context: Context, val fileName: String = DEFAULT_FILE_NAME) {
         const val DEFAULT_FILE_NAME = "signing-key.pem"
         private val LOCK = Any()
         private val BLOCK = Regex("-----BEGIN ([A-Z ]+)-----([^-]*)-----END \\1-----")
+
+        /**
+         * A real parse, stricter than [looksLikeKeyPem]: strict base64 (illegal characters are errors, not skipped), the
+         * CERTIFICATE block is an X.509 certificate, the PRIVATE KEY block is an RSA PKCS#8 key (what PackNative generates)
+         * and the key belongs to the certificate.
+         */
+        internal fun isUsableKeyPem(text: String): Boolean {
+            if (!looksLikeKeyPem(text)) return false
+            return try {
+                val blocks = BLOCK.findAll(text).associate { it.groupValues[1] to it.groupValues[2] }
+                fun der(label: String) = Base64.getDecoder().decode(blocks.getValue(label).filterNot { it.isWhitespace() })
+                val cert = CertificateFactory.getInstance("X.509").generateCertificate(ByteArrayInputStream(der("CERTIFICATE")))
+                val key = KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(der("PRIVATE KEY")))
+                val pub = cert.publicKey as? RSAPublicKey
+                val priv = key as? RSAPrivateKey
+                pub != null && priv != null && pub.modulus == priv.modulus
+            } catch (e: Exception) {
+                false
+            }
+        }
 
         /** True if [text] holds a CERTIFICATE block and a PRIVATE KEY block, each with a non-empty base64 body. */
         internal fun looksLikeKeyPem(text: String): Boolean {
