@@ -127,6 +127,12 @@ fun ComposeTestRule.waitForTextOf(tag: String, expected: String, timeoutMs: Long
     }
 }
 
+/** Runs [command] with the shell identity of UiAutomation (what `adb shell` can do: `settings put global ...`) and returns its output. */
+internal fun shellCommand(command: String): String {
+    val fd = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
+    return ParcelFileDescriptor.AutoCloseInputStream(fd).use { it.readBytes().decodeToString() }
+}
+
 /**
  * Sets the system animator duration scale for the class and puts back exactly what it read before (a value, or "unset":
  * the setting is deleted), whatever that value is, also when it equals [scale] (`settings` through the shell identity of
@@ -135,10 +141,7 @@ fun ComposeTestRule.waitForTextOf(tag: String, expected: String, timeoutMs: Long
 class AnimatorScaleRule(private val scale: String) : TestWatcher() {
     private var original: String = "null"
 
-    private fun shell(command: String): String {
-        val fd = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
-        return ParcelFileDescriptor.AutoCloseInputStream(fd).use { it.readBytes().decodeToString() }
-    }
+    private fun shell(command: String): String = shellCommand(command)
 
     override fun starting(description: Description) {
         original = shell("settings get global animator_duration_scale").trim()

@@ -1,5 +1,9 @@
 package com.seyedjafari.analogplus.phone.ui.theme
 
+import android.content.ContentResolver
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform
@@ -15,10 +19,15 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
+import androidx.lifecycle.compose.LifecycleResumeEffect
 
 object Motion {
     const val SHORT = 200
@@ -37,13 +46,34 @@ fun motionDuration(baseMs: Int, animatorScale: Float): Int =
  */
 val LocalAnimationScale = compositionLocalOf<Float?> { null }
 
-/** The system "animator duration scale" (Developer options / Remove animations), or [LocalAnimationScale] when provided. 1f when it cannot be read. */
+/** The system animator duration scale right now; 1f when it cannot be read. */
+private fun readAnimatorScale(resolver: ContentResolver): Float =
+    try { Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) } catch (e: Exception) { 1f }
+
+/**
+ * The system "animator duration scale" (Developer options / Remove animations), or [LocalAnimationScale] when provided. 1f when
+ * it cannot be read. It follows the setting while the app runs: it is read again when the app resumes and whenever the setting
+ * changes (a content observer, removed when the composable leaves), so "Remove animations" switched on in the quick settings
+ * takes effect at once, also for the code that ignores Lottie's own read of it.
+ */
 @Composable
 fun rememberAnimationScale(): Float {
     val override = LocalAnimationScale.current
     val resolver = LocalContext.current.contentResolver
-    val system = remember {
-        try { Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) } catch (e: Exception) { 1f }
+    var system by remember { mutableFloatStateOf(readAnimatorScale(resolver)) }
+    if (override == null) {
+        DisposableEffect(resolver) {
+            val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean) { system = readAnimatorScale(resolver) }
+            }
+            resolver.registerContentObserver(Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, observer)
+            system = readAnimatorScale(resolver)               // a change between the first read and the registration
+            onDispose { resolver.unregisterContentObserver(observer) }
+        }
+        LifecycleResumeEffect(resolver) {
+            system = readAnimatorScale(resolver)
+            onPauseOrDispose { }
+        }
     }
     return override ?: system
 }
