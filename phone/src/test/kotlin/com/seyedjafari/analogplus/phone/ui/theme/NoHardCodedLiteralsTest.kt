@@ -279,7 +279,7 @@ class NoHardCodedLiteralsTest {
             "SectionCard" to TextParams(setOf(0), setOf("title"), false),
             "ChoiceRow" to TextParams(setOf(0, 5), setOf("label", "optionLabel"), true),
             "SectionChips" to TextParams(setOf(3), setOf("label"), false),
-            "StatusRow" to TextParams(setOf(0, 2, 3), setOf("label", "ok", "action"), false),
+            "StatusRow" to TextParams(setOf(0, 1), setOf("label", "text"), false),
             "RingNumberRow" to TextParams(setOf(0, 4), setOf("label", "errorText"), false),
         )
         expected.forEach { (name, params) -> assertEquals(name, params, found[name]) }

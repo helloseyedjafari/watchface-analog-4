@@ -27,6 +27,7 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class RotationTest {
+    @get:Rule val setupSkipped = SetupSkippedRule()
     @get:Rule val rule = createEmptyComposeRule()
     private var scenario: ActivityScenario<MainActivity>? = null
     private val field = Tags.field("minuteTickWidth")

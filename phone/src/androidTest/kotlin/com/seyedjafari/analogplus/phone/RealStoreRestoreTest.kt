@@ -1,0 +1,124 @@
+package com.seyedjafari.analogplus.phone
+
+import android.content.Context
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Test
+import org.junit.runner.Description
+import org.junit.runner.RunWith
+import org.junit.runners.model.Statement
+import java.io.File
+
+/** The helpers that let a test use the app's real storage and leave it as it was. */
+@RunWith(AndroidJUnit4::class)
+class RealStoreRestoreTest {
+    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val tmp = "restore_test_store"
+    private val tmpBackup = "restore_test_backup"
+    private val tmpPrefs = context.getSharedPreferences(tmp, Context.MODE_PRIVATE)
+    private val real = context.getSharedPreferences(RealStoreSnapshot.PREFS, Context.MODE_PRIVATE)
+
+    private val tmpPhoto = File(context.cacheDir, "restore_test_background.jpg")
+    private val tmpAside = File(context.cacheDir, "restore_test_background.jpg.test-backup")
+    private fun snapshot() = RealStoreSnapshot(context, tmp, tmpBackup, tmpPhoto)
+
+    @After fun cleanUp() {
+        tmpPhoto.delete(); tmpAside.delete()
+        tmpPrefs.edit().clear().commit()
+        context.getSharedPreferences(tmpBackup, Context.MODE_PRIVATE).edit().clear().commit()
+    }
+
+    @Test fun aSnapshotEmptiesTheStoreAndRestoresEveryValueIncludingTheVersionCounter() {
+        tmpPrefs.edit().putString("current_design", "{}").putLong("version_counter", 41L).putString("onboarding_state", "SKIPPED").commit()
+        val snapshot = snapshot()
+        snapshot.backUp()
+        assertEquals(emptyMap<String, Any?>(), tmpPrefs.all)
+        tmpPrefs.edit().putLong("version_counter", 1L).putString("current_design", "other").commit()      // what the test and the app's late flush leave behind
+        snapshot.restore()
+        assertEquals(mapOf("current_design" to "{}", "version_counter" to 41L, "onboarding_state" to "SKIPPED"), tmpPrefs.all)
+    }
+
+    @Test fun anEmptyStoreComesBackEmpty() {
+        val snapshot = snapshot()
+        snapshot.backUp()
+        tmpPrefs.edit().putString("current_design", "x").commit()
+        snapshot.restore()
+        assertEquals(emptyMap<String, Any?>(), tmpPrefs.all)
+    }
+
+    @Test fun aRunThatDiedBeforeItRestoredIsRepairedByTheNextBackUp() {
+        tmpPrefs.edit().putLong("version_counter", 41L).commit()
+        snapshot().backUp()                  // the first run: store emptied, then the process died
+        tmpPrefs.edit().putString("current_design", "left by the killed run").putString("onboarding_state", "IN_PROGRESS:PAIR").commit()
+        snapshot().backUp()                  // the next run must not take the emptied store as the truth
+        snapshot().restore()
+        assertEquals(mapOf("version_counter" to 41L), tmpPrefs.all)
+    }
+
+    @Test fun aStaleBackupIsDiscardedWhenTheStoreHasBeenUsedForRealSince() {
+        tmpPrefs.edit().putLong("version_counter", 41L).putString("saved_designs", "old").commit()
+        tmpPhoto.writeText("old photo")
+        snapshot().backUp()                  // a run that died
+        // the owner then used the app for real: a send raised the counter, a design was saved, a photo picked
+        tmpPrefs.edit().putLong("version_counter", 50L).putString("saved_designs", "new").commit()
+        tmpPhoto.writeText("new photo")
+        val second = snapshot()
+        second.backUp()                      // must keep the newer data, not the stale copy
+        assertEquals(emptyMap<String, Any?>(), tmpPrefs.all)
+        second.restore()
+        assertEquals(mapOf("version_counter" to 50L, "saved_designs" to "new"), tmpPrefs.all)
+        assertEquals("new photo", tmpPhoto.readText())
+        assertFalse("nothing left aside", tmpAside.exists())
+    }
+
+    @Test fun thePhotoFileIsSetAsideAndComesBackAndATestPhotoDoesNotSurvive() {
+        tmpPhoto.writeText("my photo")
+        val snapshot = snapshot()
+        snapshot.backUp()
+        assertFalse("the app starts without a photo", tmpPhoto.exists())
+        tmpPhoto.writeText("a template's replacement")              // what a test run leaves behind
+        snapshot.restore()
+        assertEquals("my photo", tmpPhoto.readText())
+        assertFalse(tmpAside.exists())
+    }
+
+    @Test fun noPhotoBeforeMeansNoPhotoAfter() {
+        val snapshot = snapshot()
+        snapshot.backUp()
+        tmpPhoto.writeText("created by a test")
+        snapshot.restore()
+        assertFalse(tmpPhoto.exists())
+    }
+
+    @Test fun aKilledRunKeepsThePhotoAsideForTheNextRun() {
+        tmpPhoto.writeText("my photo")
+        snapshot().backUp()                  // died before restore
+        snapshot().backUp()
+        snapshot().restore()
+        assertEquals("my photo", tmpPhoto.readText())
+    }
+
+    private fun runRule(body: () -> Unit) {
+        val description = Description.createTestDescription(RealStoreRestoreTest::class.java, "x")
+        SetupSkippedRule().apply(object : Statement() { override fun evaluate() = body() }, description).evaluate()
+    }
+
+    @Test fun theSetupSkippedRuleSkipsDuringTheTestAndPutsTheStoredValueBack() {
+        val original = real.getString(RealStoreSnapshot.KEY_ONBOARDING, null)
+        try {
+            for (start in listOf(null, OnboardingState.Completed.encode(), OnboardingState.InProgress(OnboardingPage.PAIR).encode())) {
+                if (start == null) real.edit().remove(RealStoreSnapshot.KEY_ONBOARDING).commit() else real.edit().putString(RealStoreSnapshot.KEY_ONBOARDING, start).commit()
+                var during: String? = null
+                runRule { during = real.getString(RealStoreSnapshot.KEY_ONBOARDING, null) }
+                assertEquals(OnboardingState.Skipped.encode(), during)
+                assertEquals("restored", start, real.getString(RealStoreSnapshot.KEY_ONBOARDING, null))
+                if (start == null) assertFalse("absent stays absent", real.contains(RealStoreSnapshot.KEY_ONBOARDING))
+            }
+        } finally {
+            if (original == null) real.edit().remove(RealStoreSnapshot.KEY_ONBOARDING).commit() else real.edit().putString(RealStoreSnapshot.KEY_ONBOARDING, original).commit()
+        }
+    }
+}

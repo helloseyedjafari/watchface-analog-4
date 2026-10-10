@@ -3,8 +3,6 @@ package com.seyedjafari.analogplus.phone.ui.send
 import com.seyedjafari.analogplus.phone.rememberFieldTexts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -73,12 +71,12 @@ private fun WatchStatusCard(watch: WatchStatusChecker) {
     }
     SectionCard(stringResource(R.string.send_watch_title)) {
         StatusRow(
-            stringResource(R.string.send_watch_paired), status.paired,
-            ok = stringResource(R.string.send_status_found), action = stringResource(R.string.send_status_not_found), tag = Tags.WATCH_PAIRED,
+            stringResource(R.string.send_watch_paired), status.paired.statusText(R.string.send_status_found, R.string.send_status_not_found),
+            status.paired.statusKind(), Tags.WATCH_PAIRED,
         )
         StatusRow(
-            stringResource(R.string.send_watch_app), status.appInstalled,
-            ok = stringResource(R.string.send_status_installed), action = stringResource(R.string.send_status_not_installed), tag = Tags.WATCH_APP,
+            stringResource(R.string.send_watch_app), status.appInstalled.statusText(R.string.send_status_installed, R.string.send_status_not_installed),
+            status.appInstalled.statusKind(), Tags.WATCH_APP,
         )
         when {
             status.paired == CheckStatus.ACTION_NEEDED -> Text(stringResource(R.string.send_no_watch), style = MaterialTheme.typography.bodyMedium)
@@ -89,28 +87,6 @@ private fun WatchStatusCard(watch: WatchStatusChecker) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         SecondaryButton(stringResource(R.string.send_button_check_again), { status = WatchStatus.CHECKING; round++ }, Modifier.testTag(Tags.WATCH_CHECK_AGAIN))
-    }
-}
-
-/**
- * Label and pill side by side while both fit; otherwise the pill drops under the label. The label is not weighted, so a
- * wide pill can never squeeze it narrower than its longest word (it used to break "Analog" at 2x font scale).
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun StatusRow(label: String, status: CheckStatus, ok: String, action: String, tag: String) {
-    FlowRow(
-        Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(end = Spacing.md))
-        val (text, kind) = when (status) {
-            CheckStatus.OK -> ok to StatusKind.OK
-            CheckStatus.ACTION_NEEDED -> action to StatusKind.WARNING
-            CheckStatus.CHECKING -> stringResource(R.string.send_status_checking) to StatusKind.BUSY
-            CheckStatus.UNKNOWN -> stringResource(R.string.send_status_could_not_check) to StatusKind.NEUTRAL
-        }
-        StatusPill(text, kind, Modifier.testTag(tag))
     }
 }
 

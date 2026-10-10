@@ -1,5 +1,8 @@
 package com.seyedjafari.analogplus.phone
 
+import com.seyedjafari.analogplus.phone.ui.onboarding.PairRowId
+import com.seyedjafari.analogplus.phone.ui.onboarding.tagId
+
 /** Test tags shared by the screens and the Compose tests. */
 object Tags {
     const val ACCENT_FIELD = "field_accent"
@@ -40,4 +43,27 @@ object Tags {
     const val SEND_SUCCESS = "send_success"
     fun saved(name: String) = "saved_$name"
     fun savedDelete(name: String) = "saved_delete_$name"
+
+    // onboarding
+    fun onboardingAnimation(name: String) = "onboarding_anim_$name"
+    const val PAIR_ADVICE = "pair_advice"
+    const val PAIR_RECHECK = "pair_recheck"
+    /** The status pill of a pairing row. */
+    fun pairRow(id: PairRowId) = "pair_row_${id.tagId}"
+    /** One template choice on the onboarding template page; [name] is the template's name. */
+    fun onboardingTemplate(name: String) = "onboarding_template_$name"
+    /** One onboarding page: `onboarding_page_<lowercase page name>` ("welcome", "pair", "permission", "template", "backup"). */
+    fun onboardingPage(page: OnboardingPage) = "onboarding_page_${page.name.lowercase()}"
+    const val BACKUP_PLACEHOLDER_DONE = "onboarding_backup_done"
+    const val ONBOARDING_ROOT = "onboarding_root"
+    /** The scrolling area of the shown page (see `verticalScrollWithFades`). */
+    const val ONBOARDING_PAGE_SCROLL = "onboarding_page_scroll"
+    const val ONBOARDING_SKIP = "onboarding_skip"
+    const val ONBOARDING_BACK = "onboarding_back"
+    const val ONBOARDING_NEXT = "onboarding_next"
+    const val ONBOARDING_PROGRESS = "onboarding_progress"
+    const val ONBOARDING_TIP = "onboarding_tip"
+    const val ONBOARDING_TIP_SEND = "onboarding_tip_send"
+    const val ONBOARDING_TIP_DISMISS = "onboarding_tip_dismiss"
+    const val RUN_SETUP_AGAIN = "run_setup_again"
 }

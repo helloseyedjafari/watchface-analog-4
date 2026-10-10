@@ -13,6 +13,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -29,6 +30,7 @@ import com.seyedjafari.analogplus.phone.ui.components.ErrorBanner
 import com.seyedjafari.analogplus.phone.ui.components.LOADING_INDICATOR_TAG
 import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
+import com.seyedjafari.analogplus.phone.ui.components.TertiaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SectionChips
 import com.seyedjafari.analogplus.phone.ui.components.Skeleton
 import com.seyedjafari.analogplus.phone.ui.components.StatusKind
@@ -71,6 +73,13 @@ class ComponentsTest {
         var clicks = 0
         rule.setContent { AnalogTheme { SecondaryButton("Cancel", { clicks++ }, Modifier.testTag("s")) } }
         rule.onNodeWithTag("s").assertHeightIsAtLeast(48.dp).performClick()
+        assertEquals(1, clicks)
+    }
+
+    @Test fun tertiaryButtonIsAtLeast48dpHighAndCallsItsAction() {
+        var clicks = 0
+        rule.setContent { AnalogTheme { TertiaryButton("Skip", { clicks++ }, Modifier.testTag("t")) } }
+        rule.onNodeWithTag("t").assertHeightIsAtLeast(48.dp).assertWidthIsAtLeast(48.dp).performClick()
         assertEquals(1, clicks)
     }
 

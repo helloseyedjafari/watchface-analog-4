@@ -50,6 +50,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.activity:activity-compose:1.9.3")
+    // onboarding animations. 6.7.1 is the latest on Maven Central (checked 2026-10-09); its POM imports an older
+    // Compose BOM (2024.02.01), so the app's platform BOM wins. If a build ever fails on it, 6.6.7 is the previous good one.
+    implementation("com.airbnb.android:lottie-compose:6.7.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")

@@ -28,6 +28,7 @@ import org.junit.runners.Parameterized
  */
 @RunWith(Parameterized::class)
 class EveryDestinationRecreationTest(private val destination: Destination) {
+    @get:Rule val setupSkipped = SetupSkippedRule()
     @get:Rule val rule = createEmptyComposeRule()
     private var scenario: ActivityScenario<MainActivity>? = null
 

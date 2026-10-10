@@ -35,8 +35,8 @@ internal class FakeKv : KeyValueStore {
     override fun putLong(key: String, value: Long) { m[key] = value }
 }
 
-internal fun testStore(): Store =
-    Store(FakeKv(), File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "test-${System.nanoTime()}.jpg"))
+internal fun testStore(kv: KeyValueStore = FakeKv()): Store =
+    Store(kv, File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "test-${System.nanoTime()}.jpg"))
 
 /**
  * A controller whose sender never answers. The default builder fails when it is reached; SendController turns that error into

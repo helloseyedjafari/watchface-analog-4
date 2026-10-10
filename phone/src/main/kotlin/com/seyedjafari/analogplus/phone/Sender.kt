@@ -75,7 +75,7 @@ internal const val NOT_INSTALLED_TEXT =
     "The Analog Plus app is not installed on your watch yet. Install it on the watch, then try again."
 
 internal const val NO_WATCH_TEXT =
-    "No watch found. Open Bluetooth, make sure the watch is paired with this phone and the Analog Plus watch app is installed."
+    "No watch found. Open the Galaxy Wearable or Wear OS app on this phone, make sure the watch is paired with it and the Analog Plus watch app is installed."
 
 /**
  * Sends a face over the Wear Data Layer: file on a channel, then the APPLY message, then waits for the watch's RESULT.

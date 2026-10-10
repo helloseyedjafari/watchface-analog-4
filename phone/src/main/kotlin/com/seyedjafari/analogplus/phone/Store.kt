@@ -206,6 +206,33 @@ class Store(
 
     fun saveSentKeyFingerprint(fingerprint: String) = synchronized(LOCK) { kv.putString(KEY_SENT_FINGERPRINT, fingerprint) }
 
+    // ---- onboarding -----------------------------------------------------------------------------------------
+
+    /** The stored onboarding state, or null when none was ever stored (or the stored text cannot be read). */
+    fun onboardingState(): OnboardingState? = synchronized(LOCK) { decodeOnboardingState(kv.getString(KEY_ONBOARDING)) }
+
+    fun saveOnboardingState(s: OnboardingState) = synchronized(LOCK) { kv.putString(KEY_ONBOARDING, s.encode()) }
+
+    /**
+     * True when this install was used before onboarding existed: a current design, a saved-designs entry (even a corrupt one), a face version or a
+     * sent-key fingerprint is on disk. Only meaningful BEFORE the first autosave of a new install, which is why
+     * [resolveOnboardingState] stores its decision at once.
+     */
+    fun hasPriorUse(): Boolean = synchronized(LOCK) {
+        kv.getString(KEY_CURRENT) != null || kv.getString(KEY_SAVED) != null ||
+            kv.getLong(KEY_VERSION, 0L) > 0L || kv.getString(KEY_SENT_FINGERPRINT) != null
+    }
+
+    /**
+     * The onboarding state to start with. A stored state wins. Otherwise: [OnboardingState.Skipped] for an existing
+     * user (an update from the POC must never be blocked), [OnboardingState.NotStarted] for a new one; the decision is
+     * written so the autosave of the default design that follows the first launch cannot flip it later.
+     */
+    fun resolveOnboardingState(): OnboardingState = synchronized(LOCK) {
+        onboardingState() ?: (if (hasPriorUse()) OnboardingState.Skipped else OnboardingState.NotStarted)
+            .also { saveOnboardingState(it) }
+    }
+
     private fun withoutPhoto(d: DesignSettings) = d.copy(background = d.background.copy(photoJpeg = null))
 
     /** Saved designs carry no photo, so a photo background without one falls back to a solid colour. */
@@ -220,6 +247,7 @@ class Store(
         private const val KEY_SAVED = "saved_designs"
         private const val KEY_VERSION = "version_counter"
         private const val KEY_SENT_FINGERPRINT = "sent_key_fingerprint"
+        private const val KEY_ONBOARDING = "onboarding_state"
         /** One lock for every [Store] in the process (the debug receiver makes its own instance). */
         private val LOCK = Any()
         private val EPOCH_2026_MS = Instant.parse("2026-01-01T00:00:00Z").toEpochMilli()

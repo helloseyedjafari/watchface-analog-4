@@ -165,10 +165,10 @@ class SendFlowTest {
         awaitSuccess(built.last())
     }
 
-    @Test fun noWatchSaysToOpenBluetoothAndTheNextTrySucceedsOnceTheWatchIsThere() {
+    @Test fun noWatchSaysToOpenTheWearableAppAndTheNextTrySucceedsOnceTheWatchIsThere() {
         transport.withApp = emptyList()
         show()
-        failsWithAndRecovers(listOf("No watch found. Open Bluetooth, make sure the watch is paired")) {
+        failsWithAndRecovers(listOf("No watch found. Open the Galaxy Wearable or Wear OS app on this phone")) {
             transport.withApp = listOf(WatchNode("watch-1", true))
         }
     }
@@ -182,10 +182,10 @@ class SendFlowTest {
         }
     }
 
-    @Test fun aDataLayerThatCannotBeReachedNamesTheCauseAndRepeatsTheBluetoothAdvice() {
+    @Test fun aDataLayerThatCannotBeReachedNamesTheCauseAndRepeatsTheWearableAppAdvice() {
         transport.lookupFailure = IOException("Bluetooth is off")
         show()
-        failsWithAndRecovers(listOf("Could not reach the watch: Bluetooth is off.", "Open Bluetooth")) { transport.lookupFailure = null }
+        failsWithAndRecovers(listOf("Could not reach the watch: Bluetooth is off.", "Open the Galaxy Wearable or Wear OS app")) { transport.lookupFailure = null }
     }
 
     @Test fun aFileThatNeverArrivesTimesOutAndSaysToWakeTheWatch() {

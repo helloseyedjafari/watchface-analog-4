@@ -234,7 +234,7 @@
 
     <!-- Send problems: SendProblem.text(Resources); the English wording is SendProblem.english (kept equal by SendProblemResourcesTest) -->
     <string name="send_not_installed">The Analog Plus app is not installed on your watch yet. Install it on the watch, then try again.</string>
-    <string name="send_no_watch">No watch found. Open Bluetooth, make sure the watch is paired with this phone and the Analog Plus watch app is installed.</string>
+    <string name="send_no_watch">No watch found. Open the Galaxy Wearable or Wear OS app on this phone, make sure the watch is paired with it and the Analog Plus watch app is installed.</string>
     <string name="send_error_could_not_reach">Could not reach the watch: %1$s. %2$s</string>
     <string name="send_error_file_timeout">The face file did not reach the watch within %1$d seconds. Check that the watch is awake and connected to the phone, then try again.</string>
     <string name="send_error_answer_timeout">The watch did not answer within %1$d seconds. Check that the watch is awake, connected to the phone, and has the Analog Plus watch app, then try again.</string>
@@ -296,6 +296,9 @@
     <string name="account_backup_title">Backup and sync</string>
     <string name="account_signin_coming">Sign-in is coming</string>
     <string name="account_saved_on_phone">Your designs are saved on this phone.</string>
+    <string name="account_run_setup_title">Setup</string>
+    <string name="account_run_setup_body">Go through the welcome steps again: pair your watch, the permission and a starting template.</string>
+    <string name="account_run_setup_button">Run setup again</string>
     <string name="account_signing_key_title">Signing key</string>
     <string name="signing_key_explanation">Every face is signed with a key stored in this app. If the app complains that the key is damaged, or the watch rejects updates after a reinstall, you can make a new key here.</string>
     <string name="signing_key_button_reset">Reset signing key</string>
@@ -304,4 +307,40 @@
     <string name="signing_key_button_confirm">Reset</string>
     <string name="signing_key_reset_failed">The key could not be reset.</string>
     <string name="signing_key_reset_done">Signing key reset. A new key is made on the next send.</string>
+    <!-- Onboarding: pairing page (keys onboarding_<page>_<purpose>; OnboardingText lists the ids) -->
+    <string name="onboarding_pair_title">Connect your watch</string>
+    <string name="onboarding_pair_body">Analog Plus builds your face on this phone and sends it to your Wear OS watch.</string>
+    <string name="onboarding_pair_no_watch_yet">No watch yet? You can still design faces now and send one later.</string>
+    <string name="onboarding_pair_row_watch">Watch paired</string>
+    <string name="onboarding_pair_row_app">Analog Plus on the watch</string>
+    <string name="onboarding_pair_row_app_waiting">Needs a paired watch</string>
+    <string name="onboarding_pair_advice_ready">Your watch is ready.</string>
+    <string name="onboarding_pair_advice_could_not_check">We could not check your watch. Make sure Bluetooth is on, then tap Check again.</string>
+    <!-- Onboarding: template page -->
+    <string name="onboarding_template_title">Pick a starting point</string>
+    <string name="onboarding_template_body">Everything can be changed later. Your own edits are never replaced without asking.</string>
+    <string name="onboarding_template_selected">Selected</string>
+    <!-- Onboarding: welcome page -->
+    <string name="onboarding_welcome_title">Make a watch face that is yours</string>
+    <string name="onboarding_welcome_body">Choose colours, move the complications, and put it on your watch in a minute.</string>
+    <!-- Onboarding: permission page -->
+    <string name="onboarding_permission_title">Allow the face once</string>
+    <string name="onboarding_permission_step_allow">The first time a face arrives, your watch asks for permission to switch to it. Tap Allow.</string>
+    <string name="onboarding_permission_step_deny">It asks only once. If you tap Deny nothing breaks: press and hold the watch face and pick Analog Plus.</string>
+    <string name="onboarding_permission_step_later">After that, new designs change the face in place and never ask again.</string>
+    <!-- Onboarding: backup page (hidden until accounts ship) -->
+    <string name="onboarding_backup_placeholder_body">Sign-in is coming. Your designs are saved on this phone.</string>
+    <string name="onboarding_backup_not_now">Not now</string>
+    <!-- Onboarding: navigation (the primary button and the progress line) -->
+    <string name="onboarding_nav_get_started">Get started</string>
+    <string name="onboarding_nav_continue">Continue</string>
+    <string name="onboarding_nav_finish">Finish</string>
+    <string name="onboarding_nav_step_of">Step %1$d of %2$d</string>
+    <!-- Onboarding: the screen around the pages -->
+    <string name="onboarding_screen_skip">Skip</string>
+    <string name="onboarding_screen_back">Back</string>
+    <!-- Onboarding: the one-time tip above the preview after setup -->
+    <string name="send_tip_text">Your watch is ready. Open Send to put this face on it.</string>
+    <string name="send_tip_open_send">Open Send</string>
+    <string name="send_tip_dismiss">Got it</string>
 </resources>
