@@ -15,10 +15,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -66,10 +70,14 @@ class SyncEngineTest {
             return inner.fetchDesigns(uid)
         }
 
+        /** Lets a test hand the designs listener a list of its own (for example one that is already out of date). */
+        val injected = MutableSharedFlow<List<RemoteDesign>>(extraBufferCapacity = 8)
+        var hangPutCurrent = false
+
         override fun observeDesigns(uid: String): Flow<List<RemoteDesign>> = flow {
             designListens++
             listenFailure?.let { throw it }
-            emitAll(inner.observeDesigns(uid))
+            emitAll(merge(inner.observeDesigns(uid), injected))
         }
 
         override fun observeCurrent(uid: String): Flow<RemoteCurrent?> = flow {
@@ -87,6 +95,7 @@ class SyncEngineTest {
         }
 
         override suspend fun putCurrent(uid: String, designJson: String, deviceId: String, deviceLabel: String): RemoteCurrent {
+            if (hangPutCurrent) awaitCancellation()
             failPutCurrent?.let { throw it }
             return inner.putCurrent(uid, designJson, deviceId, deviceLabel)
         }
@@ -176,6 +185,10 @@ class SyncEngineTest {
         b.engine.resolveOffer(OfferChoice.USE_REMOTE); runCurrent()
         assertEquals(listOf(night), b.applied)
         assertNull(b.engine.currentOffer.value)
+        // the editor autosaves the design that was just applied: it must not be pushed back as if the user had edited it
+        b.engine.onCurrentSaved(night, ChangeOrigin.USER)
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(0, remote.currentWrites.size)
         // the same remote document arriving again (listener replay, next pass) must not ask again
         b.current = day
         // (the label differs only so that the fake emits again: a StateFlow drops an identical value)
@@ -269,8 +282,12 @@ class SyncEngineTest {
         assertEquals(listOf("Midnight"), b.names())
     }
 
+    /**
+     * The cloud's clock is the reference: a design edited on a phone after the cloud's copy was written wins, one edited
+     * before it loses. Here the cloud (5 000 000) is older than both edits (6 000 000 and 7 000 000), so b's later edit wins.
+     */
     @Test fun twoPhonesEditingTheSameDesignTheLaterEditWins() = runTest {
-        val remote = FakeRemoteStore()
+        val remote = FakeRemoteStore(serverNow = 5_000_000)
         var clockA = 5_000_000L; var clockB = 5_000_000L
         val a = phone(remote, "a", { clockA }); val b = phone(remote, "b", { clockB })
         a.store.saveNamed("Night", night)
@@ -286,6 +303,24 @@ class SyncEngineTest {
         a.engine.syncNow(); b.engine.syncNow(); a.engine.syncNow()
         assertEquals("#FF222222", a.store.savedDesigns().single().design.accent)
         assertEquals("#FF222222", b.store.savedDesigns().single().design.accent)
+    }
+
+    /** The mirror: the cloud's copy (8 000 000 and later) is newer than b's edit (7 000 000), so the cloud wins on both. */
+    @Test fun whenBothChangedAndTheCloudCopyIsNewerTheCloudWins() = runTest {
+        val remote = FakeRemoteStore(serverNow = 8_000_000)
+        var clockA = 5_000_000L; var clockB = 5_000_000L
+        val a = phone(remote, "a", { clockA }); val b = phone(remote, "b", { clockB })
+        a.store.saveNamed("Night", night)
+        a.engine.start("u1"); b.engine.start("u1"); runCurrent()
+        assertEquals(listOf("Night"), b.names())
+        remote.failWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        clockA = 6_000_000; a.store.saveNamed("Night", night.copy(accent = "#FF111111"))
+        clockB = 7_000_000; b.store.saveNamed("Night", night.copy(accent = "#FF222222"))
+        advanceTimeBy(1_500); runCurrent()
+        remote.failWith = null
+        a.engine.syncNow(); b.engine.syncNow(); a.engine.syncNow()
+        assertEquals("#FF111111", a.store.savedDesigns().single().design.accent)
+        assertEquals("#FF111111", b.store.savedDesigns().single().design.accent)   // b's later device time loses to the newer cloud write
     }
 
     @Test fun applyingTheCloudCopyDoesNotWriteItBack() = runTest {
@@ -747,6 +782,105 @@ class SyncEngineTest {
         a.engine.start("u1"); runCurrent()
         advanceTimeBy(2_000); runCurrent()
         assertEquals(edited, DesignJson.fromJson(remote.designsOf("u1").getValue(designId("Night (this phone)")).designJson))
+    }
+
+    // ---- fix round items 8, 9 and 13 ------------------------------------------------------------------------------------------
+
+    private fun TestScope.statusLog(p: Phone): List<SyncStatus> {
+        val log = ArrayList<SyncStatus>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { p.engine.status.collect { log += it } }
+        return log
+    }
+
+    @Test fun aListenerUpdateThatNeedsNoWorkDoesNotFlashSyncing() = runTest {
+        val remote = FakeRemoteStore()
+        val a = phone(remote, "a")
+        a.store.saveNamed("Night", night)
+        a.engine.start("u1"); runCurrent()
+        val log = statusLog(a)
+        // the cloud copy is touched but identical: the phone only notes the new time
+        remote.seedDesign("u1", RemoteDesign(designId("Night"), "Night", DesignJson.toJson(night), 9_000_000, DesignState.LIVE, 1)); runCurrent()
+        assertTrue("no Syncing for bookkeeping: $log", log.none { it == SyncStatus.Syncing })
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+        // real work does show it
+        remote.seedDesign("u1", RemoteDesign(designId("Zed"), "Zed", DesignJson.toJson(day), 9_500_000, DesignState.LIVE, 1)); runCurrent()
+        assertTrue("Syncing while applying: $log", log.any { it == SyncStatus.Syncing })
+        assertEquals(listOf("Night", "Zed"), a.names())
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+    }
+
+    @Test fun aListenerPassDoesNotHideACurrentDesignPushThatIsStillWaitingToBeRetried() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky)
+        val other = phone(remote, "other")
+        a.engine.start("u1"); runCurrent()
+        flaky.failPutCurrent = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        a.current = night
+        a.engine.onCurrentSaved(night, ChangeOrigin.USER)
+        advanceTimeBy(1_500); runCurrent()
+        assertEquals(SyncStatus.Offline, a.engine.status.value)
+        other.store.saveNamed("Zed", day); other.engine.start("u1"); runCurrent()     // a's listener runs a pass
+        assertEquals(listOf("Zed"), a.names())
+        assertEquals(SyncStatus.Offline, a.engine.status.value)                       // still not "synced"
+        flaky.failPutCurrent = null
+        advanceTimeBy(31_000); runCurrent()
+        assertEquals(DesignJson.toJson(night), remote.currentWrites.single().designJson)
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+    }
+
+    @Test fun aCurrentDesignThatIsTooLargeStaysReportedAcrossListenerPassesUntilItIsEdited() = runTest {
+        val remote = FakeRemoteStore()
+        val a = phone(remote, "a", photos = PhotoDownscaler { ByteArray(700_000) { 1 } })
+        val other = phone(remote, "other")
+        a.engine.start("u1"); runCurrent()
+        val big = DesignSettings(background = BackgroundDesign(kind = BackgroundKind.PHOTO, photoJpeg = ByteArray(10) { 1 }))
+        a.current = big
+        a.engine.onCurrentSaved(big, ChangeOrigin.USER)
+        advanceTimeBy(1_500); runCurrent()
+        assertEquals(SyncStatus.Error(SyncProblem.CURRENT_TOO_LARGE), a.engine.status.value)
+        other.store.saveNamed("Zed", day); other.engine.start("u1"); runCurrent()
+        assertEquals(listOf("Zed"), a.names())
+        assertEquals(SyncStatus.Error(SyncProblem.CURRENT_TOO_LARGE), a.engine.status.value)
+        a.current = night
+        a.engine.onCurrentSaved(night, ChangeOrigin.USER)
+        advanceTimeBy(1_500); runCurrent()
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+    }
+
+    @Test fun aListUpdateThatWaitedBehindAPassIsDiscardedSoTheLimitCannotBeExceeded() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val seeded = (1 until MAX_SYNCED_DESIGNS).map { i ->
+            val n = "S$i"
+            RemoteDesign(designId(n), n, DesignJson.toJson(night.copy(name = n)), 1_000L + i, DesignState.LIVE, 1)
+        }
+        seeded.forEach { remote.seedDesign("u1", it) }
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.engine.start("u1"); runCurrent()                    // takes the 199 and starts listening
+        a.store.saveNamed("A", night); a.store.saveNamed("B", day)
+        val gate = CompletableDeferred<Unit>()
+        flaky.putGate = gate
+        val pass = launch { a.engine.syncNow() }; runCurrent()   // has fetched 199 and waits to push A
+        flaky.injected.emit(seeded.mapIndexed { i, d -> if (i == 0) d.copy(updatedAtMs = 5_000) else d }); runCurrent()   // a list from before A
+        gate.complete(Unit); pass.join(); advanceTimeBy(5_000); runCurrent()
+        assertEquals(MAX_SYNCED_DESIGNS, remote.designsOf("u1").values.count { it.state == DesignState.LIVE })
+        assertEquals(SyncStatus.Error(SyncProblem.TOO_MANY_DESIGNS, MAX_SYNCED_DESIGNS), a.engine.status.value)
+    }
+
+    @Test fun theWriteTimeoutGrowsWithThePayloadSoALargeDesignOnASlowLinkIsNotCalledOffline() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky, photos = PhotoDownscaler { ByteArray(400_000) { 3 } })
+        val withPhoto = DesignSettings(background = BackgroundDesign(kind = BackgroundKind.PHOTO, photoJpeg = ByteArray(10) { 1 }))
+        a.current = withPhoto
+        a.engine.start("u1"); runCurrent()
+        flaky.hangPutCurrent = true
+        a.engine.onCurrentSaved(withPhoto, ChangeOrigin.USER)
+        advanceTimeBy(28_000); runCurrent()
+        assertEquals("a 530 kB write gets more than the flat 20 s", SyncStatus.Syncing, a.engine.status.value)
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(SyncStatus.Offline, a.engine.status.value)
     }
 
     // ---- fix round: one design the cloud will not take must not block the others ------------------------------------------

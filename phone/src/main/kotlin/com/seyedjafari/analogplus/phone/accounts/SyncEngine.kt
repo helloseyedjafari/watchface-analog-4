@@ -8,6 +8,7 @@ import com.seyedjafari.analogplus.phone.Store
 import com.seyedjafari.analogplus.phone.StoreObserver
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -45,7 +46,7 @@ import kotlinx.coroutines.withTimeout
  * thread, including [resolveOffer]. [deviceId] is stable per install; [deviceLabel] is shown in the "newer from another
  * device" question. [copySuffix] is the text added to the name of this phone's copy when two designs with the same name
  * differ (a string resource, resolved by the caller). A cloud call that gets no answer for [callTimeoutMs] counts as
- * offline.
+ * offline; a write gets [writeTimeoutMsPerKb] more per kilobyte of payload (a 900 kB design needs more than 20 s on a slow link).
  *
  * Retrying: a failed pass or a dead listener asks for one retry after [retryMs] doubled for every failure in a row, up to
  * [maxRetryMs], each wait randomised by [random] (0 to 1: the wait is 50% to 100% of the backoff) so that phones do not
@@ -69,6 +70,7 @@ class SyncEngine(
     private val retryMs: Long = 30_000,
     private val maxRetryMs: Long = 300_000,
     private val callTimeoutMs: Long = 20_000,
+    private val writeTimeoutMsPerKb: Long = 20,
     private val random: () -> Double = { Math.random() },
 ) : CloudSync, StoreObserver {
 
@@ -101,6 +103,23 @@ class SyncEngine(
 
     /** True from a first sign-in on an empty phone until the cloud's current design has been looked at. */
     @Volatile private var restorePending = false
+
+    /** What the cloud knows of the design in the editor, kept so that a pass about the saved designs cannot report "synced" over it. */
+    private enum class CurrentSync { IN_SYNC, RETRY_PENDING, TOO_LARGE }
+
+    @Volatile private var currentSync = CurrentSync.IN_SYNC
+
+    /** The status the failed push of the current design produced; shown while [currentSync] is [CurrentSync.RETRY_PENDING]. */
+    @Volatile private var currentFailure: SyncStatus = SyncStatus.Offline
+
+    /**
+     * A list update from the listener that had to wait for a pass is older than what that pass did or read. [fetchSeq] counts
+     * full fetches (started), [writeSeq] counts cloud writes (at start and at end, so one in flight changes it too). An update
+     * is dropped when either changed while it waited: a newer fetch is at least as fresh, and a write of this phone makes the
+     * cloud send a fresh list anyway. Acting on the old list could push past [MAX_SYNCED_DESIGNS].
+     */
+    private val fetchSeq = AtomicLong()
+    private val writeSeq = AtomicLong()
 
     /** Designs (ids, and [CURRENT]) whose latest cloud copy lacks the photo because it could not be shrunk. */
     private val withoutPhoto: MutableSet<String> = ConcurrentHashMap.newKeySet()
@@ -153,6 +172,7 @@ class SyncEngine(
         lastRemoteSignature = null
         lastPushedCurrent = null
         pendingCurrent.set(null)
+        currentSync = CurrentSync.IN_SYNC
         seenCurrentAtMs = 0
         restorePending = false
         withoutPhoto.clear()
@@ -175,10 +195,9 @@ class SyncEngine(
         bound?.await()
         if (uid != id) return
         guarded(id) {
-            val designs = call { remote.fetchDesigns(id) }
-            val designProblem = reconcile(id, designs)
-            val currentProblem = pushCurrentIfNeeded(id)
-            finish(id, designProblem ?: currentProblem)
+            val designProblem = fullPass(id)
+            pushCurrentIfNeeded(id)
+            finish(id, designProblem)
         }
     }
 
@@ -203,6 +222,7 @@ class SyncEngine(
     override fun onCurrentSaved(design: DesignSettings, origin: ChangeOrigin) {
         if (origin != ChangeOrigin.USER || uid == null) return
         pendingCurrent.set(design)
+        currentSync = CurrentSync.IN_SYNC   // a new design: whatever went wrong with the old one, ask again
         editMade()
         trigger?.trySend(Unit)
     }
@@ -233,16 +253,28 @@ class SyncEngine(
 
     private suspend fun onRemoteDesigns(id: String, list: List<RemoteDesign>) {
         if (uid != id) return
-        val signature = signatureOf(list)
-        if (signature == lastRemoteSignature) return
-        guarded(id) { finish(id, reconcile(id, list)) }
+        if (signatureOf(list) == lastRemoteSignature) return
+        val fetchesThen = fetchSeq.get()
+        val writesThen = writeSeq.get()
+        guarded(id) {
+            var stale = false
+            val problem = passLock.withLock {
+                if (fetchSeq.get() != fetchesThen || writeSeq.get() != writesThen) { stale = true; null } else reconcile(id, list)
+            }
+            if (!stale) finish(id, problem)
+        }
     }
 
     private fun signatureOf(list: List<RemoteDesign>) = list.map { Triple(it.id, it.updatedAtMs, it.state) }.sortedBy { it.first }
 
-    /** One pass over the designs. Returns what to tell the user when something could not be synced, otherwise null. */
-    private suspend fun reconcile(id: String, remoteList: List<RemoteDesign>): Problem? = passLock.withLock {
-        setStatus(id, SyncStatus.Syncing)
+    /** Fetches the designs and carries out one pass, all under the lock so that the list a pass acts on is the one it just read. */
+    private suspend fun fullPass(id: String): Problem? = passLock.withLock {
+        fetchSeq.incrementAndGet()
+        reconcile(id, call { remote.fetchDesigns(id) })
+    }
+
+    /** One pass over the designs (the caller holds [passLock]). Returns what to tell the user when something could not be synced, otherwise null. */
+    private suspend fun reconcile(id: String, remoteList: List<RemoteDesign>): Problem? {
         val (local, planned) = withContext(io) {
             val entries = localEntries()
             entries to planSync(
@@ -251,6 +283,8 @@ class SyncEngine(
             )
         }
         val actions = capNewDesigns(planned, remoteList)
+        // Only real work shows as "Syncing": noting a cloud time (RecordBase) or forgetting a deletion (Drop) is bookkeeping.
+        if (actions.any { it !is SyncAction.RecordBase && it !is SyncAction.Drop }) setStatus(id, SyncStatus.Syncing)
         val byId = local.associateBy { it.id }
         var skipped = 0
         var firstReason = ""
@@ -269,7 +303,7 @@ class SyncEngine(
             if (outcome == Outcome.UNSYNCABLE) skipped++
         }
         lastRemoteSignature = signatureOf(remoteList)
-        when {
+        return when {
             skipped > 0 -> Problem(SyncProblem.DESIGNS_SKIPPED, skipped, firstReason)
             planned.size != actions.size -> Problem(SyncProblem.TOO_MANY_DESIGNS, MAX_SYNCED_DESIGNS)
             else -> null
@@ -321,19 +355,19 @@ class SyncEngine(
                 if (nameTooLong(local.name)) return Outcome.UNSYNCABLE
                 val mapped = withContext(io) { designToRemoteJson(design, photos) }
                 val json = mapped.remoteJson ?: return Outcome.UNSYNCABLE
-                val written = call { remote.putDesign(uid, local.id, local.name, json, DesignState.LIVE, DESIGN_SCHEMA) }
+                val written = write(json.length) { remote.putDesign(uid, local.id, local.name, json, DesignState.LIVE, DESIGN_SCHEMA) }
                 notePhoto(local.id, mapped)
                 withContext(io) { journal.markPushed(local.id, local.modifiedAtMs, written.updatedAtMs) }
             }
             is SyncAction.PushTombstone -> {
                 val e = local ?: return Outcome.UNSYNCABLE
-                val written = call { remote.putDesign(uid, e.id, e.name, "", DesignState.TOMBSTONE, DESIGN_SCHEMA) }
+                val written = write(0) { remote.putDesign(uid, e.id, e.name, "", DesignState.TOMBSTONE, DESIGN_SCHEMA) }
                 withoutPhoto.remove(e.id)
                 withContext(io) { journal.markPushed(e.id, e.modifiedAtMs, written.updatedAtMs) }
             }
             is SyncAction.ApplyRemoteLive -> {
                 if (idDiffersFromName(action.remote)) return Outcome.UNSYNCABLE
-                val design = designFromRemoteJson(action.remote.designJson) ?: return Outcome.UNSYNCABLE
+                val design = withContext(io) { designFromRemoteJson(action.remote.designJson) } ?: return Outcome.UNSYNCABLE
                 val applied = withContext(io) {
                     if (!unchangedSince(action.id, local)) return@withContext false
                     store.saveNamed(action.remote.name, design, ChangeOrigin.SYNC)
@@ -360,7 +394,7 @@ class SyncEngine(
             is SyncAction.KeepBoth -> {
                 val mine = local?.design ?: return Outcome.UNSYNCABLE
                 if (idDiffersFromName(action.remote)) return Outcome.UNSYNCABLE
-                val theirs = designFromRemoteJson(action.remote.designJson) ?: return Outcome.UNSYNCABLE
+                val theirs = withContext(io) { designFromRemoteJson(action.remote.designJson) } ?: return Outcome.UNSYNCABLE
                 // This phone's version is saved under its new name first, so that nothing can end with it gone.
                 val kept = withContext(io) {
                     if (!unchangedSince(action.id, local)) return@withContext false
@@ -374,7 +408,7 @@ class SyncEngine(
                 val mapped = withContext(io) { designToRemoteJson(mine, photos) }
                 val json = mapped.remoteJson ?: return Outcome.UNSYNCABLE
                 val copyId = designId(action.copyName)
-                val written = call { remote.putDesign(uid, copyId, action.copyName, json, DesignState.LIVE, DESIGN_SCHEMA) }
+                val written = write(json.length) { remote.putDesign(uid, copyId, action.copyName, json, DesignState.LIVE, DESIGN_SCHEMA) }
                 notePhoto(copyId, mapped)
                 withContext(io) { journal.markCopyPushed(copyId, action.copyName, written.updatedAtMs) }
             }
@@ -414,23 +448,32 @@ class SyncEngine(
 
     // ---- the current design -------------------------------------------------------------------------------------
 
-    /** Pushes the design being edited if it changed. A failed push puts it back, so the next pass tries again. */
-    private suspend fun pushCurrentIfNeeded(uid: String): Problem? {
-        val d = pendingCurrent.getAndSet(null) ?: return null
-        if (d.photoStillLoading()) return null
-        if (d == lastPushedCurrent) return null
+    /**
+     * Pushes the design being edited if it changed. A failed push puts it back, so the next pass tries again; what went wrong
+     * is kept in [currentSync] so that [finish] keeps reporting it.
+     */
+    private suspend fun pushCurrentIfNeeded(uid: String) {
+        val d = pendingCurrent.getAndSet(null) ?: return
+        if (d.photoStillLoading()) return
+        if (d == lastPushedCurrent) return
         val mapped = withContext(io) { designToRemoteJson(d, photos) }
-        val json = mapped.remoteJson ?: return Problem(SyncProblem.CURRENT_TOO_LARGE)
+        val json = mapped.remoteJson ?: run { currentSync = CurrentSync.TOO_LARGE; return }
+        setStatus(uid, SyncStatus.Syncing)
         val written = try {
-            call { remote.putCurrent(uid, json, deviceId, deviceLabel) }
+            write(json.length) { remote.putCurrent(uid, json, deviceId, deviceLabel) }
         } catch (e: Throwable) {
             pendingCurrent.compareAndSet(null, d)   // unless a newer edit arrived meanwhile
+            if (e !is CancellationException) {
+                currentSync = CurrentSync.RETRY_PENDING
+                currentFailure = (e as? RemoteException)?.let(::statusOf)
+                    ?: SyncStatus.Error(SyncProblem.FAILED, detail = e.message ?: e.javaClass.simpleName)
+            }
             throw e
         }
+        currentSync = CurrentSync.IN_SYNC
         lastPushedCurrent = d
         notePhoto(CURRENT, mapped)
         noteCurrentSeen(written.updatedAtMs)
-        return null
     }
 
     private suspend fun onRemoteCurrent(id: String, rc: RemoteCurrent?) {
@@ -440,7 +483,7 @@ class SyncEngine(
             if (rc.deviceId == deviceId) { noteCurrentSeen(rc.updatedAtMs); return }
             if (rc.updatedAtMs <= seenCurrentAtMs) return
             if (_offer.value?.remoteUpdatedAtMs == rc.updatedAtMs) return
-            val design = designFromRemoteJson(rc.designJson) ?: return
+            val design = withContext(io) { designFromRemoteJson(rc.designJson) } ?: return   // up to ~900 kB of JSON: not on the caller's thread
             val mine = currentDesign()
             if (design == mine) { noteCurrentSeen(rc.updatedAtMs); return }
             val silent = restorePending && mine == DesignSettings()
@@ -455,11 +498,18 @@ class SyncEngine(
         }
     }
 
-    /** Remembers (in memory at once, in the journal off the caller's thread) that the cloud's current design of this time is dealt with. */
+    /**
+     * Remembers that the cloud's current design of this time is dealt with: in memory at once (so a replay is never asked
+     * about), and in the journal from a coroutine of the session on [io] (so a sign-out cancels it and it cannot stamp the
+     * next account's journal). The journal write is not awaited: if the process dies right after an answer, the same question
+     * is asked once more at the next start.
+     */
     private fun noteCurrentSeen(atMs: Long) {
         if (atMs <= seenCurrentAtMs) return
         seenCurrentAtMs = atMs
-        scope.launch(io) { journal.setCurrentSeenRemoteAtMs(atMs) }
+        val id = uid ?: return
+        val parent = session ?: return
+        scope.launch(parent + io) { if (uid == id) journal.setCurrentSeenRemoteAtMs(atMs) }
     }
 
     // ---- plumbing -----------------------------------------------------------------------------------------------
@@ -468,9 +518,15 @@ class SyncEngine(
         if (uid == id) _status.value = s   // a pass that outlives a sign-out must not bring the status back
     }
 
+    /** The final status of a pass: the designs' problem first, then what is wrong with the current design, else "synced". */
     private fun finish(id: String, problem: Problem?) {
+        val current = currentSync
         if (problem != null) {
             setStatus(id, SyncStatus.Error(problem.kind, problem.count, problem.detail))
+        } else if (current == CurrentSync.TOO_LARGE) {
+            setStatus(id, SyncStatus.Error(SyncProblem.CURRENT_TOO_LARGE))
+        } else if (current == CurrentSync.RETRY_PENDING) {
+            setStatus(id, currentFailure)   // the design in the editor still has to go up; the retry is already scheduled
         } else {
             setStatus(id, SyncStatus.Idle(clock(), withoutPhoto.size))
             attempt.set(0)
@@ -478,9 +534,19 @@ class SyncEngine(
         }
     }
 
-    /** A cloud call; no answer for [callTimeoutMs] is [RemoteErrorKind.OFFLINE] (the retry then asks again). */
-    private suspend fun <T> call(block: suspend () -> T): T = try {
-        withTimeout(callTimeoutMs) { block() }
+    /** A cloud write of about [payloadChars] characters: counted for [writeSeq], and given time for the payload. */
+    private suspend fun <T> write(payloadChars: Int, block: suspend () -> T): T {
+        writeSeq.incrementAndGet()
+        try {
+            return call(callTimeoutMs + payloadChars / 1024 * writeTimeoutMsPerKb, block)
+        } finally {
+            writeSeq.incrementAndGet()
+        }
+    }
+
+    /** A cloud call; no answer within [timeoutMs] is [RemoteErrorKind.OFFLINE] (the retry then asks again). */
+    private suspend fun <T> call(timeoutMs: Long = callTimeoutMs, block: suspend () -> T): T = try {
+        withTimeout(timeoutMs) { block() }
     } catch (e: TimeoutCancellationException) {
         throw RemoteException(RemoteErrorKind.OFFLINE, "The cloud did not answer", e)
     }
