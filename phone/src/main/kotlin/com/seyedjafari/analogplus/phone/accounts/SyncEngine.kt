@@ -17,6 +17,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -48,9 +49,11 @@ import kotlinx.coroutines.withTimeout
  * differ (a string resource, resolved by the caller). A cloud call that gets no answer for [callTimeoutMs] counts as
  * offline; a write gets [writeTimeoutMsPerKb] more per kilobyte of payload (a 900 kB design needs more than 20 s on a slow link).
  *
- * Retrying: a failed pass or a dead listener asks for one retry after [retryMs] doubled for every failure in a row, up to
- * [maxRetryMs], each wait randomised by [random] (0 to 1: the wait is 50% to 100% of the backoff) so that phones do not
- * retry in step. A success or a local edit starts the backoff over. [setForeground]: in the background no listener runs
+ * Retrying: a failed pass (offline, sign-in expired, quota used up) or a dead listener (anything but a refusal) asks for one
+ * retry after [retryMs] doubled for every failure in a row, up to [maxRetryMs], each wait randomised by [random] (0 to 1:
+ * the wait is 50% to 100% of the backoff) so that phones do not retry in step. A pass that gets through, or a local edit,
+ * starts the backoff over, except that a pass does not while a listener that died of a retried error is still down (it
+ * starts over when that listener delivers again), so a listener that keeps dying does not retry every half minute. [setForeground]: in the background no listener runs
  * and nothing is retried; edits still get their (debounced) pass.
  */
 class SyncEngine(
@@ -87,8 +90,12 @@ class SyncEngine(
     @Volatile private var uid: String? = null
     @Volatile private var session: Job? = null
 
-    /** The session that [stop] cancelled; the next [start] waits for it too (a sign-out then sign-in has no running session to join). */
-    @Volatile private var retired: Job? = null
+    /**
+     * Sessions that [stop] cancelled and that have not finished yet (their passes may be inside a call that cannot be recalled).
+     * The next [start] waits for all of them, not just the last: in start, stop, start, stop, start the middle session may
+     * never have run its first line.
+     */
+    private val dying = java.util.concurrent.CopyOnWriteArrayList<Job>()
     private var retryJob: Job? = null
     private val watchJobs = HashMap<Watch, Job>()
 
@@ -122,9 +129,9 @@ class SyncEngine(
 
     /**
      * A list update from the listener that had to wait for a pass is older than what that pass did or read. [fetchSeq] counts
-     * full fetches (started), [writeSeq] counts cloud writes (at start and at end, so one in flight changes it too). An update
-     * is dropped when either changed while it waited: a newer fetch is at least as fresh, and a write of this phone makes the
-     * cloud send a fresh list anyway. Acting on the old list could push past [MAX_SYNCED_DESIGNS].
+     * full fetches (started), [writeSeq] counts the saved-design writes that succeeded (a failed write, and the current design,
+     * change nothing in that list). An update is dropped when either changed while it waited: a newer fetch is at least as
+     * fresh, and a successful write of this phone makes the cloud send a fresh list anyway. Acting on the old list could push past [MAX_SYNCED_DESIGNS].
      */
     private val fetchSeq = AtomicLong()
     private val writeSeq = AtomicLong()
@@ -133,9 +140,9 @@ class SyncEngine(
     private val withoutPhoto: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     override fun start(uid: String) {
-        val previous = session ?: retired
         stop()
-        retired = null
+        dying.removeAll { it.isCompleted }
+        val waitFor = dying.toList()
         this.uid = uid
         _status.value = SyncStatus.Syncing
         val channel = Channel<Unit>(Channel.CONFLATED)
@@ -146,7 +153,9 @@ class SyncEngine(
         val job = scope.launch(start = CoroutineStart.LAZY) {
             // The previous account's session, and every pass running in it, must be completely over before the journal is
             // re-bound: a dying pass would otherwise stamp entries of the new account with the old account's cloud times.
-            previous?.join()
+            // NonCancellable: a session that is itself stopped while it waits (start, stop, start, stop, start) must go on
+            // waiting, so that the next one still waits for the first account's pass.
+            withContext(NonCancellable) { waitFor.forEach { it.join() } }
             withContext(io) {
                 restorePending = journal.boundUid() != uid && isEmptyDevice()
                 journal.bindTo(uid)
@@ -168,7 +177,7 @@ class SyncEngine(
     }
 
     override fun stop() {
-        session?.let { it.cancel(); retired = it }
+        session?.let { it.cancel(); dying += it }
         session = null
         cancelRetry()
         cancelListeners()
@@ -403,7 +412,7 @@ class SyncEngine(
             is SyncAction.RecordBase -> withContext(io) {
                 // conditional: an edit made during the pass keeps the entry dirty so that the next pass pushes it
                 val state = if (action.remote.state == DesignState.LIVE) EntryState.LIVE else EntryState.TOMBSTONE
-                journal.markApplied(action.id, action.remote.name, state, action.remote.updatedAtMs, local?.modifiedAtMs)
+                markApplied(action.id, action.remote.name, state, action.remote.updatedAtMs, local)
             }
             is SyncAction.Drop -> withContext(io) { journal.drop(action.id) }
             is SyncAction.KeepBoth -> {
@@ -661,19 +670,26 @@ class SyncEngine(
         if (uid != id) return
         try {
             when (which) {
-                Watch.DESIGNS -> remote.observeDesigns(id).collect { failingListeners.remove(which); onRemoteDesigns(id, it) }
-                Watch.CURRENT -> remote.observeCurrent(id).collect { rc -> failingListeners.remove(which); guarded(id) { onRemoteCurrent(id, rc) } }
+                Watch.DESIGNS -> remote.observeDesigns(id).collect { listenerDelivered(which); onRemoteDesigns(id, it) }
+                Watch.CURRENT -> remote.observeCurrent(id).collect { rc -> listenerDelivered(which); guarded(id) { onRemoteCurrent(id, rc) } }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: RemoteException) {
+            if (uid != id) return   // a listener of an account that was signed out of dies late: nothing of it is for the new one
             setStatus(id, statusOf(e))
             if (e.kind != RemoteErrorKind.PERMISSION) { failingListeners.add(which); scheduleRetry() }
         } catch (e: Exception) {
+            if (uid != id) return
             setStatus(id, SyncStatus.Error(SyncProblem.FAILED, detail = e.message ?: e.javaClass.simpleName))
             failingListeners.add(which)
             scheduleRetry()
         }
+    }
+
+    /** A listener delivered: it is up. When it was the last one that was down, the retries have done their job: start the backoff over. */
+    private fun listenerDelivered(which: Watch) {
+        if (failingListeners.remove(which) && failingListeners.isEmpty()) resetBackoff()
     }
 
     private companion object {

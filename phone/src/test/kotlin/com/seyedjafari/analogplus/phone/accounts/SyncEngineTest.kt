@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collect
@@ -71,6 +72,12 @@ class SyncEngineTest {
         /** Thrown when the designs listener starts (a listener that dies on its own). */
         var listenFailure: RemoteException? = null
 
+        /** The designs listener waits here (cancellation-proof) and then dies with OTHER: a listener of a signed-out account. */
+        var dyingListenerGate: CompletableDeferred<Unit>? = null
+
+        /** The first snapshot of a designs listener arrives this late. */
+        var snapshotDelayMs = 0L
+
         override suspend fun fetchDesigns(uid: String): List<RemoteDesign> {
             fetchTimes += clockMs()
             throwOnFetch?.let { throw it }
@@ -83,7 +90,9 @@ class SyncEngineTest {
 
         override fun observeDesigns(uid: String): Flow<List<RemoteDesign>> = flow {
             designListens++
+            dyingListenerGate?.let { gate -> withContext(NonCancellable) { gate.await() }; throw RemoteException(RemoteErrorKind.OTHER, "late") }
             listenFailure?.let { throw it }
+            if (snapshotDelayMs > 0) delay(snapshotDelayMs)
             emitAll(merge(inner.observeDesigns(uid), injected))
         }
 
@@ -981,6 +990,78 @@ class SyncEngineTest {
         advanceTimeBy(2_000); runCurrent()
         assertEquals(edited, DesignJson.fromJson(remote.designsOf("u1").getValue(designId("Zed")).designJson))
         assertEquals(edited, a.store.savedDesigns().single().design)
+    }
+
+    /** N1: a chain start, stop, start, stop, start must still wait for the first account's dying pass. */
+    @Test fun aQuickChainOfSignInsStillWaitsForTheFirstAccountsPass() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.engine.start("u1"); runCurrent()
+        a.store.saveNamed("Night", night)
+        val gate = CompletableDeferred<Unit>()
+        flaky.stickyGate = gate
+        val pass = launch { a.engine.syncNow() }; runCurrent()
+        a.engine.stop(); a.engine.start("u2"); a.engine.stop(); a.engine.start("u3"); runCurrent()
+        assertEquals("u1", a.journal.boundUid())
+        gate.complete(Unit); runCurrent(); pass.join(); advanceTimeBy(2_000); runCurrent()
+        assertEquals("u3", a.journal.boundUid())
+        val doc = remote.designsOf("u3").getValue(designId("Night"))
+        assertEquals(doc.updatedAtMs, a.journal.entries().getValue(designId("Night")).baseRemoteAtMs)
+        assertEquals(0, remote.designsOf("u2").size)
+    }
+
+    /** N2: the backoff starts over when the last listener that was down delivers again, even if the passes finished earlier. */
+    @Test fun theBackoffStartsOverWhenTheLastDownListenerDeliversItsFirstSnapshot() = runTest {
+        val (remote, flaky, a) = flakyPhone()
+        flaky.listenFailure = RemoteException(RemoteErrorKind.OTHER, "boom")
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(100_000); runCurrent()                 // two more failures: the wait has grown to 2 minutes
+        flaky.listenFailure = null
+        flaky.snapshotDelayMs = 5_000                        // the next listener answers late, after the pass that follows it
+        advanceTimeBy(116_000); runCurrent()
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+        remote.failWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        val mark = flaky.fetchTimes.size
+        a.engine.syncNow()
+        advanceTimeBy(40_000); runCurrent()
+        val again = flaky.fetchTimes.drop(mark)
+        assertTrue("30 s again, not the grown wait: $again", again.size >= 2 && again[1] - again[0] in 30_000..32_000)
+    }
+
+    /** N3: the current-design listener must wait for the binding too, or it re-asks an offer that was already answered. */
+    @Test fun aListenerOfTheNewSessionDoesNotReAskAnAnsweredOfferBeforeTheSeenTimeIsRestored() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        remote.seedCurrent("u1", RemoteCurrent(DesignJson.toJson(night), 2_000_000, "other", "Pixel 8"))
+        val b = phone(remote, "b", engineRemote = flaky); b.current = day
+        b.engine.start("u1"); runCurrent()
+        assertNotNull(b.engine.currentOffer.value)
+        b.engine.resolveOffer(OfferChoice.KEEP_MINE); runCurrent()
+        b.store.saveNamed("Zed", day)
+        val gate = CompletableDeferred<Unit>()
+        flaky.stickyGate = gate
+        val pass = launch { b.engine.syncNow() }; runCurrent()
+        b.engine.start("u1")                                 // no stop: the old pass is still in the put
+        b.engine.setForeground(false); b.engine.setForeground(true); runCurrent()
+        assertNull("answered already", b.engine.currentOffer.value)
+        gate.complete(Unit); runCurrent(); pass.join(); advanceTimeBy(2_000); runCurrent()
+        assertNull(b.engine.currentOffer.value)
+    }
+
+    /** N7: a listener of the signed-out account that dies late must not touch the new account's status or backoff. */
+    @Test fun aDyingListenerOfTheOldAccountDoesNotScheduleARetryForTheNewOne() = runTest {
+        val (_, flaky, a) = flakyPhone()
+        flaky.dyingListenerGate = CompletableDeferred()
+        val gate = flaky.dyingListenerGate!!
+        a.engine.start("u1"); runCurrent()                   // the designs listener of u1 is waiting to die
+        flaky.dyingListenerGate = null
+        a.engine.stop(); a.engine.start("u2"); runCurrent()
+        gate.complete(Unit); runCurrent(); advanceTimeBy(2_000); runCurrent()
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+        val mark = flaky.fetchTimes.size
+        advanceTimeBy(40_000); runCurrent()
+        assertEquals("no retry for a healthy u2", mark, flaky.fetchTimes.size)
     }
 
     /** D: the editor's design of the account that was signed out of must not be pushed to the next one. */
