@@ -30,7 +30,9 @@ import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
 /**
  * Page 2. Checks with [watch] when the page first resumes, whenever the app resumes later (the user may have just
  * paired in another app) and on "Check again". [onStatus] gets every answer; a missing watch never blocks Continue.
- * Each check starts by showing "checking"; an answer that could not be read is "could not check", never "not found".
+ * "Checking" shows for the first check and after "Check again"; a re-check on return to the app keeps the last answer
+ * on screen until the new one arrives (like the Send screen), so a ready watch does not flicker. An answer that could not
+ * be read is "could not check", never "not found".
  */
 @Composable
 fun PairPage(
@@ -53,7 +55,6 @@ fun PairPage(
     val requested = round
     LaunchedEffect(requested) {
         if (requested >= 0) {
-            status = WatchStatus.CHECKING
             val answer = watch.checkWithTimeout(checkTimeoutMs)
             status = answer
             report(answer)
@@ -76,7 +77,7 @@ fun PairPage(
         )
         SectionCard(title = null) {
             pairRows(status).forEach { row ->
-                StatusRow(stringResource(row.labelRes), stringResource(row.textRes), row.kind, Tags.pairRow(row.id.tagId))
+                StatusRow(stringResource(row.labelRes), stringResource(row.textRes), row.kind, Tags.pairRow(row.id))
             }
             Text(
                 stringResource(OnboardingText.PAIR_WATCH_NOTE), style = MaterialTheme.typography.bodySmall,
@@ -89,7 +90,7 @@ fun PairPage(
                 modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }.testTag(Tags.PAIR_ADVICE),
             )
         }
-        SecondaryButton(stringResource(OnboardingText.PAIR_CHECK_AGAIN), { round += 1 }, Modifier.testTag(Tags.PAIR_RECHECK))
+        SecondaryButton(stringResource(OnboardingText.PAIR_CHECK_AGAIN), { status = WatchStatus.CHECKING; round += 1 }, Modifier.testTag(Tags.PAIR_RECHECK))
         Text(
             stringResource(OnboardingText.PAIR_NO_WATCH_YET), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,

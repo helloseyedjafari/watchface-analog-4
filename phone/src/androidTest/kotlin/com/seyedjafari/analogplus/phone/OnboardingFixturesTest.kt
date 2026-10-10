@@ -57,15 +57,30 @@ class OnboardingFixturesTest {
         runBlocking { assertNull(withTimeoutOrNull(200) { HangingWatch().check() }) }
     }
 
-    @Test fun theAnimatorScaleRuleSetsTheScaleAndPutsItBack() {
-        fun read() = ParcelFileDescriptor.AutoCloseInputStream(
-            InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("settings get global animator_duration_scale"),
-        ).use { it.readBytes().decodeToString().trim() }
-        val before = read()
-        val rule = AnimatorScaleRule("0")
-        val description = Description.createTestDescription(OnboardingFixturesTest::class.java, "x")
-        val statement = rule.apply(object : Statement() { override fun evaluate() { assertEquals("0", read()) } }, description)
-        statement.evaluate()
-        assertEquals(before, read())
+    private fun shell(command: String) = ParcelFileDescriptor.AutoCloseInputStream(
+        InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command),
+    ).use { it.readBytes().decodeToString().trim() }
+
+    private fun readScale() = shell("settings get global animator_duration_scale")
+
+    /** Runs the rule over a body that sees [scale] set, after putting the setting into [start] ("null" = unset); restores what the device had. */
+    private fun ruleSees(start: String, scale: String): String {
+        val device = readScale()
+        try {
+            if (start == "null") shell("settings delete global animator_duration_scale") else shell("settings put global animator_duration_scale $start")
+            var seen = ""
+            val description = Description.createTestDescription(OnboardingFixturesTest::class.java, "x")
+            AnimatorScaleRule(scale).apply(object : Statement() { override fun evaluate() { seen = readScale() } }, description).evaluate()
+            assertEquals("the rule sets the scale for the body", scale, seen)
+            return readScale()
+        } finally {
+            if (device == "null") shell("settings delete global animator_duration_scale") else shell("settings put global animator_duration_scale $device")
+        }
     }
+
+    @Test fun theAnimatorScaleRulePutsBackAnotherStartingValue() = assertEquals("0.5", ruleSees(start = "0.5", scale = "0"))
+
+    @Test fun theAnimatorScaleRulePutsBackTheValueItSetsItself() = assertEquals("0", ruleSees(start = "0", scale = "0"))
+
+    @Test fun theAnimatorScaleRuleLeavesAnUnsetSettingUnset() = assertEquals("null", ruleSees(start = "null", scale = "0"))
 }

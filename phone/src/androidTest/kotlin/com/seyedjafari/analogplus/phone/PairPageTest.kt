@@ -5,6 +5,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -16,6 +17,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.seyedjafari.analogplus.phone.ui.onboarding.CHECK_TIMEOUT_MS
 import com.seyedjafari.analogplus.phone.ui.onboarding.PairPage
+import com.seyedjafari.analogplus.phone.ui.onboarding.PairRowId
 import com.seyedjafari.analogplus.phone.ui.send.CheckStatus
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatus
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
@@ -56,14 +58,14 @@ class PairPageTest {
         assertEquals("how often the page asked the watch", n, watch.calls.get())
     }
 
-    private fun row(id: String) = rule.onNodeWithTag(Tags.pairRow(id))
+    private fun row(id: PairRowId) = rule.onNodeWithTag(Tags.pairRow(id))
 
     @Test fun aReadyWatchShowsBothRowsOkAndReportsIt() {
         var reported: WatchStatus? = null
         show(ControllableWatch(ready), onStatus = { reported = it })
         rule.waitForTag(Tags.PAIR_ADVICE)
-        row("watch").assertTextEquals("OK: Found")
-        row("app").assertTextEquals("OK: Installed")
+        row(PairRowId.WATCH).assertTextEquals("OK: Found")
+        row(PairRowId.APP).assertTextEquals("OK: Installed")
         rule.onNodeWithTag(Tags.PAIR_ADVICE).assertTextEquals("Your watch is ready.")
         rule.onNodeWithTag(Tags.onboardingAnimation("found")).assertExists()
         assertEquals(ready, reported)
@@ -72,8 +74,8 @@ class PairPageTest {
     @Test fun noWatchShowsTheExactNextStep() {
         show(ControllableWatch(noWatch))
         rule.waitForTag(Tags.PAIR_ADVICE)
-        row("watch").assertTextEquals("Check: Not found")
-        row("app").assertTextEquals("Needs a paired watch")
+        row(PairRowId.WATCH).assertTextEquals("Check: Not found")
+        row(PairRowId.APP).assertTextEquals("Needs a paired watch")
         rule.onNodeWithTag(Tags.PAIR_ADVICE).assertTextContains("Galaxy Wearable", substring = true)
         rule.onNodeWithTag(Tags.onboardingAnimation("searching")).assertExists()
     }
@@ -81,16 +83,17 @@ class PairPageTest {
     @Test fun aWatchWithoutTheAppSaysToInstallIt() {
         show(ControllableWatch(noApp))
         rule.waitForTag(Tags.PAIR_ADVICE)
-        row("watch").assertTextEquals("OK: Found")
-        row("app").assertTextEquals("Check: Not installed")
+        row(PairRowId.WATCH).assertTextEquals("OK: Found")
+        row(PairRowId.APP).assertTextEquals("Check: Not installed")
         rule.onNodeWithTag(Tags.PAIR_ADVICE).assertTextContains("Play Store", substring = true)
     }
 
     @Test fun anUnreadableCheckIsNotShownAsNotFound() {
         show(ControllableWatch(unknown))
         rule.waitForTag(Tags.PAIR_ADVICE)
-        row("watch").assertTextEquals("Could not check")
-        row("app").assertTextEquals("Could not check")
+        row(PairRowId.WATCH).assertTextEquals("Could not check")
+        row(PairRowId.APP).assertTextEquals("Could not check")
+        rule.onNodeWithTag(Tags.PAIR_ADVICE).assertTextContains("tap Check again", substring = true)
     }
 
     @Test fun theCheckRunsAgainWhenTheAppResumes() {
@@ -102,7 +105,7 @@ class PairPageTest {
         rule.runOnUiThread { lifecycle.moveTo(Lifecycle.State.STARTED) }
         rule.runOnUiThread { lifecycle.moveTo(Lifecycle.State.RESUMED) }
         awaitChecks(watch, 2)
-        rule.waitForTextOf(Tags.pairRow("watch"), "OK: Found")
+        rule.waitForTextOf(Tags.pairRow(PairRowId.WATCH), "OK: Found")
     }
 
     @Test fun checkAgainRunsTheCheckAgain() {
@@ -115,7 +118,78 @@ class PairPageTest {
 
     @Test fun aCheckThatNeverAnswersEndsAsCouldNotCheck() {
         show(HangingWatch(), timeoutMs = 300)
-        rule.waitForTextOf(Tags.pairRow("watch"), "Could not check")
+        rule.waitForTextOf(Tags.pairRow(PairRowId.WATCH), "Could not check")
+    }
+
+    /** Answers the first check at once and every later one only when the test opens the gate. */
+    private class GatedWatch(private val first: WatchStatus, private val later: WatchStatus) : WatchStatusChecker {
+        val calls = java.util.concurrent.atomic.AtomicInteger(0)
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        override suspend fun check(): WatchStatus {
+            if (calls.incrementAndGet() == 1) return first
+            gate.await()
+            return later
+        }
+    }
+
+    private fun resume(lifecycle: TestLifecycle) {
+        rule.runOnUiThread { lifecycle.moveTo(Lifecycle.State.STARTED) }
+        rule.runOnUiThread { lifecycle.moveTo(Lifecycle.State.RESUMED) }
+    }
+
+    @Test fun aRecheckOnResumeKeepsTheLastAnswerOnScreenUntilTheNewOneArrives() {
+        val watch = GatedWatch(ready, ready)
+        val lifecycle = TestLifecycle()
+        show(watch, lifecycle)
+        rule.waitForTag(Tags.PAIR_ADVICE)
+        resume(lifecycle)
+        rule.waitUntil(5_000) { watch.calls.get() == 2 }
+        rule.waitForIdle()
+        row(PairRowId.WATCH).assertTextEquals("OK: Found")                       // no "Working: Checking" flash
+        rule.onNodeWithTag(Tags.PAIR_ADVICE).assertTextEquals("Your watch is ready.")
+        rule.onNodeWithTag(Tags.onboardingAnimation("found")).assertExists()
+        watch.gate.complete(Unit)
+        rule.waitForIdle()
+        row(PairRowId.WATCH).assertTextEquals("OK: Found")
+    }
+
+    @Test fun aRecheckOnResumeShowsTheNewAnswerWhenItChanged() {
+        val watch = GatedWatch(ready, noWatch)
+        val lifecycle = TestLifecycle()
+        show(watch, lifecycle)
+        rule.waitForTag(Tags.PAIR_ADVICE)
+        resume(lifecycle)
+        rule.waitUntil(5_000) { watch.calls.get() == 2 }
+        watch.gate.complete(Unit)
+        rule.waitForTextOf(Tags.pairRow(PairRowId.WATCH), "Check: Not found")
+    }
+
+    @Test fun checkAgainShowsCheckingUntilTheAnswerArrives() {
+        val watch = GatedWatch(ready, ready)
+        show(watch)
+        rule.waitForTag(Tags.PAIR_ADVICE)
+        rule.onNodeWithTag(Tags.PAIR_RECHECK).performScrollTo().performClick()
+        rule.waitUntil(5_000) { watch.calls.get() == 2 }
+        rule.waitForTextOf(Tags.pairRow(PairRowId.WATCH), "Working: Checking")
+        rule.onNodeWithTag(Tags.PAIR_ADVICE).assertDoesNotExist()
+        watch.gate.complete(Unit)
+        rule.waitForTextOf(Tags.pairRow(PairRowId.WATCH), "OK: Found")
+    }
+
+    @Test fun recreatingTheScreenChecksOnceAgain() {
+        val watch = ControllableWatch(noApp)
+        val lifecycle = TestLifecycle()
+        val tester = StateRestorationTester(rule)
+        tester.setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides lifecycle) {
+                AnalogTheme { PairPage(watch, {}, pageVisible = true) }
+            }
+        }
+        awaitChecks(watch, 1)
+        tester.emulateSavedInstanceStateRestore()                   // what a rotation does: the page is composed anew
+        awaitChecks(watch, 2)
+        rule.waitForTag(Tags.PAIR_ADVICE)
+        row(PairRowId.APP).assertTextEquals("Check: Not installed")
     }
 
     // ---- short wide window and large text: the page scrolls, nothing is out of reach ------------------------------------
@@ -123,8 +197,8 @@ class PairPageTest {
     private fun everythingIsReachable() {
         rule.waitForTag(Tags.PAIR_ADVICE)
         rule.onNodeWithText("Connect your watch").performScrollTo().assertIsDisplayed()
-        row("watch").performScrollTo().assertIsDisplayed()
-        row("app").performScrollTo().assertIsDisplayed()
+        row(PairRowId.WATCH).performScrollTo().assertIsDisplayed()
+        row(PairRowId.APP).performScrollTo().assertIsDisplayed()
         rule.onNodeWithTag(Tags.PAIR_ADVICE).performScrollTo().assertIsDisplayed()
         rule.onNodeWithTag(Tags.PAIR_RECHECK).performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("No watch yet? You can still design faces now and send one later.").performScrollTo().assertIsDisplayed()

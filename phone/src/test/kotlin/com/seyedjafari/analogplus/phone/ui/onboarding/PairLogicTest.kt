@@ -5,7 +5,11 @@ import com.seyedjafari.analogplus.phone.ui.components.StatusKind
 import com.seyedjafari.analogplus.phone.ui.send.CheckStatus
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatus
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -30,6 +34,10 @@ class PairLogicTest {
         assertEquals(PairStep.INSTALL_WATCH_APP, pairStep(s(CheckStatus.OK, CheckStatus.ACTION_NEEDED)))
         assertEquals(PairStep.COULD_NOT_CHECK, pairStep(s(CheckStatus.UNKNOWN, CheckStatus.UNKNOWN)))
         assertEquals(PairStep.COULD_NOT_CHECK, pairStep(s(CheckStatus.OK, CheckStatus.UNKNOWN)))
+        assertEquals(PairStep.COULD_NOT_CHECK, pairStep(s(CheckStatus.UNKNOWN, CheckStatus.OK)))
+        assertEquals(PairStep.COULD_NOT_CHECK, pairStep(s(CheckStatus.UNKNOWN, CheckStatus.ACTION_NEEDED)))
+        assertEquals(PairStep.OPEN_WEARABLE_APP, pairStep(s(CheckStatus.ACTION_NEEDED, CheckStatus.ACTION_NEEDED)))
+        assertEquals(PairStep.OPEN_WEARABLE_APP, pairStep(s(CheckStatus.ACTION_NEEDED, CheckStatus.OK)))
     }
 
     @Test fun onlyAPositivelyConfirmedWatchIsReady() {
@@ -82,6 +90,19 @@ class PairLogicTest {
     @Test fun aCheckThatThrowsBecomesUnknown() = runTest {
         val broken = WatchStatusChecker { error("gms down") }
         assertEquals(WatchStatus(CheckStatus.UNKNOWN, CheckStatus.UNKNOWN), broken.checkWithTimeout())
+    }
+
+    @Test fun aCheckerThatThrowsCancellationItselfBecomesUnknown() = runTest {
+        val own = WatchStatusChecker { throw CancellationException("the transport gave up") }
+        assertEquals(WatchStatus(CheckStatus.UNKNOWN, CheckStatus.UNKNOWN), own.checkWithTimeout())
+    }
+
+    @Test fun cancellingTheCallerStillPropagates() = runTest {
+        var answered: WatchStatus? = null
+        val job = launch(start = CoroutineStart.UNDISPATCHED) { answered = WatchStatusChecker { awaitCancellation() }.checkWithTimeout() }
+        job.cancelAndJoin()
+        assertTrue(job.isCancelled)
+        assertNull("a cancelled caller gets no answer", answered)
     }
 
     @Test fun anAnswerPassesThrough() = runTest {

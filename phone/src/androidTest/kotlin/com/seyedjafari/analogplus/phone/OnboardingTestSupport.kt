@@ -91,8 +91,9 @@ fun ComposeTestRule.waitForTextOf(tag: String, expected: String, timeoutMs: Long
 }
 
 /**
- * Sets the system animator duration scale for the class and puts it back afterwards (`settings` through the shell
- * identity of UiAutomation). Use `order = 0` so the compose rule (order 1) reads the changed value.
+ * Sets the system animator duration scale for the class and puts back exactly what it read before (a value, or "unset":
+ * the setting is deleted), whatever that value is, also when it equals [scale] (`settings` through the shell identity of
+ * UiAutomation). Use `order = 0` so the compose rule (order 1) reads the changed value.
  */
 class AnimatorScaleRule(private val scale: String) : TestWatcher() {
     private var original: String = "null"
@@ -104,9 +105,6 @@ class AnimatorScaleRule(private val scale: String) : TestWatcher() {
 
     override fun starting(description: Description) {
         original = shell("settings get global animator_duration_scale").trim()
-        // The value this rule is about to set can only already be there if an earlier run died before `finished` put the
-        // setting back (a leak); "restoring" that would keep the emulator stuck, so the default is restored instead.
-        if (original == scale) original = "null"
         shell("settings put global animator_duration_scale $scale")
     }
 

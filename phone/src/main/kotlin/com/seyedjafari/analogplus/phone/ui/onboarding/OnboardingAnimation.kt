@@ -28,8 +28,8 @@ import com.seyedjafari.analogplus.phone.ui.theme.rememberAnimationScale
 val AnimationModeKey = SemanticsPropertyKey<AnimationMode>("AnimationMode")
 var SemanticsPropertyReceiver.animationMode by AnimationModeKey
 
-/** Test hook like [AnimationModeKey]: the progress (0..1) being drawn, so a test can see a pause hold it and a resume continue it. */
-val AnimationProgressKey = SemanticsPropertyKey<Float>("AnimationProgress")
+/** Test hook like [AnimationModeKey]: reads the progress (0..1) being drawn (call it; only tests do), so a test can see a pause hold it and a resume continue it. */
+val AnimationProgressKey = SemanticsPropertyKey<() -> Float>("AnimationProgress")
 var SemanticsPropertyReceiver.animationProgress by AnimationProgressKey
 
 /**
@@ -64,7 +64,7 @@ fun OnboardingAnimation(
         progress = shown,
         modifier = modifier.testTag(tag).semantics {
             animationMode = mode
-            animationProgress = shown()
+            animationProgress = shown      // the lambda, not its value: a read here would invalidate the semantics on every frame
         },
         dynamicProperties = properties,
     )

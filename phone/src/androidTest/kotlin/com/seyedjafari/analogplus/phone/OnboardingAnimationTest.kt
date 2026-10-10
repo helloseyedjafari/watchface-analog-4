@@ -55,7 +55,7 @@ class OnboardingAnimationTest {
                 AnalogTheme { OnboardingAnimation(R.raw.onboarding_welcome, welcome, Modifier.size(200.dp), loop = false, animatorScale = 1f) }
             }
         }
-        fun progressNow(): Float = rule.onNodeWithTag(welcome).fetchSemanticsNode().config[AnimationProgressKey]
+        fun progressNow(): Float = rule.onNodeWithTag(welcome).fetchSemanticsNode().config[AnimationProgressKey]()
         fun frames(n: Int) = repeat(n) { rule.mainClock.advanceTimeByFrame() }
         // animations run on the test clock: with auto-advance a finite animation would be fast-forwarded to its end
         rule.mainClock.autoAdvance = false

@@ -1,5 +1,8 @@
 package com.seyedjafari.analogplus.phone
 
+import com.seyedjafari.analogplus.phone.ui.onboarding.PairRowId
+import com.seyedjafari.analogplus.phone.ui.onboarding.tagId
+
 /** Test tags shared by the screens and the Compose tests. */
 object Tags {
     const val ACCENT_FIELD = "field_accent"
@@ -45,8 +48,8 @@ object Tags {
     fun onboardingAnimation(name: String) = "onboarding_anim_$name"
     const val PAIR_ADVICE = "pair_advice"
     const val PAIR_RECHECK = "pair_recheck"
-    /** The status pill of a pairing row; [id] is `PairRowId.tagId` ("watch" or "app"). */
-    fun pairRow(id: String) = "pair_row_$id"
+    /** The status pill of a pairing row. */
+    fun pairRow(id: PairRowId) = "pair_row_${id.tagId}"
     /** One template choice on the onboarding template page; [name] is the template's name. */
     fun onboardingTemplate(name: String) = "onboarding_template_$name"
 }
