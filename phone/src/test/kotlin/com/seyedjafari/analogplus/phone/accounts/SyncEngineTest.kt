@@ -963,6 +963,39 @@ class SyncEngineTest {
 
     // ---- fix round 2 ---------------------------------------------------------------------------------------------------------
 
+    /** D: the editor's design of the account that was signed out of must not be pushed to the next one. */
+    @Test fun aCurrentDesignPushThatDiesWithTheSessionIsNotPutBackForTheNextAccount() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.engine.start("u1"); runCurrent()
+        flaky.hangPutCurrent = true
+        a.current = night
+        a.engine.onCurrentSaved(night, ChangeOrigin.USER)
+        advanceTimeBy(1_500); runCurrent()                   // the push is in flight
+        a.engine.stop(); a.engine.start("u2")
+        flaky.hangPutCurrent = false
+        runCurrent(); advanceTimeBy(5_000); runCurrent()
+        assertEquals("nothing was edited after signing in to u2", 0, remote.currentWrites.size)
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+    }
+
+    /** E: only a successful design write makes the cloud send a fresher list; a failed one must not make the engine drop a waiting update. */
+    @Test fun aListUpdateThatWaitedBehindAFailedWriteIsStillUsed() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        flaky.refuse = { name -> if (name == "Bad") RemoteException(RemoteErrorKind.PERMISSION, "denied: Bad") else null }
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.engine.start("u1"); runCurrent()
+        a.store.saveNamed("Bad", night)
+        val gate = CompletableDeferred<Unit>()
+        flaky.putGate = gate
+        val pass = launch { a.engine.syncNow() }; runCurrent()      // the pass fetched and waits to write Bad
+        remote.seedDesign("u1", RemoteDesign(designId("Zed"), "Zed", DesignJson.toJson(day), 9_000_000, DesignState.LIVE, 1)); runCurrent()
+        gate.complete(Unit); pass.join(); runCurrent()              // Bad is refused; no time passes for another pass to find Zed
+        assertEquals(listOf("Bad", "Zed"), a.names())
+    }
+
     /** C: any pass that gets through proves the network works, whatever it found wrong with a single design. */
     @Test fun aSyncNowThatEndsWithASkippedDesignStillRestartsAListenerThatWasRefused() = runTest {
         val remote = FakeRemoteStore()

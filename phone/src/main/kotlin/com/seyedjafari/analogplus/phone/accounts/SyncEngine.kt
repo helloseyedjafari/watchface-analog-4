@@ -370,13 +370,13 @@ class SyncEngine(
                 if (nameTooLong(local.name)) return Outcome.UNSYNCABLE
                 val mapped = withContext(io) { designToRemoteJson(design, photos) }
                 val json = mapped.remoteJson ?: return Outcome.UNSYNCABLE
-                val written = write(json.length) { remote.putDesign(uid, local.id, local.name, json, DesignState.LIVE, DESIGN_SCHEMA) }
+                val written = designWrite(json.length) { remote.putDesign(uid, local.id, local.name, json, DesignState.LIVE, DESIGN_SCHEMA) }
                 notePhoto(local.id, mapped)
                 withContext(io) { journal.markPushed(local.id, local.modifiedAtMs, written.updatedAtMs) }
             }
             is SyncAction.PushTombstone -> {
                 val e = local ?: return Outcome.UNSYNCABLE
-                val written = write(0) { remote.putDesign(uid, e.id, e.name, "", DesignState.TOMBSTONE, DESIGN_SCHEMA) }
+                val written = designWrite(0) { remote.putDesign(uid, e.id, e.name, "", DesignState.TOMBSTONE, DESIGN_SCHEMA) }
                 withoutPhoto.remove(e.id)
                 withContext(io) { journal.markPushed(e.id, e.modifiedAtMs, written.updatedAtMs) }
             }
@@ -423,7 +423,7 @@ class SyncEngine(
                 val mapped = withContext(io) { designToRemoteJson(mine, photos) }
                 val json = mapped.remoteJson ?: return Outcome.UNSYNCABLE
                 val copyId = designId(action.copyName)
-                val written = write(json.length) { remote.putDesign(uid, copyId, action.copyName, json, DesignState.LIVE, DESIGN_SCHEMA) }
+                val written = designWrite(json.length) { remote.putDesign(uid, copyId, action.copyName, json, DesignState.LIVE, DESIGN_SCHEMA) }
                 notePhoto(copyId, mapped)
                 withContext(io) { journal.markCopyPushed(copyId, action.copyName, written.updatedAtMs) }
             }
@@ -468,6 +468,7 @@ class SyncEngine(
      * is kept in [currentSync] so that [finish] keeps reporting it.
      */
     private suspend fun pushCurrentIfNeeded(uid: String) {
+        if (this.uid != uid) return   // a pass that outlived its session must not take (or give back) the new session's design
         val d = pendingCurrent.getAndSet(null) ?: return
         if (d.photoStillLoading()) return
         if (d == lastPushedCurrent) return
@@ -477,7 +478,7 @@ class SyncEngine(
         val written = try {
             write(json.length) { remote.putCurrent(uid, json, deviceId, deviceLabel) }
         } catch (e: Throwable) {
-            pendingCurrent.compareAndSet(null, d)   // unless a newer edit arrived meanwhile
+            if (this.uid == uid) pendingCurrent.compareAndSet(null, d)   // unless a newer edit arrived, or the session is over
             if (e !is CancellationException) {
                 currentSync = CurrentSync.RETRY_PENDING
                 currentFailure = (e as? RemoteException)?.let(::statusOf)
@@ -554,15 +555,16 @@ class SyncEngine(
         }
     }
 
-    /** A cloud write of about [payloadChars] characters: counted for [writeSeq], and given time for the payload. */
-    private suspend fun <T> write(payloadChars: Int, block: suspend () -> T): T {
-        writeSeq.incrementAndGet()
-        try {
-            return call(callTimeoutMs + payloadChars / 1024 * writeTimeoutMsPerKb, block)
-        } finally {
-            writeSeq.incrementAndGet()
-        }
-    }
+    /** A cloud write of about [payloadChars] characters: given time for the payload. */
+    private suspend fun <T> write(payloadChars: Int, block: suspend () -> T): T =
+        call(callTimeoutMs + payloadChars / 1024 * writeTimeoutMsPerKb, block)
+
+    /**
+     * A write of a saved design. Counted in [writeSeq] only when it succeeded: that is what makes the cloud send a fresher
+     * list (a failed write changes nothing, and the current design is not in that list at all).
+     */
+    private suspend fun designWrite(payloadChars: Int, block: suspend () -> RemoteDesign): RemoteDesign =
+        write(payloadChars, block).also { writeSeq.incrementAndGet() }
 
     /** A cloud call; no answer within [timeoutMs] is [RemoteErrorKind.OFFLINE] (the retry then asks again). */
     private suspend fun <T> call(timeoutMs: Long = callTimeoutMs, block: suspend () -> T): T = try {
