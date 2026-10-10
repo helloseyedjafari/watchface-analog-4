@@ -385,15 +385,16 @@ class SyncEngine(
         throw RemoteException(RemoteErrorKind.OFFLINE, "The cloud did not answer", e)
     }
 
-    /** Shows a failure in [status]. Returns true when it is the kind that goes away by itself (offline). */
+    /** Shows a failure in [status]. Returns true when it is the kind that can go away by itself (offline, or a sign-in token that refreshes). */
     private fun report(id: String, e: RemoteException): Boolean {
         when (e.kind) {
             RemoteErrorKind.OFFLINE -> setStatus(id, SyncStatus.Offline)
+            RemoteErrorKind.AUTH -> setStatus(id, SyncStatus.Error(SyncProblem.SIGN_IN_NEEDED))
             RemoteErrorKind.PERMISSION -> setStatus(id, SyncStatus.Error(SyncProblem.REFUSED))
             RemoteErrorKind.QUOTA -> setStatus(id, SyncStatus.Error(SyncProblem.QUOTA))
             RemoteErrorKind.OTHER -> setStatus(id, SyncStatus.Error(SyncProblem.FAILED, detail = e.message.orEmpty()))
         }
-        return e.kind == RemoteErrorKind.OFFLINE
+        return e.kind == RemoteErrorKind.OFFLINE || e.kind == RemoteErrorKind.AUTH
     }
 
     /** Runs [block], turning failures into [status]; an offline failure schedules one retry. */

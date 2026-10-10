@@ -308,6 +308,34 @@ class SyncEngineTest {
         assertEquals(MAX_SYNCED_DESIGNS + 3, a.store.savedDesigns().size)   // nothing is deleted locally
     }
 
+    @Test fun anExpiredSignInIsReportedAsSignInNeededNotOfflineAndRetriesLikeOffline() = runTest {
+        val remote = FakeRemoteStore()
+        val a = phone(remote, "a")
+        a.engine.start("u1"); runCurrent()
+        remote.failWith = RemoteException(RemoteErrorKind.AUTH, "token expired")
+        a.store.saveNamed("Night", night)
+        advanceTimeBy(1_500); runCurrent()
+        assertEquals(SyncStatus.Error(SyncProblem.SIGN_IN_NEEDED), a.engine.status.value)
+        assertEquals(listOf("Night"), a.names())            // local work is kept
+        remote.failWith = null
+        advanceTimeBy(31_000); runCurrent()                 // the same retry as offline
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+        assertEquals(1, remote.designsOf("u1").size)
+    }
+
+    @Test fun anExpiredSignInAtStartupKeepsRetryingUntilTheTokenWorks() = runTest {
+        val remote = FakeRemoteStore()
+        remote.failWith = RemoteException(RemoteErrorKind.AUTH, "token expired")
+        val a = phone(remote, "a")
+        a.engine.start("u1"); runCurrent()
+        assertEquals(SyncStatus.Error(SyncProblem.SIGN_IN_NEEDED), a.engine.status.value)
+        advanceTimeBy(65_000); runCurrent()
+        assertEquals(SyncStatus.Error(SyncProblem.SIGN_IN_NEEDED), a.engine.status.value)   // still failing, still retrying, never "offline"
+        remote.failWith = null
+        advanceTimeBy(65_000); runCurrent()
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+    }
+
     @Test fun aPermissionErrorIsShownAndTheListenersAreNotRestarted() = runTest {
         val remote = FakeRemoteStore()
         remote.failWith = RemoteException(RemoteErrorKind.PERMISSION, "denied")

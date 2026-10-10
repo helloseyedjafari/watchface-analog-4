@@ -16,7 +16,28 @@ data class RemoteCurrent(val designJson: String, val updatedAtMs: Long, val devi
 /** `users/{uid}/backup/signingKey`. */
 data class RemoteBackup(val sealed: SealedKey, val createdAtMs: Long)
 
-enum class RemoteErrorKind { OFFLINE, PERMISSION, QUOTA, OTHER }
+enum class RemoteErrorKind {
+    /** No network, no answer in time, or the call was cancelled. Retried; shown as offline. */
+    OFFLINE,
+
+    /**
+     * The cloud does not accept this sign-in (Firestore UNAUTHENTICATED): the ID token is missing or expired, typically
+     * right after sign-in or after a long time in the background. Retryable like [OFFLINE] (same backoff) because a
+     * refreshed token fixes it, but it is NOT offline and must not be reported as such: the user may need to sign in
+     * again. Sync reports it as [SyncProblem.SIGN_IN_NEEDED]; the signing-key backup (BackupService) must make the same
+     * distinction and say "sign in" instead of "offline".
+     */
+    AUTH,
+
+    /** The security rules said no (PERMISSION_DENIED). Permanent: no retry. */
+    PERMISSION,
+
+    /** The usage limit was reached. */
+    QUOTA,
+
+    /** Anything else. */
+    OTHER,
+}
 
 class RemoteException(val kind: RemoteErrorKind, message: String, cause: Throwable? = null) : Exception(message, cause)
 
@@ -48,12 +69,13 @@ interface RemoteStore {
 /**
  * Maps a Firestore status code name (`FirebaseFirestoreException.Code.name`) to a [RemoteErrorKind].
  *
- * UNAUTHENTICATED is [RemoteErrorKind.OFFLINE] (retry later), not PERMISSION: right after sign-in, or when the ID token
- * expired, the first request can arrive before the fresh token is attached and succeeds on the next try, so the sync
- * engine must not stop for good. PERMISSION_DENIED (the rules say no) stays permanent.
+ * UNAUTHENTICATED is [RemoteErrorKind.AUTH] (retryable, but "sign-in needed", not offline and not PERMISSION): right
+ * after sign-in, or when the ID token expired, the first request can arrive before the fresh token is attached and
+ * succeeds on the next try, so the sync engine must not stop for good. PERMISSION_DENIED (the rules say no) stays permanent.
  */
 fun remoteErrorKind(firestoreCodeName: String): RemoteErrorKind = when (firestoreCodeName) {
-    "UNAVAILABLE", "DEADLINE_EXCEEDED", "CANCELLED", "UNAUTHENTICATED" -> RemoteErrorKind.OFFLINE
+    "UNAVAILABLE", "DEADLINE_EXCEEDED", "CANCELLED" -> RemoteErrorKind.OFFLINE
+    "UNAUTHENTICATED" -> RemoteErrorKind.AUTH
     "PERMISSION_DENIED" -> RemoteErrorKind.PERMISSION
     "RESOURCE_EXHAUSTED" -> RemoteErrorKind.QUOTA
     else -> RemoteErrorKind.OTHER

@@ -10,6 +10,12 @@ enum class SyncProblem {
     /** The cloud refused the request (security rules). Does not retry by itself. */
     REFUSED,
 
+    /**
+     * The cloud did not accept the sign-in (expired or missing token). The engine retries by itself like it does when
+     * offline, but this is not offline: the UI says the user may need to sign in again.
+     */
+    SIGN_IN_NEEDED,
+
     /** The cloud's usage limit was reached. */
     QUOTA,
 
