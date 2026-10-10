@@ -150,6 +150,9 @@ class OnboardingGateTest {
         assertTrue("on Account, the navigation takes Back to Design", backIsOurs())
         rule.onNodeWithTag(Tags.RUN_SETUP_AGAIN).performScrollTo().performClick(); rule.waitForIdle()
         rule.onNodeWithTag(Tags.ONBOARDING_ROOT).assertExists()
+        // the navigation (bar or rail, and with it its Back handler) is not in the composition at all while setup is on show: a leaked
+        // handler would be invisible to hasEnabledCallbacks(), which onboarding's own handler makes true, so look for the navigation itself
+        for (d in Destination.entries) rule.onNodeWithTag(d.tag).assertDoesNotExist()
         // a restarted run takes Back on its first page itself (it counts as Skip): the navigation's handler is not what answers it
         assertTrue("a restarted run's first page: Back is the onboarding's", backIsOurs())
         backPress()
