@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -15,6 +16,7 @@ import androidx.compose.ui.unit.Density
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.seyedjafari.analogplus.phone.ui.onboarding.AnimationProgressKey
 import com.seyedjafari.analogplus.phone.ui.onboarding.CHECK_TIMEOUT_MS
 import com.seyedjafari.analogplus.phone.ui.onboarding.PairPage
 import com.seyedjafari.analogplus.phone.ui.onboarding.PairRowId
@@ -24,6 +26,7 @@ import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
 import com.seyedjafari.analogplus.phone.ui.theme.LocalAnimationScale
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -109,6 +112,34 @@ class PairPageTest {
         rule.runOnUiThread { lifecycle.moveTo(Lifecycle.State.RESUMED) }
         awaitChecks(watch, 2)
         rule.waitForTextOf(Tags.pairRow(PairRowId.WATCH), "OK: Found")
+    }
+
+    private fun searchingProgress(): Float =
+        rule.onNodeWithTag(Tags.onboardingAnimation("searching")).fetchSemanticsNode().config[AnimationProgressKey]()
+
+    /** Frames of the test clock until the animation file is parsed (off the main thread) and the animation has started moving. */
+    private fun waitUntilSearchingMoves() {
+        rule.waitUntil(10_000) { rule.mainClock.advanceTimeByFrame(); searchingProgress() > 0f }
+    }
+
+    // The animations run on the test clock: with auto-advance a finite animation would be fast-forwarded to its end, so the
+    // clock is stopped before the content is set (see OnboardingAnimationTest).
+    @Test fun theSearchingAnimationLoopsWhileCheckingAndHoldsItsLastFrameOnceAnswered() {
+        rule.mainClock.autoAdvance = false
+        show(HangingWatch(), timeoutMs = 600_000)                       // a check that never answers, and a timeout far away
+        waitUntilSearchingMoves()
+        val samples = (1..30).map { rule.mainClock.advanceTimeBy(1_000); searchingProgress() }     // the loop is 3 s long
+        assertTrue("it wrapped around at least twice while checking: $samples", samples.zipWithNext().count { (a, b) -> b < a } >= 2)
+    }
+
+    @Test fun anAnsweredSearchingAnimationEndsOnItsLastFrameAndStaysThere() {
+        rule.mainClock.autoAdvance = false
+        show(ControllableWatch(noWatch))
+        rule.waitUntil(10_000) { rule.mainClock.advanceTimeByFrame(); rule.onAllNodesWithTag(Tags.PAIR_ADVICE).fetchSemanticsNodes().isNotEmpty() }
+        rule.mainClock.advanceTimeBy(10_000)
+        assertEquals(1f, searchingProgress(), 0f)
+        rule.mainClock.advanceTimeBy(10_000)
+        assertEquals("still the last frame, not a new loop", 1f, searchingProgress(), 0f)
     }
 
     @Test fun checkAgainRunsTheCheckAgain() {

@@ -67,7 +67,7 @@ fun PairPage(
         animation = {
             key(step == PairStep.ALL_READY) {
                 if (step == PairStep.ALL_READY) PageAnimation(PageArt.FOUND, pageVisible, loop = false)
-                else PageAnimation(PageArt.SEARCHING, pageVisible, loop = true)
+                else PageAnimation(PageArt.SEARCHING, pageVisible, loop = step == PairStep.CHECKING)   // searches only while a check runs, then holds its last frame
             }
         },
     ) {
