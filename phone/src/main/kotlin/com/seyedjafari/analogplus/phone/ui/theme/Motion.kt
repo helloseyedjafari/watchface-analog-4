@@ -1,6 +1,7 @@
 package com.seyedjafari.analogplus.phone.ui.theme
 
 import android.content.ContentResolver
+import android.content.Context
 import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
@@ -19,15 +20,11 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
-import androidx.lifecycle.compose.LifecycleResumeEffect
 
 object Motion {
     const val SHORT = 200
@@ -51,31 +48,46 @@ private fun readAnimatorScale(resolver: ContentResolver): Float =
     try { Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) } catch (e: Exception) { 1f }
 
 /**
+ * The system animator duration scale as one observable value for the whole process. A single content observer, registered on
+ * the application context the first time anything asks and kept for the life of the process, feeds one state; every
+ * [rememberAnimationScale] only reads that state. So there is exactly one observer however many composables ask (a shared-axis
+ * transition alone asks four times), nothing is registered or leaked per composition, and it is the same observer for every
+ * activity of the process, tests included.
+ */
+internal object SystemAnimatorScale {
+    private var scale: MutableFloatState? = null
+
+    /** How many observers were registered in this process: 1 once anything has asked, never more (a test checks it). */
+    var registrations = 0
+        private set
+
+    @Synchronized
+    fun current(context: Context): Float {
+        val state = scale ?: register(context.applicationContext.contentResolver).also { scale = it }
+        return state.floatValue
+    }
+
+    private fun register(resolver: ContentResolver): MutableFloatState {
+        val state = mutableFloatStateOf(readAnimatorScale(resolver))
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) { state.floatValue = readAnimatorScale(resolver) }
+        }
+        resolver.registerContentObserver(Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, observer)
+        registrations++
+        return state
+    }
+}
+
+/**
  * The system "animator duration scale" (Developer options / Remove animations), or [LocalAnimationScale] when provided. 1f when
- * it cannot be read. It follows the setting while the app runs: it is read again when the app resumes and whenever the setting
- * changes (a content observer, removed when the composable leaves), so "Remove animations" switched on in the quick settings
- * takes effect at once, also for the code that ignores Lottie's own read of it.
+ * it cannot be read. It follows the setting while the app runs ([SystemAnimatorScale]), so "Remove animations" switched on in the
+ * quick settings takes effect at once, also for the code that ignores Lottie's own read of it.
  */
 @Composable
 fun rememberAnimationScale(): Float {
     val override = LocalAnimationScale.current
-    val resolver = LocalContext.current.contentResolver
-    var system by remember { mutableFloatStateOf(readAnimatorScale(resolver)) }
-    if (override == null) {
-        DisposableEffect(resolver) {
-            val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
-                override fun onChange(selfChange: Boolean) { system = readAnimatorScale(resolver) }
-            }
-            resolver.registerContentObserver(Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, observer)
-            system = readAnimatorScale(resolver)               // a change between the first read and the registration
-            onDispose { resolver.unregisterContentObserver(observer) }
-        }
-        LifecycleResumeEffect(resolver) {
-            system = readAnimatorScale(resolver)
-            onPauseOrDispose { }
-        }
-    }
-    return override ?: system
+    val context = LocalContext.current
+    return override ?: SystemAnimatorScale.current(context)
 }
 
 /** A tween with the shared easing, or a snap when animations are off. */

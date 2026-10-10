@@ -8,7 +8,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.seyedjafari.analogplus.phone.ui.theme.LocalAnimationScale
+import com.seyedjafari.analogplus.phone.ui.theme.SystemAnimatorScale
 import com.seyedjafari.analogplus.phone.ui.theme.rememberAnimationScale
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
@@ -57,5 +59,18 @@ class AnimationScaleLiveTest {
         shellCommand("settings get global animator_duration_scale")      // give the observer every chance to (wrongly) fire
         compose.waitForIdle()
         waitForScaleText("scale=2.0")
+    }
+
+    @Test fun manyCallSitesAndRepeatedCompositionsShareOneObserverForTheWholeProcess() {
+        compose.setContent {
+            Column {
+                repeat(20) { Text("scale=${rememberAnimationScale()}", Modifier.testTag("scale$it")) }
+            }
+        }
+        compose.waitForIdle()
+        setSystemScale("0")                                            // a change recomposes all of them through the one state
+        compose.waitForTextOf("scale19", "scale=0.0")
+        compose.waitForTextOf("scale0", "scale=0.0")
+        assertEquals("one observer in the process, not one per call site or per composition", 1, SystemAnimatorScale.registrations)
     }
 }
