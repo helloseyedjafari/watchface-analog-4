@@ -51,4 +51,10 @@ off. Do these in order; each item says what to hand back to the code.
   committed, and the two URLs.
 
 Until item 4 is done: `./gradlew :phone:assembleDebug` gives a debug app that signs in through the **Auth emulator**
-(`scripts/accounts_e2e.sh`, added by Task 16, starts it); `:phone:assembleRelease` gives an app with the Account card saying sign-in is not set up.
+(`scripts/accounts_e2e.sh` starts the emulators and runs the emulator-backed tests); `:phone:assembleRelease` gives an app with the Account card saying sign-in is not set up.
+
+After item 4 (once `phone/google-services.json` exists) a debug build talks to YOUR project, not the emulator, unless the
+marker file `files/use-firebase-emulator` exists in the app. The instrumented tests do not depend on that: their runner
+(`AccountsTestRunner`) writes the marker before the app starts, so `connectedDebugAndroidTest` and `scripts/accounts_e2e.sh`
+keep using the emulators. To use the emulators by hand with the file present:
+`adb shell run-as com.seyedjafari.analogplus sh -c 'echo tester@example.com > files/use-firebase-emulator'`, then restart the app.

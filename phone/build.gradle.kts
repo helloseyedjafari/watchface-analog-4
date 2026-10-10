@@ -18,7 +18,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // writes the debug build's emulator marker before the app starts, so the tests also work once google-services.json exists
+        testInstrumentationRunner = "com.seyedjafari.analogplus.phone.AccountsTestRunner"
     }
     buildFeatures { compose = true }
     compileOptions {

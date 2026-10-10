@@ -1,18 +1,25 @@
 #!/usr/bin/env bash
 # Runs the accounts tests that need the Firebase Emulator Suite, on the phone emulator:
 #   FirebaseEmulatorTest   the real Firestore / Auth code against the emulators, with firebase/firestore.rules loaded
-#   (and every other instrumented test in package ...phone.accounts: AccountsFactoryTest, PhotoDownscalerTest, KeyVaultCostTest)
+#   (and every other instrumented test in package ...phone.accounts: AccountsFactoryTest, EmulatorMarkerTest, PhotoDownscalerTest, KeyVaultCostTest)
 # The phone emulators have no Google sign-in, so the debug build signs in through the Auth emulator (see FirebaseProvider).
 # Real Google sign-in, Credential Manager and App Check are NOT exercised: they need a real Firebase project.
 #
 #   scripts/accounts_e2e.sh [--keep-emulators] [--class a.B,c.D]
 #
-# Starts the Firebase emulators (Auth 9099, Firestore 8080) and the phone AVD when they are not running, takes the phone
-# emulator lock for the Gradle run, and stops what it started (unless --keep-emulators). Needs Node 20+, Java 21 and
-# `npm ci` already run in firebase/ (done here when node_modules is missing). --class runs only those test classes
-# (the instrumented runner argument `class`, comma separated, fully qualified) instead of the whole accounts package.
+# Starts the Firebase emulators (Auth 9099, Firestore 8080) and the phone AVD when they are not running, runs the tests,
+# and stops what it started (unless --keep-emulators). The phone emulator lock is held for the WHOLE script, so that nobody
+# else installs on the AVD while it boots, runs or is shut down by this script. Needs Node 20+, Java 21 and `npm ci`
+# already run in firebase/ (done here when node_modules is missing). --class runs only those test classes (the instrumented
+# runner argument `class`, comma separated, fully qualified) instead of the whole accounts package. The tests are told to
+# FAIL, not skip, when the emulators are not reachable (runner argument requireEmulators=true).
 set -euo pipefail
 source "$(dirname "$0")/_env.sh"
+
+# Take the phone lock for the whole run: run this very script again under it.
+if [ -z "${ACCOUNTS_E2E_LOCKED:-}" ]; then
+  ACCOUNTS_E2E_LOCKED=1 exec "$ROOT/scripts/with_phone_emulator_lock.sh" "$ROOT/scripts/accounts_e2e.sh" "$@"
+fi
 
 PHONE_AVD="1_Pixel_8_API_33"; PHONE_PORT=5562; PHONE="emulator-$PHONE_PORT"
 FB="$ROOT/firebase"
@@ -22,19 +29,26 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --keep-emulators) KEEP=yes ;;
     --class) shift; [ $# -gt 0 ] || { echo "--class needs a value" >&2; exit 2; }; CLASSES="$1" ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
 done
 
+# Job control: every background job below gets its own process group, so that the whole tree (npm, firebase-tools, the
+# Java Firestore emulator) can be stopped with one signal to the group.
+set -m
 FB_PID=""; AVD_STARTED=no
 step() { printf '\n== %s\n' "$*"; }
 die()  { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 port_open() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 cleanup() {
   if [ "$KEEP" = no ]; then
-    if [ -n "$FB_PID" ]; then pkill -P "$FB_PID" 2>/dev/null || true; kill "$FB_PID" 2>/dev/null || true; fi
+    if [ -n "$FB_PID" ]; then
+      kill -TERM -- "-$FB_PID" 2>/dev/null || true
+      for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 -- "-$FB_PID" 2>/dev/null || break; sleep 1; done
+      kill -KILL -- "-$FB_PID" 2>/dev/null || true
+    fi
     if [ "$AVD_STARTED" = yes ]; then "$ADB" -s "$PHONE" emu kill >/dev/null 2>&1 || true; fi
   fi
 }
@@ -64,6 +78,7 @@ fi
 step "Accounts tests (emulator-backed)"
 cd "$ROOT"
 if [ -n "$CLASSES" ]; then FILTER="class=$CLASSES"; else FILTER="package=com.seyedjafari.analogplus.phone.accounts"; fi
-scripts/with_phone_emulator_lock.sh ./gradlew :phone:connectedDebugAndroidTest \
-  "-Pandroid.testInstrumentationRunnerArguments.$FILTER"
+./gradlew :phone:connectedDebugAndroidTest \
+  "-Pandroid.testInstrumentationRunnerArguments.$FILTER" \
+  "-Pandroid.testInstrumentationRunnerArguments.requireEmulators=true"
 echo "accounts e2e: PASS"

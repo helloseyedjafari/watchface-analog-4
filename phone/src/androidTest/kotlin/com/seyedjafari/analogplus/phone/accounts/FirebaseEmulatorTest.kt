@@ -6,6 +6,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.phone.accounts.firebase.EmulatorSetup
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseAccountManager
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseMode
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseProvider
@@ -23,6 +24,9 @@ import java.net.URL
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -61,8 +65,13 @@ class FirebaseEmulatorTest {
         Socket().use { it.connect(InetSocketAddress(FirebaseProvider.EMULATOR_HOST, port), 1_500) }; true
     } catch (e: Exception) { false }
 
+    private val managers = ArrayList<FirebaseAccountManager>()
+
     @Before fun setUp() {
-        assumeTrue("Firebase emulators are not running", reachable(FirebaseProvider.AUTH_EMULATOR_PORT) && reachable(FirebaseProvider.FIRESTORE_EMULATOR_PORT))
+        val up = reachable(FirebaseProvider.AUTH_EMULATOR_PORT) && reachable(FirebaseProvider.FIRESTORE_EMULATOR_PORT)
+        // scripts/accounts_e2e.sh passes requireEmulators=true: there a missing emulator is a failure, not 42 green skips
+        if (InstrumentationRegistry.getArguments().getString("requireEmulators") == "true") assertTrue("Firebase emulators are required but not running", up)
+        else assumeTrue("Firebase emulators are not running", up)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         assertEquals(FirebaseMode.EMULATOR, FirebaseProvider.setUp(context).mode)
         auth = FirebaseAuth.getInstance()
@@ -72,6 +81,7 @@ class FirebaseEmulatorTest {
     }
 
     @After fun tearDown() {
+        managers.forEach { it.close() }
         if (!::auth.isInitialized) return
         auth.signOut()
         runBlocking { try { withTimeout(10_000) { db.enableNetwork().await() } } catch (e: Exception) { /* best effort */ } }
@@ -84,8 +94,11 @@ class FirebaseEmulatorTest {
 
     private fun unique(prefix: String) = "$prefix-${System.nanoTime()}"
 
-    private fun manager(sub: String, asked: IntArray = IntArray(1)) =
-        FirebaseAccountManager(auth, IdTokenSource { asked[0]++; fakeToken(sub) }, null)
+    /** Every manager made here is closed after the test (it listens to the process-wide FirebaseAuth). */
+    private fun newManager(tokens: IdTokenSource, callTimeoutMs: Long = 30_000) =
+        FirebaseAccountManager(auth, tokens, null, callTimeoutMs).also { managers += it }
+
+    private fun manager(sub: String, asked: IntArray = IntArray(1)) = newManager(IdTokenSource { asked[0]++; fakeToken(sub) })
 
     private suspend fun signInAs(sub: String): String {
         auth.signOut()
@@ -129,12 +142,30 @@ class FirebaseEmulatorTest {
 
     // ---- Auth ---------------------------------------------------------------------------------------------------
 
+    /** The class the app itself uses in emulator mode (`EmulatorSetup.tokenSource`), not a lambda that imitates it. */
     @Test fun signInThroughTheEmulatorTokenSourceGivesASignedInAccount() = inTest {
-        val m = manager(unique("auth"))
+        val sub = unique("auth")
+        val m = newManager(EmulatorSetup.tokenSource { "$sub@example.com" })
         m.signIn()
         val signedIn = m.state.value as AccountState.SignedIn
-        assertTrue(signedIn.email!!.endsWith("@example.com"))
+        assertEquals("$sub@example.com", signedIn.email)
         assertEquals(auth.currentUser!!.uid, signedIn.uid)
+        // the same address is the same account the next time
+        auth.signOut()
+        val again = newManager(EmulatorSetup.tokenSource { "$sub@example.com" })
+        again.signIn()
+        assertEquals(signedIn.uid, (again.state.value as AccountState.SignedIn).uid)
+    }
+
+    @Test fun aClosedManagerStopsFollowingFirebaseAuthWhileAnOpenOneKeepsFollowing() = inTest {
+        val open = newManager(IdTokenSource { null })
+        val closed = newManager(IdTokenSource { null })
+        closed.close()
+        closed.close() // safe to repeat
+        val uid = signInAs(unique("close"))
+        waitUntil("the open manager to follow") { open.state.value is AccountState.SignedIn }
+        assertEquals(uid, (open.state.value as AccountState.SignedIn).uid)
+        assertEquals(AccountState.SignedOut, closed.state.value)
     }
 
     @Test fun signingInAgainAsTheSameGoogleAccountIsTheSameUser() = inTest {
@@ -145,14 +176,14 @@ class FirebaseEmulatorTest {
     }
 
     @Test fun aClosedChooserLeavesTheAccountSignedOut() = inTest {
-        val m = FirebaseAccountManager(auth, IdTokenSource { null }, null)
+        val m = newManager(IdTokenSource { null })
         m.signIn()
         assertEquals(AccountState.SignedOut, m.state.value)
         assertNull(auth.currentUser)
     }
 
     @Test fun noGoogleAccountOnThePhoneIsAFailureWithItsOwnReason() = inTest {
-        val m = FirebaseAccountManager(auth, IdTokenSource { throw NoGoogleAccountException() }, null)
+        val m = newManager(IdTokenSource { throw NoGoogleAccountException() })
         m.signIn()
         val state = m.state.value as AccountState.Failed
         assertEquals(AccountFailure.NO_GOOGLE_ACCOUNT, state.reason)
@@ -185,7 +216,7 @@ class FirebaseEmulatorTest {
         val m = manager(unique("reauth-cancel"))
         m.signIn()
         val uid = (m.state.value as AccountState.SignedIn).uid
-        val closing = FirebaseAccountManager(auth, IdTokenSource { null }, null)
+        val closing = newManager(IdTokenSource { null })
         assertEquals(ReauthResult.Cancelled, closing.reauthenticate(uid))
     }
 
@@ -199,7 +230,7 @@ class FirebaseEmulatorTest {
             manager(subB).signIn()
             fakeToken(subA)
         }
-        val result = FirebaseAccountManager(auth, chooser, null).reauthenticate(uidA)
+        val result = newManager(chooser).reauthenticate(uidA)
         assertEquals(ReauthResult.NotSignedIn, result)
         assertTrue("B must stay signed in, untouched", auth.currentUser!!.uid != uidA)
     }
@@ -208,7 +239,7 @@ class FirebaseEmulatorTest {
         val m = manager(unique("reauth-mine"))
         m.signIn()
         val uid = (m.state.value as AccountState.SignedIn).uid
-        val other = FirebaseAccountManager(auth, IdTokenSource { fakeToken(unique("reauth-stranger")) }, null)
+        val other = newManager(IdTokenSource { fakeToken(unique("reauth-stranger")) })
         assertTrue(other.reauthenticate(uid) is ReauthResult.Failed)
         assertEquals(uid, auth.currentUser!!.uid)
     }
@@ -302,14 +333,14 @@ class FirebaseEmulatorTest {
     @Test fun anAuthCallThatGetsNoAnswerInTimeEndsAsAFailure() = inTest {
         // sign-in: the call is abandoned (it may still finish later, which the next lines wait out)
         val sub = unique("auth-bounded")
-        val signIn = FirebaseAccountManager(auth, IdTokenSource { fakeToken(sub) }, null, callTimeoutMs = 1)
+        val signIn = newManager(IdTokenSource { fakeToken(sub) }, callTimeoutMs = 1)
         signIn.signIn()
         val failed = signIn.state.value
         assertTrue("sign-in must end as a network failure, was $failed", failed is AccountState.Failed && failed.reason == AccountFailure.NETWORK)
         waitUntil("the abandoned sign-in to finish") { auth.currentUser != null }
         // re-confirm and delete, now for a signed-in user
         val uid = auth.currentUser!!.uid
-        val impatient = FirebaseAccountManager(auth, IdTokenSource { fakeToken(sub) }, null, callTimeoutMs = 1)
+        val impatient = newManager(IdTokenSource { fakeToken(sub) }, callTimeoutMs = 1)
         assertTrue(impatient.reauthenticate(uid) is ReauthResult.Failed)
         assertTrue(impatient.deleteUser(uid) is DeleteUserResult.Failed)
         // the abandoned deletion goes through in the background and the listener then clears the state
@@ -519,17 +550,20 @@ class FirebaseEmulatorTest {
     }
 
     @Test fun aCancelledBackupWriteStillEndsWithASettledDocument() = inTest {
-        val uid = signInAs(unique("backup-cancel"))
-        val mine = sealed()
-        val id = newId()
-        val job = launch(start = CoroutineStart.UNDISPATCHED) { remote.putBackup(uid, mine, id, BackupPrecondition.NoBackup) }
-        job.cancel()
-        job.join()
-        // join returned: the transaction has settled, whichever way, and the answer is read around the SDK under test
-        assertTrue("the write that was running must have been waited for", exists("users/$uid/backup/signingKey"))
-        assertEquals(id, remote.getBackup(uid)!!.writeId)
-        // and the caller can take it back by its id
-        assertEquals(BackupRemoval.Removed, remote.deleteBackup(uid, BackupPrecondition.Version(id)))
+        // three fresh tries: with the wait removed, the REST check would have to lose the race to the commit every time
+        repeat(3) { attempt ->
+            val uid = signInAs(unique("backup-cancel-$attempt"))
+            val mine = sealed()
+            val id = newId()
+            val job = launch(start = CoroutineStart.UNDISPATCHED) { remote.putBackup(uid, mine, id, BackupPrecondition.NoBackup) }
+            job.cancel()
+            job.join()
+            // join returned: the transaction has settled, whichever way, and the answer is read around the SDK under test
+            assertTrue("the write that was running must have been waited for (try $attempt)", exists("users/$uid/backup/signingKey"))
+            assertEquals(id, remote.getBackup(uid)!!.writeId)
+            // and the caller can take it back by its id
+            assertEquals(BackupRemoval.Removed, remote.deleteBackup(uid, BackupPrecondition.Version(id)))
+        }
     }
 
     @Test fun aCancelledBackupDeleteStillEndsWithTheBackupGone() = inTest {
@@ -620,11 +654,11 @@ class FirebaseEmulatorTest {
         assertEquals("no document may be left behind", 0, count("users/$uid/designs"))
     }
 
-    /** A read while own writes are unsettled must say so; it must never return a list with those documents missing. */
-    @Test fun fetchDesignsNeverReturnsAListThatLacksADocumentOfOurOwnUnsettledWrite() = inTest {
-        val uid = signInAs(unique("fetch-pending"))
+    /** One try of the next test: true when the read met writes that were still unsettled. */
+    private suspend fun fetchWhileOwnWritesAreUnsettled(tag: String): Boolean = coroutineScope {
+        val uid = signInAs(unique(tag))
         val patient = FirestoreRemoteStore(db, writeTimeoutMs = 60_000)
-        val ids = (0 until 6).map { designId("Pending$it") }
+        val ids = (0 until 6).map { designId("Pending$tag$it") }
         db.disableNetwork().await()
         val writes = ids.mapIndexed { i, id ->
             launch(start = CoroutineStart.UNDISPATCHED) {
@@ -646,8 +680,105 @@ class FirebaseEmulatorTest {
             }
         }
         writes.forEach { it.join() }
-        android.util.Log.i("FirebaseEmulatorTest", "fetchDesigns met unsettled writes: $sawUnsettled")
+        sawUnsettled
+    }
+
+    /** A read while own writes are unsettled must say so; it must never return a list with those documents missing. */
+    @Test fun fetchDesignsNeverReturnsAListThatLacksADocumentOfOurOwnUnsettledWrite() = inTest {
+        // the situation (writes still unacknowledged when the read arrives) has to occur at least once, or nothing was tested
+        var met = false
+        for (attempt in 1..5) { if (fetchWhileOwnWritesAreUnsettled("fetch-pending-$attempt")) { met = true; break } }
+        assertTrue("the read never met an unsettled write in 5 tries, so the rule was not exercised", met)
+    }
+
+    /** The same for the backup: a delete of it that is still on its way must not read as "no backup" before it has landed. */
+    @Test fun getBackupWaitsForAQueuedDeleteInsteadOfReadingNoBackupBeforeItLanded() = inTest {
+        repeat(4) { attempt ->
+            val uid = signInAs(unique("backup-pending-$attempt"))
+            remote.putBackup(uid, sealed(), newId(), BackupPrecondition.NoBackup)
+            db.disableNetwork().await()
+            db.document("users/$uid/backup/signingKey").delete() // queued; not awaited
+            db.enableNetwork()
+            val read = remote.getBackup(uid)
+            assertNull("try $attempt: the queued delete counts", read)
+            assertFalse("try $attempt: 'no backup' was answered before the server's copy was gone", exists("users/$uid/backup/signingKey"))
+        }
+    }
+
+    // ---- a write's read-back is its own document ----------------------------------------------------------------
+
+    /**
+     * Two writers put different content into the same design at the same moment. Whatever a call returns must be what IT
+     * wrote; when the other writer's version slipped in between the acknowledgement and the read-back, the call fails
+     * with OFFLINE instead (the next pass fetches again).
+     */
+    @Test fun concurrentWritersNeverGetTheOthersDocumentBackAsTheirOwn() = inTest {
+        val uid = signInAs(unique("readback"))
+        val id = designId("Shared")
+        var refused = 0
+        repeat(15) { round ->
+            val results = listOf("A$round", "B$round").map { json ->
+                async {
+                    try { json to remote.putDesign(uid, id, "Shared", "{\"v\":\"$json\"}", DesignState.LIVE, DESIGN_SCHEMA) }
+                    catch (e: RemoteException) { assertEquals(RemoteErrorKind.OFFLINE, e.kind); refused++; null }
+                }
+            }.awaitAll()
+            for (r in results.filterNotNull()) assertEquals("round $round", "{\"v\":\"${r.first}\"}", r.second.designJson)
+        }
+        android.util.Log.i("FirebaseEmulatorTest", "read-backs refused as changed meanwhile: $refused of 30")
         Unit
+    }
+
+    // ---- paging of the wipe -------------------------------------------------------------------------------------
+
+    @Test fun deleteAllUserDataReadsAndDeletesPageByPageUntilNothingIsLeft() = inTest {
+        val uid = signInAs(unique("wipe-pages"))
+        repeat(7) { remote.putDesign(uid, designId("P$it"), "P$it", "{}", DesignState.LIVE, DESIGN_SCHEMA) }
+        // pages of 2 need four rounds (2+2+2+1); allowed three: the call fails, and exactly the documents of three pages are gone
+        val short = FirestoreRemoteStore(db, writeTimeoutMs = 10_000, wipePageSize = 2, maxWipePages = 3)
+        try {
+            short.deleteAllUserData(uid)
+            fail("four pages were needed, three were allowed")
+        } catch (e: RemoteException) {
+            assertEquals(RemoteErrorKind.OTHER, e.kind)
+        }
+        assertEquals("three pages of two", 1, count("users/$uid/designs"))
+        // the next call finishes the job: the rest is read and deleted
+        FirestoreRemoteStore(db, writeTimeoutMs = 10_000, wipePageSize = 2, maxWipePages = 3).deleteAllUserData(uid)
+        assertEquals(0, count("users/$uid/designs"))
+    }
+
+    @Test fun deleteAllUserDataWithTheDefaultPageSizeClearsMoreThanOnePage() = inTest {
+        val uid = signInAs(unique("wipe-120"))
+        repeat(120) { remote.putDesign(uid, designId("Many$it"), "Many$it", "{}", DesignState.LIVE, DESIGN_SCHEMA) }
+        assertTrue("more than one default page exists", count("users/$uid/designs") > 50)
+        remote.deleteAllUserData(uid)
+        assertEquals(0, count("users/$uid/designs"))
+    }
+
+    // ---- listener errors and empty answers ----------------------------------------------------------------------
+
+    @Test fun observingAnotherUsersDataEndsWithAPermissionError() = inTest {
+        val alice = signInAs(unique("observe-alice"))
+        remote.putDesign(alice, designId("Night"), "Night", "{}", DesignState.LIVE, DESIGN_SCHEMA)
+        remote.putCurrent(alice, "{}", "d", "Pixel")
+        signInAs(unique("observe-bob"))
+        for ((name, collect) in listOf<Pair<String, suspend () -> Any?>>(
+            "observeDesigns" to { remote.observeDesigns(alice).first() },
+            "observeCurrent" to { remote.observeCurrent(alice).first() },
+        )) {
+            try {
+                withTimeout(30_000) { collect() }
+                fail("$name: bob must not listen to alice")
+            } catch (e: RemoteException) {
+                assertEquals(name, RemoteErrorKind.PERMISSION, e.kind)
+            }
+        }
+    }
+
+    @Test fun anEmptyServerCollectionEmitsAConfirmedEmptyList() = inTest {
+        val uid = signInAs(unique("observe-empty"))
+        assertEquals(emptyList<RemoteDesign>(), withTimeout(30_000) { remote.observeDesigns(uid).first() })
     }
 
     @Test fun deleteAllUserDataFailsOfflineInsteadOfReportingSuccessWithNothingDeleted() = inTest {
