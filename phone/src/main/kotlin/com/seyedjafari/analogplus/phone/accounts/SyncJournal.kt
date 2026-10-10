@@ -126,7 +126,11 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
             val now = clock()
             fun touch(name: String, state: EntryState) {
                 val id = designId(name)
-                d.entries[id] = JournalEntry(name, now, state, d.entries[id]?.baseRemoteAtMs, SyncMark.DIRTY)
+                // Strictly later than the entry's previous edit, even in the same millisecond or after the clock went back:
+                // the conditional marks (markPushed, markApplied) tell two edits apart by this time alone.
+                val previous = d.entries[id]
+                val at = if (previous == null) now else maxOf(now, previous.modifiedAtMs + 1)
+                d.entries[id] = JournalEntry(name, at, state, previous?.baseRemoteAtMs, SyncMark.DIRTY)
             }
             when (change) {
                 is SavedChange.Saved -> touch(change.name, EntryState.LIVE)
@@ -146,10 +150,33 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
         write(d)
     }
 
-    /** The engine made the local side equal to the cloud copy stamped [remoteAtMs]. */
-    fun markApplied(id: String, name: String, state: EntryState, remoteAtMs: Long) = synchronized(lock) {
+    /**
+     * The engine made the local side equal to the cloud copy stamped [remoteAtMs]. With [expectedModifiedAtMs] (the entry's
+     * time when the plan was made) it is conditional like [markPushed]: when the user changed the design meanwhile the entry
+     * keeps its own change, stays dirty and only learns the cloud time (so the next pass pushes the edit). Returns false in
+     * that case. Without it the entry is replaced unconditionally.
+     */
+    fun markApplied(id: String, name: String, state: EntryState, remoteAtMs: Long, expectedModifiedAtMs: Long? = null): Boolean = synchronized(lock) {
         val d = read()
-        d.entries[id] = JournalEntry(name, d.entries[id]?.modifiedAtMs ?: clock(), state, remoteAtMs, SyncMark.CLEAN)
+        val e = d.entries[id]
+        if (expectedModifiedAtMs != null && e != null && e.modifiedAtMs != expectedModifiedAtMs) {
+            d.entries[id] = e.copy(baseRemoteAtMs = remoteAtMs, mark = SyncMark.DIRTY)
+            write(d)
+            return false
+        }
+        d.entries[id] = JournalEntry(name, e?.modifiedAtMs ?: clock(), state, remoteAtMs, SyncMark.CLEAN)
+        write(d)
+        true
+    }
+
+    /**
+     * A design that the engine saved locally as the kept copy of a conflict has been pushed ([remoteAtMs]). Such a design has
+     * no entry until now; if the user touched it meanwhile an entry exists and keeps that change (dirty, with the cloud time).
+     */
+    fun markCopyPushed(id: String, name: String, remoteAtMs: Long) = synchronized(lock) {
+        val d = read()
+        val e = d.entries[id]
+        d.entries[id] = if (e == null) JournalEntry(name, clock(), EntryState.LIVE, remoteAtMs, SyncMark.CLEAN) else e.copy(baseRemoteAtMs = remoteAtMs)
         write(d)
     }
 

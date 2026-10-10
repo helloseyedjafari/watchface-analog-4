@@ -224,7 +224,14 @@ class SyncEngine(
 
     private enum class Outcome { DONE, UNSYNCABLE, LOCAL_CHANGED }
 
-    /** True when the phone's record of design [id] is still what the plan was made from (the user did not touch it since). */
+    /**
+     * True when the phone's record of design [id] is still what the plan was made from (the user did not touch it since).
+     *
+     * This is a check followed by the store write, not one atomic step: an edit that lands in the few microseconds between
+     * the check and the store write is overwritten by the cloud copy. What follows the write is conditional ([SyncJournal.markApplied]
+     * with the planned time), so an edit after the write is never marked as synced. The store has no compare-and-set to close
+     * the first window completely; it is accepted.
+     */
     private fun unchangedSince(id: String, planned: LocalDesignEntry?): Boolean {
         val now = journal.entries()[id]
         return if (planned == null) now == null
@@ -257,8 +264,7 @@ class SyncEngine(
                 val applied = withContext(io) {
                     if (!unchangedSince(action.id, local)) return@withContext false
                     store.saveNamed(action.remote.name, design, ChangeOrigin.SYNC)
-                    journal.markApplied(action.id, action.remote.name, EntryState.LIVE, action.remote.updatedAtMs)
-                    true
+                    journal.markApplied(action.id, action.remote.name, EntryState.LIVE, action.remote.updatedAtMs, local?.modifiedAtMs)
                 }
                 if (!applied) return Outcome.LOCAL_CHANGED
                 withoutPhoto.remove(action.id)
@@ -267,15 +273,15 @@ class SyncEngine(
                 val applied = withContext(io) {
                     if (!unchangedSince(action.id, local)) return@withContext false
                     store.deleteNamed(action.remote.name, ChangeOrigin.SYNC)
-                    journal.markApplied(action.id, action.remote.name, EntryState.TOMBSTONE, action.remote.updatedAtMs)
-                    true
+                    journal.markApplied(action.id, action.remote.name, EntryState.TOMBSTONE, action.remote.updatedAtMs, local?.modifiedAtMs)
                 }
                 if (!applied) return Outcome.LOCAL_CHANGED
                 withoutPhoto.remove(action.id)
             }
             is SyncAction.RecordBase -> withContext(io) {
+                // conditional: an edit made during the pass keeps the entry dirty so that the next pass pushes it
                 val state = if (action.remote.state == DesignState.LIVE) EntryState.LIVE else EntryState.TOMBSTONE
-                journal.markApplied(action.id, action.remote.name, state, action.remote.updatedAtMs)
+                journal.markApplied(action.id, action.remote.name, state, action.remote.updatedAtMs, local?.modifiedAtMs)
             }
             is SyncAction.Drop -> withContext(io) { journal.drop(action.id) }
             is SyncAction.KeepBoth -> {
@@ -286,8 +292,7 @@ class SyncEngine(
                     if (!unchangedSince(action.id, local)) return@withContext false
                     store.saveNamed(action.copyName, mine, ChangeOrigin.SYNC)
                     store.saveNamed(action.remote.name, theirs, ChangeOrigin.SYNC)
-                    journal.markApplied(action.id, action.remote.name, EntryState.LIVE, action.remote.updatedAtMs)
-                    true
+                    journal.markApplied(action.id, action.remote.name, EntryState.LIVE, action.remote.updatedAtMs, local.modifiedAtMs)
                 }
                 if (!kept) return Outcome.LOCAL_CHANGED
                 // The copy is a saved design without a journal entry until it is in the cloud; if the push below fails, the
@@ -297,7 +302,7 @@ class SyncEngine(
                 val copyId = designId(action.copyName)
                 val written = call { remote.putDesign(uid, copyId, action.copyName, json, DesignState.LIVE, DESIGN_SCHEMA) }
                 notePhoto(copyId, mapped)
-                withContext(io) { journal.markApplied(copyId, action.copyName, EntryState.LIVE, written.updatedAtMs) }
+                withContext(io) { journal.markCopyPushed(copyId, action.copyName, written.updatedAtMs) }
             }
         }
         return Outcome.DONE

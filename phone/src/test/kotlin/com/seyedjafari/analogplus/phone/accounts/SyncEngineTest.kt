@@ -535,6 +535,40 @@ class SyncEngineTest {
         assertTrue(a.engine.status.value is SyncStatus.Idle)   // skipping this round is not a failure
     }
 
+    /** Fix round item 1: the guard also covers the "both sides agree" bookkeeping. */
+    @Test fun anEditMadeWhileAPassRecordsAnAgreedDesignStaysDirtyAndIsPushedNext() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val other = phone(remote, "other")
+        other.store.saveNamed("Night", night)
+        other.engine.start("u1"); runCurrent()
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.store.saveNamed("Zed", day)                      // pushed first (journal order) ...
+        a.store.saveNamed("Night", night)                  // ... then Night: same as the cloud, no history -> RecordBase
+        val edited = night.copy(accent = "#FF999999")
+        flaky.onPutDesign = { a.store.saveNamed("Night", edited) }   // the user types while the pass is at Zed
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(2_000); runCurrent()                  // the edit's own pass
+        assertEquals(edited, DesignJson.fromJson(remote.designsOf("u1").getValue(designId("Night")).designJson))
+        assertEquals(SyncMark.CLEAN, a.journal.entries().getValue(designId("Night")).mark)
+    }
+
+    @Test fun anEditToTheKeptCopyWhileItIsBeingPushedIsNotMarkedSynced() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val other = phone(remote, "other")
+        other.store.saveNamed("Night", night.copy(accent = "#FF222222"))
+        other.engine.start("u1"); runCurrent()
+        val a = phone(remote, "a", engineRemote = flaky)
+        val mine = night.copy(accent = "#FF111111")
+        a.store.saveNamed("Night", mine)
+        val edited = mine.copy(accent = "#FF999999")
+        flaky.onPutDesign = { a.store.saveNamed("Night (this phone)", edited) }   // the user edits the copy being uploaded
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(2_000); runCurrent()
+        assertEquals(edited, DesignJson.fromJson(remote.designsOf("u1").getValue(designId("Night (this phone)")).designJson))
+    }
+
     @Test fun aPassStillRunningWhenTheUserSignsOutDoesNotBringTheStatusBack() = runTest {
         val remote = FakeRemoteStore()
         val flaky = FlakyRemote(remote)

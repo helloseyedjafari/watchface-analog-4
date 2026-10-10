@@ -3,6 +3,7 @@ package com.seyedjafari.analogplus.phone.accounts
 import com.seyedjafari.analogplus.phone.ChangeOrigin
 import com.seyedjafari.analogplus.phone.SavedChange
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -51,6 +52,45 @@ class SyncJournalTest {
         j.markPushed(id, expectedModifiedAtMs = 1_000, remoteAtMs = 60)    // a push of the older edit finishing late
         assertEquals(SyncMark.DIRTY, j.entries()[id]!!.mark)
         assertEquals(60L, j.entries()[id]!!.baseRemoteAtMs)
+    }
+
+    @Test fun markAppliedWithAnExpectedTimeOnlyCleansAnEntryThatDidNotChangeMeanwhile() {
+        val j = journal()
+        j.onSavedDesignChanged(SavedChange.Saved("Night"), ChangeOrigin.USER)
+        assertTrue(j.markApplied(id, "Night", EntryState.LIVE, 50, expectedModifiedAtMs = 1_000))
+        assertEquals(JournalEntry("Night", 1_000, EntryState.LIVE, 50, SyncMark.CLEAN), j.entries()[id])
+        now = 3_000
+        j.onSavedDesignChanged(SavedChange.Saved("Night"), ChangeOrigin.USER)     // an edit lands during the pass
+        assertFalse(j.markApplied(id, "Night", EntryState.LIVE, 60, expectedModifiedAtMs = 1_000))
+        assertEquals(JournalEntry("Night", 3_000, EntryState.LIVE, 60, SyncMark.DIRTY), j.entries()[id])
+    }
+
+    @Test fun twoEditsInTheSameMillisecondGetDifferentTimesSoAConditionalMarkCanTellThemApart() {
+        val j = journal()
+        j.onSavedDesignChanged(SavedChange.Saved("Night"), ChangeOrigin.USER)
+        val first = j.entries()[id]!!.modifiedAtMs
+        j.onSavedDesignChanged(SavedChange.Saved("Night"), ChangeOrigin.USER)     // the clock did not move
+        assertTrue(j.entries()[id]!!.modifiedAtMs > first)
+        now = 1_000L - 500                                                      // nor may a clock that went backwards undo it
+        j.onSavedDesignChanged(SavedChange.Saved("Night"), ChangeOrigin.USER)
+        assertTrue(j.entries()[id]!!.modifiedAtMs > first + 1)
+    }
+
+    @Test fun markAppliedWithoutAnExpectedTimeStaysUnconditional() {
+        val j = journal()
+        j.onSavedDesignChanged(SavedChange.Saved("Night"), ChangeOrigin.USER)
+        assertTrue(j.markApplied(id, "Night", EntryState.LIVE, 50))
+        assertEquals(SyncMark.CLEAN, j.entries()[id]!!.mark)
+    }
+
+    @Test fun aPushedCopyIsRecordedCleanUnlessTheUserTouchedItMeanwhile() {
+        val j = journal()
+        j.markCopyPushed(id, "Night", 50)
+        assertEquals(JournalEntry("Night", 1_000, EntryState.LIVE, 50, SyncMark.CLEAN), j.entries()[id])
+        val other = designId("Day")
+        j.onSavedDesignChanged(SavedChange.Saved("Day"), ChangeOrigin.USER)
+        j.markCopyPushed(other, "Day", 60)
+        assertEquals(JournalEntry("Day", 1_000, EntryState.LIVE, 60, SyncMark.DIRTY), j.entries()[other])
     }
 
     @Test fun bindingTheFirstOrAnotherAccountMakesEverythingUnsyncedButTheSameAccountChangesNothing() {
@@ -141,7 +181,7 @@ class SyncJournalTest {
             val n = "Design $i"
             j.markApplied(designId(n), n, EntryState.LIVE, 10L + i)
             j.onSavedDesignChanged(SavedChange.Deleted(n), ChangeOrigin.USER)
-            j.markPushed(designId(n), expectedModifiedAtMs = now, remoteAtMs = 100L + i)
+            j.markPushed(designId(n), expectedModifiedAtMs = j.entries().getValue(designId(n)).modifiedAtMs, remoteAtMs = 100L + i)
         }
         j.onSavedDesignChanged(SavedChange.Deleted("Unsent"), ChangeOrigin.USER)    // still DIRTY: must be kept
         j.reconcileWithStore(emptyList())
@@ -149,7 +189,7 @@ class SyncJournalTest {
         now += TOMBSTONE_RETENTION_MS - 1
         j.reconcileWithStore(emptyList())
         assertEquals(51, j.entries().size)
-        now += 2
+        now += 3                                                  // (a tombstone is stamped one ms after the entry it replaces)
         j.reconcileWithStore(listOf("Alive"))
         assertEquals(setOf(designId("Unsent"), designId("Alive")), j.entries().keys)
         assertEquals(SyncMark.DIRTY, j.entries()[designId("Unsent")]!!.mark)
