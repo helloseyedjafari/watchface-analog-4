@@ -2,6 +2,7 @@ package com.seyedjafari.analogplus.phone
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.res.Configuration
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.compose.foundation.layout.Box
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -95,11 +97,20 @@ internal class ShellFixture(
         onPendingLinkResolved: () -> Unit = {},
         backupPage: BackupPageSlot? = null,
         fontScale: Float? = null,
+        /** true / false force the dark / light theme (the night mode the app reads); null follows the device. */
+        dark: Boolean? = null,
     ) {
         // pinned, so the result does not depend on the emulator's animator_duration_scale; null reads the device's setting
         rule.setContent {
             val base = LocalDensity.current
-            CompositionLocalProvider(LocalAnimationScale provides animationScale, LocalDensity provides Density(base.density, fontScale ?: base.fontScale)) {
+            val configuration = LocalConfiguration.current
+            val themed = if (dark == null) configuration else Configuration(configuration).apply {
+                uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or (if (dark) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO)
+            }
+            CompositionLocalProvider(
+                LocalAnimationScale provides animationScale, LocalDensity provides Density(base.density, fontScale ?: base.fontScale),
+                LocalConfiguration provides themed,
+            ) {
                 PinnedWindow(window) {
                     // the tagged box is exactly the pinned window: a test that wants "inside the window" compares with it, not with the (larger) compose view
                     Box(Modifier.fillMaxSize().testTag(SHELL_WINDOW_TAG)) {
