@@ -97,6 +97,11 @@ describe('designs', () => {
   it('rejects a whitespace-only name', async () => {
     await assertFails(setDoc(doc(alice(), `users/alice/designs/${ID}`), design({ name: '   ' })));
   });
+  it('counts the name in characters, not bytes: 100 two-byte characters pass, 101 do not', async () => {
+    const ref = doc(alice(), `users/alice/designs/${ID}`);
+    await assertSucceeds(setDoc(ref, design({ name: 'é'.repeat(100) })));
+    await assertFails(setDoc(ref, design({ name: 'é'.repeat(101) })));
+  });
   it('rejects a design id that is not 32 lowercase hex characters', async () => {
     await assertFails(setDoc(doc(alice(), 'users/alice/designs/not-an-id'), design()));
     await assertFails(setDoc(doc(alice(), `users/alice/designs/${ID.toUpperCase()}`), design()));
