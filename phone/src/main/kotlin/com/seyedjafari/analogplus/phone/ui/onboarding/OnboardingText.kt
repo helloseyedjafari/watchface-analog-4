@@ -77,3 +77,13 @@ enum class PermissionStep(@StringRes val res: Int) {
     DENY(R.string.onboarding_permission_step_deny),
     LATER(R.string.onboarding_permission_step_later),
 }
+
+/** The heading of [page], which is also what a screen reader announces when the page appears (the page container's pane title). */
+@StringRes
+fun OnboardingText.pageTitle(page: OnboardingPage): Int = when (page) {
+    OnboardingPage.WELCOME -> WELCOME_TITLE
+    OnboardingPage.PAIR -> PAIR_TITLE
+    OnboardingPage.PERMISSION -> PERMISSION_TITLE
+    OnboardingPage.TEMPLATE -> TEMPLATE_TITLE
+    OnboardingPage.BACKUP -> BACKUP_TITLE
+}

@@ -5,7 +5,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -261,6 +267,45 @@ class OnboardingScreenTest {
         next().assertTextEquals("Continue")
     }
 
+    @Test fun skipOnTheBackupPage() {
+        val f = show(ShellFixture(accounts = true, startAt = OnboardingState.InProgress(OnboardingPage.BACKUP)))
+        page(OnboardingPage.BACKUP).assertExists()
+        val before = f.state.design
+        rule.onNodeWithTag(Tags.ONBOARDING_SKIP).performClick(); rule.waitForIdle()
+        assertEquals(OnboardingState.Skipped, f.controller.state.value)
+        assertEquals(before, f.state.design)
+    }
+
+    // --- a screen reader hears the page change (the clicked button keeps focus while the content is replaced) ---
+
+    @Test fun theProgressLineIsAPoliteLiveRegionAndFollowsThePage() {
+        show()
+        val progress = rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS)
+        progress.assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+        progress.assertTextEquals("Step 1 of 4")
+        next().performClick(); rule.waitForIdle()
+        progress.assertTextEquals("Step 2 of 4")
+        progress.assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+    }
+
+    @Test fun eachPageContainerCarriesItsHeadingAsPaneTitle() {
+        val f = show(ShellFixture(accounts = true))
+        val titles = mapOf(
+            OnboardingPage.WELCOME to "Make a watch face that is yours", OnboardingPage.PAIR to "Connect your watch",
+            OnboardingPage.PERMISSION to "Allow the face once", OnboardingPage.TEMPLATE to "Pick a starting point",
+            OnboardingPage.BACKUP to "Backup and sync",
+        )
+        for (p in onboardingPages(true)) {
+            goTo(f, p)
+            page(p).assert(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, titles.getValue(p)))
+        }
+    }
+
+    @Test fun theProgressBarStaysOutOfTheAccessibilityTree() {
+        show()
+        rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo)).assertCountEquals(0)
+    }
+
     // --- short wide window, big text, wide window ---
 
     private fun everyControlReachable(p: OnboardingPage) {
@@ -268,6 +313,15 @@ class OnboardingScreenTest {
         next().assertIsDisplayed()
         if (p != OnboardingPage.WELCOME) rule.onNodeWithTag(Tags.ONBOARDING_BACK).assertIsDisplayed()
         page(p).assertIsDisplayed()
+        // assertIsDisplayed also passes for a partly visible node: the buttons sit outside the scrolling page and must be whole
+        val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
+        val whole = listOfNotNull(
+            Tags.ONBOARDING_SKIP, Tags.ONBOARDING_NEXT, if (p != OnboardingPage.WELCOME) Tags.ONBOARDING_BACK else null,
+        )
+        whole.forEach { tag ->
+            val b = rule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+            assertTrue("$tag fully inside the window on $p: $b in $root", b.top >= root.top - 0.5f && b.bottom <= root.bottom + 0.5f && b.left >= root.left - 0.5f && b.right <= root.right + 0.5f)
+        }
     }
 
     private fun everyPageHasItsControls(window: WindowDp, fontScale: Float) {

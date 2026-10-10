@@ -22,7 +22,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import com.seyedjafari.analogplus.phone.EditorState
 import com.seyedjafari.analogplus.phone.OnboardingController
 import com.seyedjafari.analogplus.phone.OnboardingPage
@@ -67,6 +71,7 @@ fun OnboardingScreen(
 ) {
     val current by controller.state.collectAsState()
     val pages = controller.pages
+    // For Completed/Skipped pageFor is the first page: the host must not compose this screen then (the AppShell gate is a plain `if`).
     val page = controller.pageFor(current)
     val index = pages.indexOf(page)
     BackHandler(enabled = index > 0) { controller.back() }
@@ -88,7 +93,9 @@ fun OnboardingScreen(
 
             AnimatedContent(page, Modifier.weight(1f).fillMaxWidth(), transitionSpec = rememberSharedAxis<OnboardingPage>()) { shown ->
                 val visible = shown == page
-                Box(Modifier.fillMaxSize().testTag(Tags.onboardingPage(shown))) {
+                // the pane title is announced when the page appears, and the progress text is a live region: the clicked button keeps focus while the content is replaced
+                val title = stringResource(OnboardingText.pageTitle(shown))
+                Box(Modifier.fillMaxSize().semantics { paneTitle = title }.testTag(Tags.onboardingPage(shown))) {
                     when (shown) {
                         OnboardingPage.WELCOME -> WelcomePage(visible)
                         OnboardingPage.PAIR -> PairPage(watch, onStatus = { controller.reportWatchReady(watchIsReady(it)) }, pageVisible = visible)
@@ -123,7 +130,8 @@ private fun Progress(index: Int, count: Int, modifier: Modifier = Modifier) {
         val step = OnboardingText.stepOf(index, count)
         Text(
             stringResource(step.res, *step.args), style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag(Tags.ONBOARDING_PROGRESS),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag(Tags.ONBOARDING_PROGRESS),
         )
         val progress by animateFloatAsState((index + 1f) / count, motionSpec(Motion.MEDIUM))
         // the text above says the same in words, so a screen reader does not read the bar as a second, bare percentage
