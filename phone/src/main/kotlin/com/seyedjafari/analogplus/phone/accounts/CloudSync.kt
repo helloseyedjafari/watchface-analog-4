@@ -1,0 +1,87 @@
+package com.seyedjafari.analogplus.phone.accounts
+
+import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+/** Why a sync pass ended in [SyncStatus.Error]. The UI maps each to a string resource; no English lives here. */
+enum class SyncProblem {
+    /** The cloud refused the request (security rules). Does not retry by itself. */
+    REFUSED,
+
+    /** The cloud's usage limit was reached. */
+    QUOTA,
+
+    /** Anything else; [SyncStatus.Error.detail] carries the system's own message as data. */
+    FAILED,
+
+    /** More saved designs than [MAX_SYNCED_DESIGNS]; the rest stay on this phone only ([SyncStatus.Error.count] = the limit). */
+    TOO_MANY_DESIGNS,
+
+    /** [SyncStatus.Error.count] saved designs could not be synced (unreadable in the cloud, or too large). */
+    DESIGNS_SKIPPED,
+
+    /** The design being edited is too large for one cloud document. */
+    CURRENT_TOO_LARGE,
+}
+
+sealed interface SyncStatus {
+    /** Signed out, or no cloud in this build. */
+    data object Off : SyncStatus
+    data object Syncing : SyncStatus
+
+    /**
+     * The last pass succeeded. [withoutPhoto] is how many designs the cloud holds without their photo because the photo
+     * could not be shrunk (the local design still has it); the UI says "N designs synced without their photo" when it is above 0.
+     */
+    data class Idle(val lastSyncedAtMs: Long, val withoutPhoto: Int = 0) : SyncStatus
+
+    /** A call failed or got no answer. Local work is kept and the engine retries by itself. */
+    data object Offline : SyncStatus
+
+    data class Error(val problem: SyncProblem, val count: Int = 0, val detail: String = "") : SyncStatus
+}
+
+/**
+ * The current design on another device is newer than the one here and differs from it. Asked once per difference.
+ * [fromDevice] is the label that device gave itself; it can be empty, and the UI then says "another device".
+ */
+data class CurrentOffer(val fromDevice: String, val design: DesignSettings, val remoteUpdatedAtMs: Long)
+
+enum class OfferChoice { USE_REMOTE, KEEP_MINE }
+
+/** Puts a design from the cloud into the editor. */
+fun interface CurrentApplier {
+    fun apply(design: DesignSettings)
+}
+
+/**
+ * Mirrors the local [com.seyedjafari.analogplus.phone.Store] to the cloud for the signed-in user. The store stays the
+ * source of truth and works without any of this.
+ */
+interface CloudSync {
+    val status: StateFlow<SyncStatus>
+    val currentOffer: StateFlow<CurrentOffer?>
+
+    /** Begins syncing for [uid]: a first full pass, then live updates. Replaces a running sync. */
+    fun start(uid: String)
+
+    /** Stops syncing (sign-out). Local designs stay. */
+    fun stop()
+
+    /** One full pass now; returns when it finished (the result is in [status]). */
+    suspend fun syncNow()
+
+    fun resolveOffer(choice: OfferChoice)
+}
+
+/** Used when there is no cloud: always [SyncStatus.Off]. */
+class NoCloudSync : CloudSync {
+    override val status: StateFlow<SyncStatus> = MutableStateFlow<SyncStatus>(SyncStatus.Off).asStateFlow()
+    override val currentOffer: StateFlow<CurrentOffer?> = MutableStateFlow<CurrentOffer?>(null).asStateFlow()
+    override fun start(uid: String) {}
+    override fun stop() {}
+    override suspend fun syncNow() {}
+    override fun resolveOffer(choice: OfferChoice) {}
+}
