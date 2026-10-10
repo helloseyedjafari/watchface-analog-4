@@ -164,6 +164,7 @@ class ShareTemplatesTest {
         rule.onNodeWithTag(LibrarySection.MY_DESIGNS.tag()).performClick()
         rule.onNodeWithTag(Tags.SAVE_NAME_FIELD).performTextInput("Mine")
         rule.onNodeWithTag(Tags.SAVE_BUTTON).performClick()
+        rule.waitUntil(WRITE_TIMEOUT_MS) { rule.onAllNodesWithTag(Tags.saved("Mine")).fetchSemanticsNodes().isNotEmpty() }   // the save runs off the main thread
         rule.onNodeWithTag(Tags.saved("Mine")).assertIsDisplayed()
         assertEquals("#FF123456", store.savedDesigns().single().design.accent)
         // the design being edited is the one just saved: choosing it again is a no-op
@@ -181,8 +182,7 @@ class ShareTemplatesTest {
         assertEquals("#FF123456", state.design.accent)
 
         rule.onNodeWithTag(Tags.savedDelete("Mine")).performClick()
-        rule.waitForIdle()
-        assertEquals(0, store.savedDesigns().size)
+        rule.waitUntil(WRITE_TIMEOUT_MS) { store.savedDesigns().isEmpty() }
     }
 
     @Test fun savingWithoutANameShowsAnError() {

@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -24,6 +25,7 @@ import com.seyedjafari.analogplus.phone.EditorState
 import com.seyedjafari.analogplus.phone.SavedDesign
 import com.seyedjafari.analogplus.phone.Store
 import com.seyedjafari.analogplus.phone.Tags
+import com.seyedjafari.analogplus.phone.canonicalDesignName
 import com.seyedjafari.analogplus.phone.shortForDisplay
 import com.seyedjafari.analogplus.phone.ui.components.EmptyState
 import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
@@ -33,12 +35,29 @@ import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import androidx.compose.ui.res.stringResource
 import com.seyedjafari.analogplus.phone.R
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/** Saves and deletes run one at a time in the order they were asked for (a delete never overtakes the save before it). */
+@OptIn(ExperimentalCoroutinesApi::class)
+private val storeDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)
+
+/**
+ * Store writes do disk work (the preferences, and what the sync journal writes in answer), which is not for the main thread.
+ * Not cancellable: leaving the section just after a tap must not drop the save or the delete that was asked for.
+ */
+private suspend fun <T> onDisk(block: () -> T): T = withContext(storeDispatcher + NonCancellable) { block() }
 
 /** Naming and saving the current design, and the designs saved in [store]; [askToReplace] is called when one is chosen. */
 @Composable
 internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (String, DesignSettings) -> Unit) {
     val saved = remember { mutableStateListOf<SavedDesign>().also { it.addAll(store.savedDesigns()) } }
-    fun refresh() { saved.clear(); saved.addAll(store.savedDesigns()) }
+    fun show(list: List<SavedDesign>) { saved.clear(); saved.addAll(list) }
+    val scope = rememberCoroutineScope()
     var name by rememberSaveable { mutableStateOf("") }
     // Store.saveNamed refuses only a blank name (an IllegalArgumentException); its English text is not shown
     var nameRequired by remember { mutableStateOf(false) }
@@ -56,12 +75,17 @@ internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (S
         PrimaryButton(
             stringResource(R.string.mydesigns_button_save),
             {
-                try {
-                    store.saveNamed(name, state.design)
-                    refresh()
-                    name = ""
-                } catch (e: IllegalArgumentException) {
+                val given = name
+                val design = state.design
+                if (canonicalDesignName(given).isEmpty()) {
                     nameRequired = true
+                } else scope.launch {
+                    try {
+                        show(onDisk { store.saveNamed(given, design); store.savedDesigns() })
+                        name = ""
+                    } catch (e: IllegalArgumentException) {
+                        nameRequired = true
+                    }
                 }
             },
             Modifier.testTag(Tags.SAVE_BUTTON),
@@ -81,7 +105,7 @@ internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (S
                     .wrapContentHeight(Alignment.CenterVertically).testTag(Tags.saved(s.name)),
             )
             SecondaryButton(stringResource(R.string.mydesigns_button_load), { askToReplace(s.name, s.design) }, Modifier.testTag(Tags.field("saved_load_${s.name}")))
-            SecondaryButton(stringResource(R.string.mydesigns_button_delete), { store.deleteNamed(s.name); refresh() }, Modifier.testTag(Tags.savedDelete(s.name)))
+            SecondaryButton(stringResource(R.string.mydesigns_button_delete), { scope.launch { show(onDisk { store.deleteNamed(s.name); store.savedDesigns() }) } }, Modifier.testTag(Tags.savedDelete(s.name)))
         }
     }
 }

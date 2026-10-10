@@ -128,6 +128,9 @@ class Store(
         return !photoStillLoading
     }
 
+    /** True when a current design has been saved before (false on a new install, or when nothing was ever autosaved). */
+    fun hasSavedCurrent(): Boolean = synchronized(LOCK) { kv.getString(KEY_CURRENT) != null }
+
     /** The saved design with its photo (reads the photo file: do not call on the main thread). */
     fun loadCurrent(): DesignSettings {
         val d = loadCurrentWithoutPhoto()

@@ -26,6 +26,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.emptyFlow
 
+/** How long a test waits for a save or delete that the screen runs off the main thread. */
+internal const val WRITE_TIMEOUT_MS = 5_000L
+
 /** In-memory preferences for instrumented tests. */
 internal class FakeKv : KeyValueStore {
     private val m = HashMap<String, Any>()

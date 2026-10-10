@@ -4,6 +4,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -62,6 +63,7 @@ class LibraryJourneyTest {
         rule.onNodeWithText("Nothing saved yet").assertIsDisplayed()
         rule.onNodeWithTag(Tags.SAVE_NAME_FIELD).performTextInput("Mine")
         rule.onNodeWithTag(Tags.SAVE_BUTTON).performClick()
+        rule.waitUntil(WRITE_TIMEOUT_MS) { rule.onAllNodesWithTag(Tags.saved("Mine")).fetchSemanticsNodes().isNotEmpty() }   // the save runs off the main thread
         rule.onNodeWithTag(Tags.saved("Mine")).performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("Nothing saved yet").assertDoesNotExist()
 
@@ -89,7 +91,7 @@ class LibraryJourneyTest {
         goTo(Destination.LIBRARY)
         chip(LibrarySection.MY_DESIGNS)
         rule.onNodeWithTag(Tags.savedDelete("Mine")).performScrollTo().performClick()
-        rule.waitForIdle()
+        rule.waitUntil(WRITE_TIMEOUT_MS) { rule.onAllNodesWithTag(Tags.saved("Mine")).fetchSemanticsNodes().isEmpty() }
         rule.onNodeWithTag(Tags.saved("Mine")).assertDoesNotExist()
         rule.onNodeWithText("Nothing saved yet").assertIsDisplayed()
     }

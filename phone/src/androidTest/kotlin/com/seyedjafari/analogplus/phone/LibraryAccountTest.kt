@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -52,6 +53,7 @@ class LibraryAccountTest {
         rule.onNodeWithText("Nothing saved yet").assertExists()
         rule.onNodeWithTag(Tags.SAVE_NAME_FIELD).performTextInput("Mine")
         rule.onNodeWithTag(Tags.SAVE_BUTTON).performClick()
+        rule.waitUntil(WRITE_TIMEOUT_MS) { rule.onAllNodesWithTag(Tags.saved("Mine")).fetchSemanticsNodes().isNotEmpty() }   // the save runs off the main thread
         rule.onNodeWithTag(Tags.saved("Mine")).assertExists()
     }
 

@@ -20,18 +20,23 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.seyedjafari.analogplus.facegen.FacePackager
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.phone.accounts.AccountsController
+import com.seyedjafari.analogplus.phone.accounts.AccountsFactory
+import com.seyedjafari.analogplus.phone.accounts.CurrentApplier
+import com.seyedjafari.analogplus.phone.accounts.firebase.CurrentActivity
 import com.seyedjafari.analogplus.phone.ui.account.AccountScreen
+import com.seyedjafari.analogplus.phone.ui.account.LocalAccounts
 import com.seyedjafari.analogplus.phone.ui.components.LoadSharedDesignDialog
 import com.seyedjafari.analogplus.phone.ui.design.DesignScreen
 import com.seyedjafari.analogplus.phone.ui.library.LibraryScreen
@@ -48,9 +53,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -59,35 +62,35 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     val store = Store(app)
     // Decides first run vs existing user and stores it NOW, before the autosave of the default design below can make a new install look used.
     val onboarding = OnboardingController(store)
-    // the photo (up to 25 MB) is read in the background and attached below
-    val state = EditorState(store.loadCurrentWithoutPhoto(), PhotoLoad.LOADING)
+    // the photo (up to 25 MB) is read in the background and attached by the first init block below
+    private val designAtStart = store.loadCurrentWithoutPhoto()
+    val state = EditorState(designAtStart, PhotoLoad.LOADING)
+    private val persistence = CurrentPersistence.atStart(store, designAtStart)
+    /**
+     * Accounts, sync and signing-key backup; a build without google-services.json gets a controller with accounts switched off.
+     * Its scope is this view model's: sync lives as long as the view model (a rotation keeps both), not as long as the process.
+     * It comes after [state] (it reads and replaces the design being edited) and, like [onboarding], before the autosave below starts.
+     * `currentDesign` is the COMPLETE design: while the photo is still loading it reports the PHOTO background without bytes and
+     * the sync engine does not push that (see `CloudSync`).
+     */
+    val accounts: AccountsController = AccountsFactory.create(
+        app, store, viewModelScope, currentDesign = { state.design }, applier = CurrentApplier { design -> state.replace(design) },
+    )
     /** A design from a tapped link, waiting for the user to confirm that it replaces the current one. */
     var pendingLinkDesign: DesignSettings? by mutableStateOf(null)
     val send = SendController(lazy { FacePackager(app) }, DataLayerSender(app), store, viewModelScope, signingKeyFingerprintProvider(app))
 
     init {
-        val designAtStart = state.design
-        viewModelScope.launch {
-            val photo = withContext(Dispatchers.IO) { store.readPhotoFile() }
-            // only a design whose background is still the one loaded (no photo yet, nothing changed) gets its photo back
-            val untouched = photo != null && state.design.background == designAtStart.background
-            if (untouched) state.update { it.copy(background = it.background.copy(photoJpeg = photo)) }
-            state.photoLoaded()
-            withContext(Dispatchers.IO) { store.finishPhotoLoad(photo) }
-        }
+        // the photo (up to 25 MB) is read in the background and attached
+        viewModelScope.launch { attachSavedPhoto(state, store, persistence, designAtStart) }
         // save shortly after the last change (one write per burst of typing)
-        viewModelScope.launch {
-            snapshotFlow { state.design }.collectLatest { d ->
-                delay(SAVE_DELAY_MS)
-                withContext(saveDispatcher) { store.saveCurrent(d) }
-            }
-        }
+        viewModelScope.launch { autosave(state, persistence, saveDispatcher, SAVE_DELAY_MS) }
     }
 
     /** Called when the app leaves the screen, so nothing typed in the last moment is lost. Never blocks the main thread. */
     fun saveNow() {
         val d = state.design
-        flushScope.launch(saveDispatcher) { store.saveCurrent(d) }
+        flushScope.launch(saveDispatcher) { persistence.persist(d) }
     }
 
     /**
@@ -136,6 +139,18 @@ internal fun dialogName(name: String, max: Int = 40, noName: String = NO_NAME): 
     return "$cut…"
 }
 
+/** The app came to the front: sync listens again (and runs one pass if it was told it was in the background). */
+internal fun reportStarted(setForeground: (Boolean) -> Unit) = setForeground(true)
+
+/**
+ * The activity stopped. A stop for a configuration change (rotation, dark mode, font size) is followed by a start of the
+ * recreated activity within a moment and the person never left the app, so sync is not told: telling it would stop the
+ * listeners, and the start that follows would restart them and force a pass for every rotation.
+ */
+internal fun reportStopped(changingConfigurations: Boolean, setForeground: (Boolean) -> Unit) {
+    if (!changingConfigurations) setForeground(false)
+}
+
 class MainActivity : ComponentActivity() {
     private val model: AppModel by viewModels()
     private val watchChecker: WatchStatusChecker by lazy { gmsWatchStatusChecker(applicationContext) }
@@ -146,10 +161,18 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         if (savedInstanceState == null) loadFromIntent(intent)
         setContent {
-            AppShell(model.state, model.store, model.send, watchChecker, model.pendingLinkDesign, onboarding = onboardingHost) {
-                model.pendingLinkDesign = null
+            CompositionLocalProvider(LocalAccounts provides model.accounts) {
+                AppShell(model.state, model.store, model.send, watchChecker, model.pendingLinkDesign, onboarding = onboardingHost) {
+                    model.pendingLinkDesign = null
+                }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        CurrentActivity.set(this)   // the Google account chooser needs a visible Activity
+        reportStarted(model.accounts::setForeground)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -161,6 +184,8 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         model.saveNow()
+        CurrentActivity.clear(this)
+        reportStopped(isChangingConfigurations, model.accounts::setForeground)
     }
 
     private fun loadFromIntent(intent: Intent?) {
