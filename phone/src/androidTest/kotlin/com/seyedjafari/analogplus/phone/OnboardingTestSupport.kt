@@ -2,16 +2,19 @@ package com.seyedjafari.analogplus.phone
 
 import android.os.ParcelFileDescriptor
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.unit.Density
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.test.platform.app.InstrumentationRegistry
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.phone.ui.onboarding.BackupPageSlot
 import com.seyedjafari.analogplus.phone.ui.onboarding.OnboardingHost
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatus
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatusChecker
@@ -56,7 +59,8 @@ internal class TestLifecycle(initial: Lifecycle.State = Lifecycle.State.RESUMED)
 /**
  * The pieces `AppShell` needs, built over an in-memory store. [startAt] is written to the store before the controller
  * is created, like a state left behind by an earlier run of the app. [show] renders the real `AppShell` with the
- * onboarding gate (`OnboardingHost(controller)`) in a [PinnedWindow].
+ * onboarding gate (`OnboardingHost(controller)`, with [show]'s `backupPage` when a test brings its own) in a [PinnedWindow]. `animationScale = null`
+ * reads the device's animator setting, `fontScale = null` the device's font scale.
  */
 internal class ShellFixture(
     val kv: MemoryKv = MemoryKv(),
@@ -77,12 +81,19 @@ internal class ShellFixture(
         pendingLink: DesignSettings? = null,
         animationScale: Float? = 1f,
         onPendingLinkResolved: () -> Unit = {},
+        backupPage: BackupPageSlot? = null,
+        fontScale: Float? = null,
     ) {
         // pinned, so the result does not depend on the emulator's animator_duration_scale; null reads the device's setting
         rule.setContent {
-            CompositionLocalProvider(LocalAnimationScale provides animationScale) {
+            val base = LocalDensity.current
+            CompositionLocalProvider(LocalAnimationScale provides animationScale, LocalDensity provides Density(base.density, fontScale ?: base.fontScale)) {
                 PinnedWindow(window) {
-                    AppShell(state, store, send, watch, pendingLink, OnboardingHost(controller), onPendingLinkResolved)
+                    AppShell(
+                        state, store, send, watch, pendingLink,
+                        if (backupPage == null) OnboardingHost(controller) else OnboardingHost(controller, backupPage),
+                        onPendingLinkResolved,
+                    )
                 }
             }
         }
