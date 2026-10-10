@@ -51,11 +51,9 @@ fun needsReplaceConfirmation(current: DesignSettings, target: DesignSettings): B
 fun TemplatePage(state: EditorState, modifier: Modifier = Modifier) {
     var pending by remember { mutableStateOf<PendingReplace?>(null) }
     val choose: (DesignSettings) -> Unit = { target ->
-        when {
-            target == state.design -> {}                                              // already the design: nothing to do
-            needsReplaceConfirmation(state.design, target) -> pending = PendingReplace(target.name, target)
-            else -> state.replace(target)
-        }
+        // an equal design needs no confirmation (see needsReplaceConfirmation) and replacing it with itself changes nothing
+        if (needsReplaceConfirmation(state.design, target)) pending = PendingReplace(target.name, target)
+        else state.replace(target)
     }
     ReplaceDialog(pending, onConfirm = { state.replace(it.design); pending = null }, onCancel = { pending = null })
 
