@@ -24,6 +24,14 @@ fun interface PhotoDownscaler {
 }
 
 /** The outcome of mapping a design for the cloud. Never a silent loss: every way the cloud copy differs has its own case. */
+/** The `design` string that would be written for this result (a design with a dropped photo counts), null when nothing can be written. */
+val MappedDesign.remoteJson: String?
+    get() = when (this) {
+        is MappedDesign.Ok -> json
+        is MappedDesign.PhotoDropped -> json
+        is MappedDesign.TooLarge -> null
+    }
+
 sealed interface MappedDesign {
     /** The whole design, photo included if it has one. */
     data class Ok(val json: String) : MappedDesign

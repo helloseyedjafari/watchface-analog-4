@@ -35,19 +35,34 @@ sealed interface SyncAction {
     data class KeepBoth(override val id: String, val remote: RemoteDesign, val copyName: String) : SyncAction
 }
 
+/** Firestore rules cap a design name at this many characters. */
+const val MAX_DESIGN_NAME_CHARS = 100
+
 /**
  * Per-design last write wins (pure, no I/O).
  *
  * A side "changed" when the phone's entry is dirty (local) or the cloud `updatedAt` is newer than the base the phone
  * last saw (cloud). One side changed: that side wins. Both changed: the later edit wins, comparing the phone's edit time
  * with the server's `updatedAt` (ties go to the cloud); a deletion is just an edit, so a newer edit on the other side
- * revives the design. Designs the phone never synced that differ on both sides are kept both ways ([SyncAction.KeepBoth]).
- * A synced, untouched design that vanished from the cloud is left alone (see the comment in the code).
+ * revives the design. A synced, untouched design that vanished from the cloud is left alone (see the comment in the code).
+ *
+ * A design with no shared history ([LocalDesignEntry.baseRemoteAtMs] null: never synced, or the phone was bound to another
+ * account, or the journal was damaged) is never deleted in either direction: a deletion on one side is only a deletion of
+ * a design the other side has not seen, so the surviving copy wins ([SyncAction.PushLive] / [SyncAction.ApplyRemoteLive])
+ * and two live copies that differ are kept both ways ([SyncAction.KeepBoth]).
+ *
+ * [localRemoteJson] turns a local design into the `design` string it would be written as (photo shrunk), so that the two
+ * sides are compared like with like; null means "cannot be written", which is never equal to the cloud copy.
+ * [copySuffix] is the text appended to the name of this phone's copy in a [SyncAction.KeepBoth] (a string resource,
+ * resolved by the caller). The copy name is free among [takenNames] and every name in [remote], tombstones included.
  */
-fun planSync(local: List<LocalDesignEntry>, remote: List<RemoteDesign>, takenNames: Set<String>): List<SyncAction> {
+fun planSync(
+    local: List<LocalDesignEntry>, remote: List<RemoteDesign>, takenNames: Set<String>,
+    localRemoteJson: (DesignSettings) -> String?, copySuffix: String,
+): List<SyncAction> {
     val localById = local.associateBy { it.id }
     val remoteById = remote.associateBy { it.id }
-    val taken = takenNames.toMutableSet()
+    val taken = (takenNames + remote.map { it.name }).toMutableSet()
     val actions = ArrayList<SyncAction>()
     for (id in (localById.keys + remoteById.keys)) {
         val l = localById[id]
@@ -61,45 +76,77 @@ fun planSync(local: List<LocalDesignEntry>, remote: List<RemoteDesign>, takenNam
                 EntryState.TOMBSTONE -> actions += SyncAction.Drop(id)
             }
             l == null -> if (r.state == DesignState.LIVE) actions += SyncAction.ApplyRemoteLive(id, r)
-            else -> actions += planOne(l, r, taken)
+            else -> actions += Planner(l, r, taken, localRemoteJson, copySuffix).plan()
         }
     }
     return actions
 }
 
-private fun planOne(l: LocalDesignEntry, r: RemoteDesign, taken: MutableSet<String>): List<SyncAction> {
-    val id = l.id
-    val remoteChanged = l.baseRemoteAtMs == null || r.updatedAtMs > l.baseRemoteAtMs
-    val localChanged = l.mark == SyncMark.DIRTY
-    fun push() = if (l.state == EntryState.LIVE) SyncAction.PushLive(id) else SyncAction.PushTombstone(id)
-    fun take() = if (r.state == DesignState.LIVE) SyncAction.ApplyRemoteLive(id, r) else SyncAction.ApplyRemoteTombstone(id, r)
-    fun sameContent(): Boolean {
+private class Planner(
+    private val l: LocalDesignEntry,
+    private val r: RemoteDesign,
+    private val taken: MutableSet<String>,
+    private val localRemoteJson: (DesignSettings) -> String?,
+    private val copySuffix: String,
+) {
+    private val id = l.id
+    private fun push() = if (l.state == EntryState.LIVE) SyncAction.PushLive(id) else SyncAction.PushTombstone(id)
+    private fun take() = if (r.state == DesignState.LIVE) SyncAction.ApplyRemoteLive(id, r) else SyncAction.ApplyRemoteTombstone(id, r)
+
+    /** Both live and equal as cloud documents (the local design is mapped the way it would be written), or both deleted. */
+    private fun sameContent(): Boolean {
         if (l.state == EntryState.TOMBSTONE && r.state == DesignState.TOMBSTONE) return true
-        if (l.state == EntryState.LIVE && r.state == DesignState.LIVE) {
-            val remoteDesign = designFromRemoteJson(r.designJson)
-            return remoteDesign != null && remoteDesign == l.design
-        }
-        return false
+        if (l.state != EntryState.LIVE || r.state != DesignState.LIVE) return false
+        val remoteDesign = designFromRemoteJson(r.designJson) ?: return false
+        val mine = l.design?.let(localRemoteJson)?.let(::designFromRemoteJson) ?: return false
+        return remoteDesign == mine
     }
-    return when {
-        !remoteChanged && !localChanged -> emptyList()
-        localChanged && !remoteChanged -> listOf(push())
-        !localChanged -> if (sameContent()) listOf(SyncAction.RecordBase(id, r)) else listOf(take())
-        sameContent() -> listOf(SyncAction.RecordBase(id, r))
-        l.baseRemoteAtMs == null && l.state == EntryState.LIVE && r.state == DesignState.LIVE -> {
-            val copy = uniqueName("${l.name} (this phone)", taken)
-            taken += copy
-            listOf(SyncAction.KeepBoth(id, r, copy))
+
+    fun plan(): List<SyncAction> {
+        val base = l.baseRemoteAtMs ?: return planWithoutHistory()
+        val remoteChanged = r.updatedAtMs > base
+        val localChanged = l.mark == SyncMark.DIRTY
+        return when {
+            !remoteChanged && !localChanged -> emptyList()
+            localChanged && !remoteChanged -> listOf(push())
+            !localChanged -> if (sameContent()) listOf(SyncAction.RecordBase(id, r)) else listOf(take())
+            sameContent() -> listOf(SyncAction.RecordBase(id, r))
+            l.modifiedAtMs > r.updatedAtMs -> listOf(push())
+            else -> listOf(take())
         }
-        l.modifiedAtMs > r.updatedAtMs -> listOf(push())
-        else -> listOf(take())
+    }
+
+    /** No timestamps are comparable, and a deletion on one side was of a design the other side never had: keep it. */
+    private fun planWithoutHistory(): List<SyncAction> = when (l.state) {
+        EntryState.LIVE -> when (r.state) {
+            DesignState.TOMBSTONE -> listOf(SyncAction.PushLive(id))
+            DesignState.LIVE -> if (sameContent()) {
+                listOf(SyncAction.RecordBase(id, r))
+            } else {
+                val copy = uniqueName(l.name, taken, copySuffix)
+                taken += copy
+                listOf(SyncAction.KeepBoth(id, r, copy))
+            }
+        }
+        EntryState.TOMBSTONE -> when (r.state) {
+            DesignState.LIVE -> listOf(SyncAction.ApplyRemoteLive(id, r))
+            DesignState.TOMBSTONE -> listOf(SyncAction.RecordBase(id, r))
+        }
     }
 }
 
-/** [base], or "[base] 2", "[base] 3" ... the first one not in [taken]. */
-fun uniqueName(base: String, taken: Set<String>): String {
-    if (base !in taken) return base
-    var n = 2
-    while ("$base $n" in taken) n++
-    return "$base $n"
+/**
+ * [base] + [suffix], or with " 2", " 3" ... after it: the first one not in [taken] and at most [maxLength] characters.
+ * It is [base] that is cut (never in the middle of a surrogate pair), so the suffix and the counter always survive.
+ */
+fun uniqueName(base: String, taken: Set<String>, suffix: String = "", maxLength: Int = MAX_DESIGN_NAME_CHARS): String {
+    var n = 1
+    while (true) {
+        val tail = suffix + if (n == 1) "" else " $n"
+        var stem = base.take((maxLength - tail.length).coerceAtLeast(0))
+        if (stem.length < base.length && stem.isNotEmpty() && stem.last().isHighSurrogate()) stem = stem.dropLast(1)
+        val candidate = stem + tail
+        if (candidate !in taken) return candidate
+        n++
+    }
 }

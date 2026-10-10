@@ -26,6 +26,9 @@
     <!-- Application -->
     <string name="app_name">Analog Plus</string>
 
+    <!-- Sync: appended to the name of this phone's copy when a design differs in the cloud and on the phone (planSync copySuffix) -->
+    <string name="sync_copy_suffix">" (this phone)"</string>
+
     <!-- Share link and QR code problems (ShareProblem.text(Resources); the English wording is ShareProblem.english) -->
     <string name="share_error_empty_link">Paste an analogplus://design link first.</string>
     <string name="share_error_not_a_link">That is not an Analog Plus design link.</string>

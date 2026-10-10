@@ -45,10 +45,16 @@ interface RemoteStore {
     suspend fun deleteAllUserData(uid: String)
 }
 
-/** Maps a Firestore status code name (`FirebaseFirestoreException.Code.name`) to a [RemoteErrorKind]. */
+/**
+ * Maps a Firestore status code name (`FirebaseFirestoreException.Code.name`) to a [RemoteErrorKind].
+ *
+ * UNAUTHENTICATED is [RemoteErrorKind.OFFLINE] (retry later), not PERMISSION: right after sign-in, or when the ID token
+ * expired, the first request can arrive before the fresh token is attached and succeeds on the next try, so the sync
+ * engine must not stop for good. PERMISSION_DENIED (the rules say no) stays permanent.
+ */
 fun remoteErrorKind(firestoreCodeName: String): RemoteErrorKind = when (firestoreCodeName) {
-    "UNAVAILABLE", "DEADLINE_EXCEEDED", "CANCELLED" -> RemoteErrorKind.OFFLINE
-    "PERMISSION_DENIED", "UNAUTHENTICATED" -> RemoteErrorKind.PERMISSION
+    "UNAVAILABLE", "DEADLINE_EXCEEDED", "CANCELLED", "UNAUTHENTICATED" -> RemoteErrorKind.OFFLINE
+    "PERMISSION_DENIED" -> RemoteErrorKind.PERMISSION
     "RESOURCE_EXHAUSTED" -> RemoteErrorKind.QUOTA
     else -> RemoteErrorKind.OTHER
 }

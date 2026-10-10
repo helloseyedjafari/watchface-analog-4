@@ -1,5 +1,7 @@
 package com.seyedjafari.analogplus.phone.accounts
 
+import com.seyedjafari.analogplus.facegen.design.BackgroundDesign
+import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import org.junit.Assert.assertEquals
@@ -14,7 +16,9 @@ class SyncResolverTest {
     private fun local(
         id: String, d: DesignSettings?, modified: Long, base: Long?, mark: SyncMark, state: EntryState = EntryState.LIVE, name: String = "n",
     ) = LocalDesignEntry(id, name, d, state, modified, base, mark)
-    private fun plan(l: List<LocalDesignEntry>, r: List<RemoteDesign>) = planSync(l, r, l.map { it.name }.toSet())
+    private val suffix = " (this phone)"
+    private val toJson: (DesignSettings) -> String? = { DesignJson.toJson(it) }
+    private fun plan(l: List<LocalDesignEntry>, r: List<RemoteDesign>) = planSync(l, r, l.map { it.name }.toSet(), toJson, suffix)
 
     @Test fun nothingToDoWhenBothSidesAgree() {
         assertEquals(emptyList<SyncAction>(), plan(listOf(local("1", a, 10, 500, SyncMark.CLEAN)), listOf(remote("1", a, 500))))
@@ -118,13 +122,135 @@ class SyncResolverTest {
         val r = remote("1", b, 5_000, name = "Night")
         val l = local("1", a, 9_000, null, SyncMark.DIRTY, name = "Night")
         val taken = setOf("Night", "Night (this phone)")
-        assertEquals("Night (this phone) 2", (planSync(listOf(l), listOf(r), taken).single() as SyncAction.KeepBoth).copyName)
+        assertEquals("Night (this phone) 2", (planSync(listOf(l), listOf(r), taken, toJson, suffix).single() as SyncAction.KeepBoth).copyName)
     }
 
     @Test fun unreadableRemoteJsonIsNeverTreatedAsEqual() {
         val bad = RemoteDesign("1", "n", "{not json", 5_000, DesignState.LIVE, 1)
-        val actions = plan(listOf(local("1", a, 9_000, null, SyncMark.DIRTY)), listOf(bad))
-        assertTrue(actions.single() is SyncAction.KeepBoth || actions.single() is SyncAction.PushLive)
+        val actions = plan(listOf(local("1", a, 9_000, null, SyncMark.DIRTY, name = "Night")), listOf(bad))
+        assertEquals(listOf(SyncAction.KeepBoth("1", bad, "Night (this phone)")), actions)
+    }
+
+    // ---- no shared history (base == null): nothing may be deleted in either direction --------------------------------
+
+    @Test fun aLocalDesignIsNotDeletedByACloudTombstoneItNeverSaw() {
+        for (cloudAt in listOf(5_000L, 20_000L)) { // older and newer than the local edit
+            val l = local("1", a, 10_000, null, SyncMark.DIRTY)
+            assertEquals(listOf(SyncAction.PushLive("1")), plan(listOf(l), listOf(remote("1", a, cloudAt, DesignState.TOMBSTONE))))
+        }
+    }
+
+    @Test fun aLocalDeletionDoesNotDeleteACloudDesignThePhoneNeverSaw() {
+        val r = remote("1", b, 5_000)
+        val l = local("1", null, 9_000, null, SyncMark.DIRTY, EntryState.TOMBSTONE)
+        assertEquals(listOf(SyncAction.ApplyRemoteLive("1", r)), plan(listOf(l), listOf(r)))
+    }
+
+    @Test fun tombstonesOnBothSidesWithoutHistoryOnlyRecordTheBase() {
+        val r = remote("1", a, 5_000, DesignState.TOMBSTONE)
+        val l = local("1", null, 9_000, null, SyncMark.DIRTY, EntryState.TOMBSTONE)
+        assertEquals(listOf(SyncAction.RecordBase("1", r)), plan(listOf(l), listOf(r)))
+    }
+
+    @Test fun differingContentWithoutHistoryIsKeptBothWaysWhicheverSideIsNewer() {
+        for (cloudAt in listOf(5_000L, 20_000L)) {
+            val r = remote("1", b, cloudAt, name = "Night")
+            val l = local("1", a, 10_000, null, SyncMark.DIRTY, name = "Night")
+            assertEquals(listOf(SyncAction.KeepBoth("1", r, "Night (this phone)")), plan(listOf(l), listOf(r)))
+        }
+    }
+
+    @Test fun signingInToAnotherAccountMergesWithoutDeletingAnythingEitherWay() {
+        // The phone was signed in to account A: "Night" synced and untouched, "Day" deleted and confirmed, "Mine" synced.
+        val kv = MemoryKeyValueStore()
+        val journal = SyncJournal(kv) { 1_000 }
+        journal.bindTo("A")
+        journal.markApplied(designId("Night"), "Night", EntryState.LIVE, 700)
+        journal.markApplied(designId("Day"), "Day", EntryState.TOMBSTONE, 800)
+        journal.markApplied(designId("Mine"), "Mine", EntryState.LIVE, 900)
+        assertEquals(BindResult.NEW_ACCOUNT, journal.bindTo("B"))
+        val designs = mapOf("Night" to a, "Mine" to a)
+        val local = journal.entries().map { (id, e) ->
+            LocalDesignEntry(id, e.name, designs[e.name].takeIf { e.state == EntryState.LIVE }, e.state, e.modifiedAtMs, e.baseRemoteAtMs, e.mark)
+        }
+        // Account B has its own "Night", has not deleted "Day", and deleted a "Mine" this phone never uploaded to B.
+        val rNight = remote(designId("Night"), b, 3_000, name = "Night")
+        val rDay = remote(designId("Day"), b, 3_000, name = "Day")
+        val rMine = remote(designId("Mine"), a, 3_000, DesignState.TOMBSTONE, name = "Mine")
+        val actions = planSync(local, listOf(rNight, rDay, rMine), local.map { it.name }.toSet(), toJson, suffix)
+        assertEquals(
+            setOf(
+                SyncAction.KeepBoth(designId("Night"), rNight, "Night (this phone)"),
+                SyncAction.ApplyRemoteLive(designId("Day"), rDay),
+                SyncAction.PushLive(designId("Mine")),
+            ),
+            actions.toSet(),
+        )
+        assertEquals(3, actions.size)
+    }
+
+    // ---- names ------------------------------------------------------------------------------------------------------
+
+    @Test fun aKeepBothCopyNeverTakesTheNameOfADocumentThatIsOnlyInTheCloud() {
+        val rNight = remote("1", b, 5_000, name = "Night")
+        val rCopy = remote("2", b, 5_000, name = "Night (this phone)")
+        val rGone = remote("3", a, 5_000, DesignState.TOMBSTONE, name = "Night (this phone) 2")
+        val l = local("1", a, 9_000, null, SyncMark.DIRTY, name = "Night")
+        val copy = (planSync(listOf(l), listOf(rNight, rCopy, rGone), setOf("Night"), toJson, suffix).first { it.id == "1" } as SyncAction.KeepBoth).copyName
+        assertEquals("Night (this phone) 3", copy)
+    }
+
+    @Test fun theCopySuffixIsTheCallersNotHardCoded() {
+        val r = remote("1", b, 5_000, name = "Night")
+        val l = local("1", a, 9_000, null, SyncMark.DIRTY, name = "Night")
+        val copy = (planSync(listOf(l), listOf(r), setOf("Night"), toJson, " [mon téléphone]").single() as SyncAction.KeepBoth).copyName
+        assertEquals("Night [mon téléphone]", copy)
+    }
+
+    @Test fun theSuffixStringResourceIsTheEnglishTheTestsUse() {
+        assertEquals(suffix, com.seyedjafari.analogplus.phone.StringsXml.text("sync_copy_suffix"))
+    }
+
+    @Test fun uniqueNameNeverExceedsTheFirestoreNameLimit() {
+        val long = "x".repeat(99)
+        val first = uniqueName(long, emptySet(), suffix)
+        assertEquals(100, first.length)
+        assertTrue(first.endsWith(suffix))
+        val second = uniqueName(long, setOf(first), suffix)
+        assertTrue("was ${second.length} chars", second.length <= 100)
+        assertTrue(second != first && second.endsWith(" 2"))
+        val full = "y".repeat(100)
+        assertEquals("y".repeat(98) + " 2", uniqueName(full, setOf(full), ""))
+        assertEquals("y".repeat(98) + " 3", uniqueName(full, setOf(full, "y".repeat(98) + " 2"), ""))
+    }
+
+    @Test fun uniqueNameDoesNotSplitASurrogatePair() {
+        val name = "x".repeat(97) + "😀" + "y" // 100 chars; room for " 2" cuts through the emoji
+        assertEquals("x".repeat(97) + " 2", uniqueName(name, setOf(name), ""))
+    }
+
+    // ---- comparing like with like (photos) --------------------------------------------------------------------------
+
+    private val photoDesign = DesignSettings(background = BackgroundDesign(kind = BackgroundKind.PHOTO, photoJpeg = ByteArray(5000) { 3 }))
+    private val shrunkJson = DesignJson.toJson(photoDesign.copy(background = photoDesign.background.copy(photoJpeg = ByteArray(40) { 3 })))
+    private val shrink: (DesignSettings) -> String? = { d -> DesignJson.toJson(d.copy(background = d.background.copy(photoJpeg = d.background.photoJpeg?.copyOf(40)))) }
+
+    @Test fun aPhotoDesignEqualsItsOwnShrunkCloudCopyAndIsNotCloned() {
+        val r = RemoteDesign("1", "Photo", shrunkJson, 5_000, DesignState.LIVE, 1)
+        val l = local("1", photoDesign, 9_000, null, SyncMark.DIRTY, name = "Photo")
+        assertEquals(listOf(SyncAction.RecordBase("1", r)), planSync(listOf(l), listOf(r), setOf("Photo"), shrink, suffix))
+    }
+
+    @Test fun withoutTheShrinkingFunctionThePhotoDesignWouldDiffer() {
+        val r = RemoteDesign("1", "Photo", shrunkJson, 5_000, DesignState.LIVE, 1)
+        val l = local("1", photoDesign, 9_000, null, SyncMark.DIRTY, name = "Photo")
+        assertTrue(planSync(listOf(l), listOf(r), setOf("Photo"), toJson, suffix).single() is SyncAction.KeepBoth)
+    }
+
+    @Test fun aLocalDesignThatCannotBeMappedIsNeverEqualToTheCloud() {
+        val r = remote("1", a, 5_000)
+        val l = local("1", a, 9_000, null, SyncMark.DIRTY)
+        assertTrue(planSync(listOf(l), listOf(r), setOf("n"), { null }, suffix).single() is SyncAction.KeepBoth)
     }
 
     // Plan Review Focus 1: a phone that is still signed in must not re-upload what another phone deleted.
@@ -157,7 +283,7 @@ class SyncResolverTest {
             local("2", a, 9_000, null, SyncMark.DIRTY, name = "Night (this phone)"),
         )
         val r = listOf(remote("1", b, 5_000, name = "Night"), remote("2", b, 5_000, name = "Night (this phone)"))
-        val names = planSync(l, r, setOf("Night", "Night (this phone)")).map { (it as SyncAction.KeepBoth).copyName }
+        val names = planSync(l, r, setOf("Night", "Night (this phone)"), toJson, suffix).map { (it as SyncAction.KeepBoth).copyName }
         assertEquals(2, names.toSet().size)
         assertTrue(names.none { it == "Night" || it == "Night (this phone)" })
     }
@@ -190,7 +316,8 @@ class SyncResolverTest {
         assertEquals(RemoteErrorKind.OFFLINE, remoteErrorKind("UNAVAILABLE"))
         assertEquals(RemoteErrorKind.OFFLINE, remoteErrorKind("DEADLINE_EXCEEDED"))
         assertEquals(RemoteErrorKind.PERMISSION, remoteErrorKind("PERMISSION_DENIED"))
-        assertEquals(RemoteErrorKind.PERMISSION, remoteErrorKind("UNAUTHENTICATED"))
+        // Right after sign-in the token can still be refreshing: retryable, unlike a real PERMISSION_DENIED.
+        assertEquals(RemoteErrorKind.OFFLINE, remoteErrorKind("UNAUTHENTICATED"))
         assertEquals(RemoteErrorKind.QUOTA, remoteErrorKind("RESOURCE_EXHAUSTED"))
         assertEquals(RemoteErrorKind.OTHER, remoteErrorKind("INTERNAL"))
     }

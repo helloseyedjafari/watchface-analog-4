@@ -54,6 +54,12 @@ class DesignMapperTest {
         assertNull(designFromRemoteJson((r as MappedDesign.PhotoDropped).json)!!.background.photoJpeg)
     }
 
+    @Test fun remoteJsonIsTheDocumentTheCloudWouldHoldOrNullWhenNothingCanBeWritten() {
+        assertEquals("a", MappedDesign.Ok("a").remoteJson)
+        assertEquals("b", MappedDesign.PhotoDropped("b").remoteJson)
+        assertNull(MappedDesign.TooLarge(1_000_000).remoteJson)
+    }
+
     @Test fun aDesignWithoutAPhotoIsOkEvenWhenItsBackgroundKindIsPhoto() {
         val d = DesignSettings(name = "NoBytes", background = BackgroundDesign(kind = BackgroundKind.PHOTO, photoJpeg = null))
         assertTrue(designToRemoteJson(d, { error("nothing to shrink") }) is MappedDesign.Ok)
