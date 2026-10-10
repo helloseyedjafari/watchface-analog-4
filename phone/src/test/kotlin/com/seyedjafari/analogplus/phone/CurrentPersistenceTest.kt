@@ -9,6 +9,7 @@ import com.seyedjafari.analogplus.phone.accounts.CurrentApplier
 import com.seyedjafari.analogplus.phone.accounts.FakeRemoteStore
 import com.seyedjafari.analogplus.phone.accounts.MemoryKeyValueStore
 import com.seyedjafari.analogplus.phone.accounts.PhotoDownscaler
+import com.seyedjafari.analogplus.phone.accounts.RemoteCurrent
 import com.seyedjafari.analogplus.phone.accounts.SyncEngine
 import com.seyedjafari.analogplus.phone.accounts.SyncJournal
 import java.io.File
@@ -58,7 +59,7 @@ class CurrentPersistenceTest {
     }
 
     /** One launch of the app, signed in as u1. The photo read-back waits for [attach] so a test can act while it is LOADING. */
-    private inner class Launch(scope: TestScope) {
+    private inner class Launch(scope: TestScope, inSync: Boolean = true) {
         val store = Store(kv, photoFile)
         val designAtStart = store.loadCurrentWithoutPhoto()
         val state = EditorState(designAtStart, PhotoLoad.LOADING)
@@ -74,6 +75,10 @@ class CurrentPersistenceTest {
         }
 
         init {
+            if (inSync) {   // this phone gave the cloud its current design earlier: sign-in has nothing to seed
+                journal.bindTo("u1"); journal.markCurrentPushed(journal.currentStamp())
+                remote.seedCurrent("u1", RemoteCurrent(DesignJson.toJson(designAtStart), 2_000_000, "a", "Phone"))
+            }
             store.addObserver(journal)
             store.addObserver(engine)
             engine.start("u1")
@@ -89,6 +94,7 @@ class CurrentPersistenceTest {
         /** The photo read-back runs; then the state change it made is announced to the autosave, as the running app's UI does. */
         fun finishLoading(scope: TestScope, advance: Boolean = true) {
             attach.start(); scope.runCurrent()
+            engine.editorComplete()                          // what AppModel does after the photo is attached
             Snapshot.sendApplyNotifications(); if (advance) scope.runCurrent()
         }
 
@@ -114,6 +120,18 @@ class CurrentPersistenceTest {
         attachNothing(app)
         advanceTimeBy(1_000); runCurrent()
         assertEquals(DesignJson.toJson(DesignSettings()), kv.getString("current_design"))
+    }
+
+    @Test fun aLaunchNeverOverwritesANewerDesignFromAnotherPhoneItOffersInstead() = runTest {
+        leftBehind(night)
+        remote.seedCurrent("u1", RemoteCurrent(DesignJson.toJson(night.copy(accent = "#FF00FF00")), 9_000_000, "other", "Pixel 8"))
+        val app = Launch(this, inSync = false)
+        attachNothing(app)
+        advanceTimeBy(5_000); runCurrent()
+        app.flush()
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(emptyList<DesignSettings>(), app.pushed())
+        assertNotNull(app.engine.currentOffer.value)
     }
 
     @Test fun anEditAfterLaunchIsPushedOnceAndTheFlushAfterItPushesNothingMore() = runTest {

@@ -1,5 +1,6 @@
 package com.seyedjafari.analogplus.phone.accounts
 
+import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.ChangeOrigin
 import com.seyedjafari.analogplus.phone.KeyValueStore
 import com.seyedjafari.analogplus.phone.SavedChange
@@ -53,23 +54,59 @@ const val TOMBSTONE_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
  *
  * A damaged journal restarts empty; a single malformed entry (for example a value written by a newer app version) is
  * skipped on its own and the rest is kept.
+ *
+ * It also remembers whether the design being edited has been saved by the person (or the account is new) and not yet given
+ * to the cloud ([currentDirty]): the engine's in-memory queue dies with the process, this does not.
  */
 class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long = System::currentTimeMillis) : StoreObserver {
-    private val lock = Any()
-
     private class Data(
         var boundUid: String? = null,
         var currentSeenRemoteAtMs: Long = 0,
+        var currentModifiedAtMs: Long = 0,
+        var currentMark: SyncMark = SyncMark.CLEAN,
         val entries: LinkedHashMap<String, JournalEntry> = LinkedHashMap(),
     )
 
-    fun entries(): Map<String, JournalEntry> = synchronized(lock) { read().entries.toMap() }
+    fun entries(): Map<String, JournalEntry> = synchronized(LOCK) { read().entries.toMap() }
 
-    fun boundUid(): String? = synchronized(lock) { read().boundUid }
+    fun boundUid(): String? = synchronized(LOCK) { read().boundUid }
 
-    fun currentSeenRemoteAtMs(): Long = synchronized(lock) { read().currentSeenRemoteAtMs }
+    fun currentSeenRemoteAtMs(): Long = synchronized(LOCK) { read().currentSeenRemoteAtMs }
 
-    fun setCurrentSeenRemoteAtMs(ms: Long) = synchronized(lock) {
+    /** True when the design being edited was saved (or the account is new) and the cloud has not been given it since. */
+    fun currentDirty(): Boolean = synchronized(LOCK) { read().currentMark == SyncMark.DIRTY }
+
+    /** Tells two saves of the design being edited apart, like [JournalEntry.modifiedAtMs]; the mark clears only for the save that was pushed. */
+    fun currentStamp(): Long = synchronized(LOCK) { read().currentModifiedAtMs }
+
+    /** A save by the person of the design being edited: it is not in the cloud yet, and this is remembered across restarts. */
+    override fun onCurrentSaved(design: DesignSettings, origin: ChangeOrigin) {
+        if (origin != ChangeOrigin.USER) return
+        synchronized(LOCK) {
+            val d = read()
+            markCurrentDirty(d)
+            write(d)
+        }
+    }
+
+    /**
+     * The engine pushed (or found the cloud already holding) the design saved at [expectedStamp]. The mark clears only if no
+     * newer save happened since; otherwise it stays set for that newer save.
+     */
+    fun markCurrentPushed(expectedStamp: Long) = synchronized(LOCK) {
+        val d = read()
+        if (d.currentMark == SyncMark.DIRTY && d.currentModifiedAtMs == expectedStamp) {
+            d.currentMark = SyncMark.CLEAN
+            write(d)
+        }
+    }
+
+    private fun markCurrentDirty(d: Data) {
+        d.currentModifiedAtMs = maxOf(clock(), d.currentModifiedAtMs + 1)
+        d.currentMark = SyncMark.DIRTY
+    }
+
+    fun setCurrentSeenRemoteAtMs(ms: Long) = synchronized(LOCK) {
         val d = read()
         if (ms > d.currentSeenRemoteAtMs) { d.currentSeenRemoteAtMs = ms; write(d) }
     }
@@ -78,21 +115,23 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
      * Ties the journal to the signed-in account. For another account than before (or the first ever) every design is
      * treated as never synced, so it is merged into that account; for the same account nothing changes.
      */
-    fun bindTo(uid: String): BindResult = synchronized(lock) {
+    fun bindTo(uid: String): BindResult = synchronized(LOCK) {
         val d = read()
         if (d.boundUid == uid) return BindResult.SAME_ACCOUNT
         d.boundUid = uid
         d.currentSeenRemoteAtMs = 0
+        markCurrentDirty(d)
         for ((id, e) in d.entries.toMap()) d.entries[id] = e.copy(baseRemoteAtMs = null, mark = SyncMark.DIRTY)
         write(d)
         BindResult.NEW_ACCOUNT
     }
 
     /** Forgets the account and every base (after the account was deleted); local designs stay and count as unsynced. */
-    fun unbind() = synchronized(lock) {
+    fun unbind() = synchronized(LOCK) {
         val d = read()
         d.boundUid = null
         d.currentSeenRemoteAtMs = 0
+        markCurrentDirty(d)
         for ((id, e) in d.entries.toMap()) d.entries[id] = e.copy(baseRemoteAtMs = null, mark = SyncMark.DIRTY)
         write(d)
     }
@@ -102,7 +141,7 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
      * dirty live entry stamped now; a live entry whose design is gone is removed; a deletion the cloud confirmed
      * (CLEAN, with a base) older than [TOMBSTONE_RETENTION_MS] is forgotten.
      */
-    fun reconcileWithStore(names: Collection<String>) = synchronized(lock) {
+    fun reconcileWithStore(names: Collection<String>) = synchronized(LOCK) {
         val d = read()
         var changed = false
         val ids = names.associateBy { designId(it) }
@@ -121,7 +160,7 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
 
     override fun onSavedDesignChanged(change: SavedChange, origin: ChangeOrigin) {
         if (origin != ChangeOrigin.USER) return
-        synchronized(lock) {
+        synchronized(LOCK) {
             val d = read()
             val now = clock()
             fun touch(name: String, state: EntryState) {
@@ -142,7 +181,7 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
     }
 
     /** The engine pushed [id] and the server stamped [remoteAtMs]. Stays dirty if the design changed meanwhile. */
-    fun markPushed(id: String, expectedModifiedAtMs: Long, remoteAtMs: Long) = synchronized(lock) {
+    fun markPushed(id: String, expectedModifiedAtMs: Long, remoteAtMs: Long) = synchronized(LOCK) {
         val d = read()
         val e = d.entries[id] ?: return
         d.entries[id] = if (e.modifiedAtMs == expectedModifiedAtMs) e.copy(baseRemoteAtMs = remoteAtMs, mark = SyncMark.CLEAN)
@@ -156,7 +195,7 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
      * keeps its own change, stays dirty and only learns the cloud time (so the next pass pushes the edit). Returns false in
      * that case. Without it the entry is replaced unconditionally.
      */
-    fun markApplied(id: String, name: String, state: EntryState, remoteAtMs: Long, expectedModifiedAtMs: Long? = null): Boolean = synchronized(lock) {
+    fun markApplied(id: String, name: String, state: EntryState, remoteAtMs: Long, expectedModifiedAtMs: Long? = null): Boolean = synchronized(LOCK) {
         val d = read()
         val e = d.entries[id]
         if (expectedModifiedAtMs != null && e != null && e.modifiedAtMs != expectedModifiedAtMs) {
@@ -174,7 +213,7 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
      * saved the same name in the meantime an entry exists; it keeps the user's change, stays dirty and only learns the cloud
      * time (so the next pass pushes the user's version over the cloud copy it was typed over), and this returns false.
      */
-    fun markAppliedIfAbsent(id: String, name: String, state: EntryState, remoteAtMs: Long): Boolean = synchronized(lock) {
+    fun markAppliedIfAbsent(id: String, name: String, state: EntryState, remoteAtMs: Long): Boolean = synchronized(LOCK) {
         val d = read()
         d.entries[id]?.let {
             d.entries[id] = it.copy(baseRemoteAtMs = remoteAtMs, mark = SyncMark.DIRTY)
@@ -190,14 +229,14 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
      * A design that the engine saved locally as the kept copy of a conflict has been pushed ([remoteAtMs]). Such a design has
      * no entry until now; if the user touched it meanwhile an entry exists and keeps that change (dirty, with the cloud time).
      */
-    fun markCopyPushed(id: String, name: String, remoteAtMs: Long) = synchronized(lock) {
+    fun markCopyPushed(id: String, name: String, remoteAtMs: Long) = synchronized(LOCK) {
         val d = read()
         val e = d.entries[id]
         d.entries[id] = if (e == null) JournalEntry(name, clock(), EntryState.LIVE, remoteAtMs, SyncMark.CLEAN) else e.copy(baseRemoteAtMs = remoteAtMs)
         write(d)
     }
 
-    fun drop(id: String) = synchronized(lock) {
+    fun drop(id: String) = synchronized(LOCK) {
         val d = read()
         if (d.entries.remove(id) != null) write(d)
     }
@@ -209,6 +248,8 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
             val data = Data(
                 boundUid = o["boundUid"]?.jsonPrimitive?.contentOrNull,
                 currentSeenRemoteAtMs = o["currentSeenRemoteAtMs"]?.jsonPrimitive?.longOrNull ?: 0,
+                currentModifiedAtMs = o["currentModifiedAtMs"]?.jsonPrimitive?.longOrNull ?: 0,
+                currentMark = try { SyncMark.valueOf(o["currentMark"]!!.jsonPrimitive.content) } catch (e: Exception) { SyncMark.CLEAN },
             )
             val entries = o["entries"] as? JsonObject ?: JsonObject(emptyMap())
             for ((id, v) in entries) {
@@ -232,6 +273,8 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
         val o = buildJsonObject {
             put("boundUid", d.boundUid?.let { JsonPrimitive(it) } ?: JsonNull)
             put("currentSeenRemoteAtMs", d.currentSeenRemoteAtMs)
+            put("currentModifiedAtMs", d.currentModifiedAtMs)
+            put("currentMark", d.currentMark.name)
             put("entries", buildJsonObject {
                 for ((id, e) in d.entries) put(id, buildJsonObject {
                     put("name", e.name)
@@ -247,5 +290,11 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
 
     private companion object {
         const val KEY = "sync_journal_v1"
+
+        /**
+         * One lock for every journal in the process (like `Store.LOCK`): a second `AppModel` (a second `MainActivity` instance)
+         * builds a second journal over the same preferences, and two read-modify-writes must not interleave.
+         */
+        val LOCK = Any()
     }
 }

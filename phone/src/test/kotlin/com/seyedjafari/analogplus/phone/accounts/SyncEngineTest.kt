@@ -91,6 +91,9 @@ class SyncEngineTest {
         val injected = MutableSharedFlow<List<RemoteDesign>>(extraBufferCapacity = 8)
         var hangPutCurrent = false
 
+        /** A write of the current design waits here (and is not cancelled by it) before it lands. */
+        var currentPutGate: CompletableDeferred<Unit>? = null
+
         override fun observeDesigns(uid: String): Flow<List<RemoteDesign>> = flow {
             designListens++
             dyingListenerGate?.let { gate -> withContext(NonCancellable) { gate.await() }; throw dyingListenerError }
@@ -116,6 +119,7 @@ class SyncEngineTest {
 
         override suspend fun putCurrent(uid: String, designJson: String, deviceId: String, deviceLabel: String): RemoteCurrent {
             if (hangPutCurrent) awaitCancellation()
+            currentPutGate?.let { withContext(NonCancellable) { it.await() } }
             failPutCurrent?.let { throw it }
             return inner.putCurrent(uid, designJson, deviceId, deviceLabel)
         }
@@ -136,9 +140,10 @@ class SyncEngineTest {
         val remote: FakeRemoteStore, scope: CoroutineScope, val id: String, var now: () -> Long,
         engineRemote: RemoteStore = remote, photos: PhotoDownscaler = PhotoDownscaler { it },
         io: CoroutineDispatcher = Dispatchers.Unconfined, random: () -> Double = { 1.0 },
+        val journalKv: MemoryKeyValueStore = MemoryKeyValueStore(),
     ) {
         val store = Store(MemoryKeyValueStore(), File(tmp.newFolder(), "background.jpg"))
-        val journal = SyncJournal(MemoryKeyValueStore()) { now() }
+        val journal = SyncJournal(journalKv) { now() }
         var current: DesignSettings = DesignSettings()
         val applied = ArrayList<DesignSettings>()
         val engine = SyncEngine(
@@ -153,8 +158,8 @@ class SyncEngineTest {
     private fun TestScope.phone(
         remote: FakeRemoteStore, id: String, clock: () -> Long = { testScheduler.currentTime + 5_000_000 },
         engineRemote: RemoteStore = remote, photos: PhotoDownscaler = PhotoDownscaler { it }, io: CoroutineDispatcher = Dispatchers.Unconfined,
-        random: () -> Double = { 1.0 },
-    ) = Phone(remote, backgroundScope, id, clock, engineRemote, photos, io, random)
+        random: () -> Double = { 1.0 }, journalKv: MemoryKeyValueStore = MemoryKeyValueStore(),
+    ) = Phone(remote, backgroundScope, id, clock, engineRemote, photos, io, random, journalKv)
 
     // ---- the brief's tests, adapted to the final signatures ---------------------------------------------------------
 
@@ -260,6 +265,122 @@ class SyncEngineTest {
         b.engine.onCurrentSaved(loaded, ChangeOrigin.USER)
         advanceTimeBy(5_000); runCurrent()
         assertEquals(loaded, DesignJson.fromJson(remote.currentWrites.single().designJson))
+    }
+
+    // ---- the current design survives a restart (the journal's mark) ---------------------------------------------------
+
+    @Test fun signingInOnTheOldPhoneWithoutEditingSeedsTheCloudWithItsCurrentDesign() = runTest {
+        val remote = FakeRemoteStore()
+        val a = phone(remote, "a")
+        a.current = night                                    // the design it has been showing for weeks; nothing is edited now
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(listOf(night), remote.currentWrites.map { DesignJson.fromJson(it.designJson) })
+        assertFalse(a.journal.currentDirty())
+        // the new phone then restores it without asking
+        val b = phone(remote, "b")
+        b.engine.start("u1"); runCurrent()
+        assertEquals(listOf(night), b.applied)
+    }
+
+    @Test fun aPhoneOnTheDefaultDesignSeedsNothing() = runTest {
+        val remote = FakeRemoteStore()
+        val a = phone(remote, "a")
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(0, remote.currentWrites.size)
+    }
+
+    @Test fun aPushCutOffByARestartIsReplayedFromTheJournalAndOnlyOnce() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val journalKv = MemoryKeyValueStore()
+        // the cloud holds an older design of this phone's own
+        remote.seedCurrent("u1", RemoteCurrent(DesignJson.toJson(day), 2_000_000, "a", "Phone a"))
+        val first = phone(remote, "a", engineRemote = flaky, journalKv = journalKv)
+        first.engine.start("u1"); runCurrent()
+        flaky.failPutCurrent = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        first.current = night
+        first.store.saveCurrent(night)                       // the person's edit: the journal marks it
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(0, remote.currentWrites.size)
+        assertTrue(first.journal.currentDirty())
+        first.engine.stop()                                  // the app is closed while offline; the in-memory queue dies with it
+        // next launch: the same journal, a fresh engine, the editor shows the saved design and nothing is edited
+        val second = phone(remote, "a", journalKv = journalKv)
+        second.current = night
+        second.engine.start("u1"); runCurrent()
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(listOf(night), remote.currentWrites.map { DesignJson.fromJson(it.designJson) })
+        assertFalse(second.journal.currentDirty())
+        // and a launch after that has nothing to replay
+        second.engine.stop()
+        val third = phone(remote, "a", journalKv = journalKv)
+        third.current = night
+        third.engine.start("u1"); runCurrent()
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(1, remote.currentWrites.size)
+    }
+
+    @Test fun aReplayDoesNotOverwriteANewerDesignFromAnotherPhoneItAsksFirst() = runTest {
+        val remote = FakeRemoteStore()
+        val journalKv = MemoryKeyValueStore()
+        val first = phone(remote, "a", journalKv = journalKv)
+        first.engine.start("u1"); runCurrent()
+        first.store.saveCurrent(night)                       // saved, never pushed (offline close)
+        first.engine.stop()
+        remote.seedCurrent("u1", RemoteCurrent(DesignJson.toJson(day), 9_000_000, "other", "Pixel 8"))
+        val second = phone(remote, "a", journalKv = journalKv)
+        second.current = night
+        second.engine.start("u1"); runCurrent()
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(0, remote.currentWrites.size)
+        assertNotNull(second.engine.currentOffer.value)
+        second.engine.resolveOffer(OfferChoice.KEEP_MINE)
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(listOf(night), remote.currentWrites.map { DesignJson.fromJson(it.designJson) })
+        assertFalse(second.journal.currentDirty())
+    }
+
+    @Test fun theMarkIsClearedOnlyByThePushOfTheSaveItBelongsTo() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(3_000); runCurrent()
+        val gate = CompletableDeferred<Unit>().also { flaky.currentPutGate = it }
+        a.current = night
+        a.store.saveCurrent(night)                           // save 1
+        advanceTimeBy(1_500); runCurrent()                   // its push is in flight
+        flaky.currentPutGate = null
+        val newer = night.copy(accent = "#FF00FF00")
+        a.current = newer
+        a.store.saveCurrent(newer)                           // save 2 while push 1 is still out
+        gate.complete(Unit); runCurrent()                    // push 1 lands
+        assertEquals(listOf(night), remote.currentWrites.map { DesignJson.fromJson(it.designJson) })
+        assertTrue("the newer save is not in the cloud yet", a.journal.currentDirty())
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(listOf(night, newer), remote.currentWrites.map { DesignJson.fromJson(it.designJson) })
+        assertFalse(a.journal.currentDirty())
+    }
+
+    @Test fun aKeepMineAnsweredWhileThePhotoIsStillLoadingIsPushedWithThePhotoOnceTheEditorIsComplete() = runTest {
+        val remote = FakeRemoteStore()
+        remote.seedCurrent("u1", RemoteCurrent(DesignJson.toJson(night), 2_000_000, "other", "Pixel 8"))
+        val loading = DesignSettings(accent = "#FF123456", background = BackgroundDesign(kind = BackgroundKind.PHOTO, photoJpeg = null))
+        val b = phone(remote, "b"); b.current = loading
+        b.engine.start("u1"); runCurrent()
+        b.engine.resolveOffer(OfferChoice.KEEP_MINE)
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(0, remote.currentWrites.size)           // nothing incomplete goes up
+        val loaded = loading.copy(background = loading.background.copy(photoJpeg = ByteArray(10) { 1 }))
+        b.current = loaded                                   // the photo is attached; no edit, so no autosave announces it
+        b.engine.editorComplete()
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(loaded, DesignJson.fromJson(remote.currentWrites.single().designJson))
+        b.engine.editorComplete()                            // a second call has nothing waiting
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(1, remote.currentWrites.size)
     }
 
     @Test fun anEditIsPushedOnceAfterTheDebounceNotOnEveryKeystroke() = runTest {
@@ -1086,6 +1207,7 @@ class SyncEngineTest {
         a.current = night
         a.engine.onCurrentSaved(night, ChangeOrigin.USER)
         advanceTimeBy(1_500); runCurrent()                   // the push is in flight
+        a.current = DesignSettings()                          // the next account starts on the default design: nothing to seed it with
         a.engine.stop(); a.engine.start("u2")
         flaky.hangPutCurrent = false
         runCurrent(); advanceTimeBy(5_000); runCurrent()

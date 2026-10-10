@@ -82,7 +82,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     init {
         // the photo (up to 25 MB) is read in the background and attached
-        viewModelScope.launch { attachSavedPhoto(state, store, persistence, designAtStart, saveDispatcher = saveDispatcher) }
+        viewModelScope.launch {
+            attachSavedPhoto(state, store, persistence, designAtStart, saveDispatcher = saveDispatcher)
+            accounts.editorComplete()
+        }
         // save shortly after the last change (one write per burst of typing)
         viewModelScope.launch { autosave(state, persistence, saveDispatcher, SAVE_DELAY_MS) }
     }

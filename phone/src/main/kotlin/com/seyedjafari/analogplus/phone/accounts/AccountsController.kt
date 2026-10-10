@@ -224,6 +224,9 @@ class AccountsController(
      */
     fun setForeground(foreground: Boolean) = sync.setForeground(foreground)
 
+    /** The editor finished reading its saved photo (see [CloudSync.editorComplete]). */
+    fun editorComplete() = sync.editorComplete()
+
     /** Re-reads the cloud copy now and re-checks the backup. */
     fun refresh() {
         scope.launch {

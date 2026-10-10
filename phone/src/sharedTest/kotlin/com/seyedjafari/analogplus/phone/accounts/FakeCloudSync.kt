@@ -24,6 +24,8 @@ class FakeCloudSync : CloudSync {
     override suspend fun syncNow() { syncNowCalls++ }
     override fun resolveOffer(choice: OfferChoice) { choices += choice; _offer.value = null }
     override fun setForeground(foreground: Boolean) { foregroundCalls += foreground }
+    var editorCompleteCalls = 0
+    override fun editorComplete() { editorCompleteCalls++ }
 
     fun setStatus(s: SyncStatus) { _status.value = s }
     fun setOffer(o: CurrentOffer?) { _offer.value = o }

@@ -221,4 +221,68 @@ class SyncJournalTest {
         j.onSavedDesignChanged(SavedChange.Saved("Night"), ChangeOrigin.USER)
         assertEquals(1, j.entries().size)
     }
+
+    // ---- the design being edited ----------------------------------------------------------------------------------------
+
+    private val design = com.seyedjafari.analogplus.facegen.design.DesignSettings()
+
+    @Test fun aFreshJournalHasNothingToGiveTheCloud() {
+        assertFalse(journal().currentDirty())
+    }
+
+    @Test fun aUserSaveOfTheCurrentDesignIsRememberedAcrossRestartsUntilItsPushIsRecorded() {
+        val j = journal()
+        j.onCurrentSaved(design, ChangeOrigin.USER)
+        assertTrue(journal().currentDirty())                                  // another instance over the same preferences: a restart
+        val stamp = j.currentStamp()
+        j.markCurrentPushed(stamp)
+        assertFalse(journal().currentDirty())
+    }
+
+    @Test fun aChangeFromTheCloudIsNotAUserSave() {
+        val j = journal()
+        j.onCurrentSaved(design, ChangeOrigin.SYNC)
+        assertFalse(j.currentDirty())
+    }
+
+    @Test fun thePushOfAnOlderSaveDoesNotClearTheMarkOfANewerOne() {
+        val j = journal()
+        j.onCurrentSaved(design, ChangeOrigin.USER)
+        val first = j.currentStamp()
+        j.onCurrentSaved(design, ChangeOrigin.USER)                           // same millisecond: the stamp still moves on
+        assertTrue(j.currentStamp() > first)
+        j.markCurrentPushed(first)
+        assertTrue(j.currentDirty())
+        j.markCurrentPushed(j.currentStamp())
+        assertFalse(j.currentDirty())
+    }
+
+    @Test fun anotherAccountStartsWithTheCurrentDesignNotYetGivenToIt() {
+        val j = journal()
+        assertEquals(BindResult.NEW_ACCOUNT, j.bindTo("u1"))
+        assertTrue(j.currentDirty())
+        j.markCurrentPushed(j.currentStamp())
+        assertEquals(BindResult.SAME_ACCOUNT, j.bindTo("u1"))
+        assertFalse(j.currentDirty())
+        assertEquals(BindResult.NEW_ACCOUNT, j.bindTo("u2"))
+        assertTrue(j.currentDirty())
+        j.markCurrentPushed(j.currentStamp())
+        j.unbind()
+        assertTrue(j.currentDirty())
+    }
+
+    @Test fun twoJournalsOverTheSamePreferencesDoNotLoseEachOthersUpdates() {
+        // the reads are slow on purpose, so that an unsynchronised read-modify-write of two journals would interleave
+        val slow = object : com.seyedjafari.analogplus.phone.KeyValueStore by kv {
+            override fun getString(key: String): String? = kv.getString(key).also { Thread.sleep(1) }
+        }
+        val a = SyncJournal(slow) { now }
+        val b = SyncJournal(slow) { now }
+        val threads = listOf(a to "a", b to "b").map { (j, prefix) ->
+            Thread { repeat(40) { i -> j.onSavedDesignChanged(SavedChange.Saved("$prefix$i"), ChangeOrigin.USER) } }
+        }
+        threads.forEach { it.start() }
+        threads.forEach { it.join() }
+        assertEquals(80, journal().entries().size)
+    }
 }

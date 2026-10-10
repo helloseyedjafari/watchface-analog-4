@@ -121,6 +121,12 @@ class AccountsControllerTest {
         assertEquals(listOf("u1", "u2"), sync.started)
     }
 
+    @Test fun theEditorBeingCompleteIsPassedOnToSync() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.editorComplete()
+        assertEquals(1, sync.editorCompleteCalls)
+    }
+
     @Test fun signingOutStopsSyncAndClearsTheBackupStatus() = runTest(UnconfinedTestDispatcher()) {
         val c = controller()
         c.signIn(); c.signOut()

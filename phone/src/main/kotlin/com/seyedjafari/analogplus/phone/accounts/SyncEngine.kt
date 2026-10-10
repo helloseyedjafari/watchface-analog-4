@@ -109,7 +109,19 @@ class SyncEngine(
     @Volatile private var foreground = true
     @Volatile private var trigger: Channel<Unit>? = null
     @Volatile private var bound: CompletableDeferred<Unit>? = null
-    private val pendingCurrent = AtomicReference<DesignSettings?>(null)
+    /** A save of the design in the editor waiting to go up: the design and the journal's stamp of that save (see [SyncJournal.markCurrentPushed]). */
+    private class PendingCurrent(val design: DesignSettings, val stamp: Long)
+
+    private val pendingCurrent = AtomicReference<PendingCurrent?>(null)
+
+    /**
+     * The design in the editor has to go up (the person kept this phone's design, or sign-in is to seed the cloud) but the
+     * editor was still reading its photo: [editorComplete] does it.
+     */
+    @Volatile private var currentPushWanted = false
+
+    /** True once in this session the cloud's current design has been looked at and the question "does it need ours?" was asked. */
+    @Volatile private var currentKnown = false
     @Volatile private var lastPushedCurrent: DesignSettings? = null
     @Volatile private var lastRemoteSignature: List<Triple<String, Long, DesignState>>? = null
 
@@ -148,6 +160,8 @@ class SyncEngine(
         dying.removeAll { it.isCompleted }
         val waitFor = dying.toList()
         this.uid = uid
+        currentKnown = false
+        currentPushWanted = false
         _status.value = SyncStatus.Syncing
         val channel = Channel<Unit>(Channel.CONFLATED)
         trigger = channel
@@ -167,7 +181,11 @@ class SyncEngine(
             }
             ready.complete(Unit)
             runPass(uid)
-            guarded(uid) { onRemoteCurrent(uid, call { remote.getCurrent(uid) }) }
+            guarded(uid) {
+                val rc = call { remote.getCurrent(uid) }
+                onRemoteCurrent(uid, rc)
+                seedCurrent(uid, rc)
+            }
             ensureListeners()
             launch {
                 for (t in channel) {
@@ -194,6 +212,8 @@ class SyncEngine(
         lastRemoteSignature = null
         lastPushedCurrent = null
         pendingCurrent.set(null)
+        currentPushWanted = false
+        currentKnown = false
         currentSync = CurrentSync.IN_SYNC
         seenCurrentAtMs = 0
         restorePending = false
@@ -235,6 +255,43 @@ class SyncEngine(
         }
     }
 
+    override fun editorComplete() {
+        if (!currentPushWanted) return
+        currentPushWanted = false
+        queueCurrent()
+    }
+
+    /**
+     * Queues the design in the editor for a push, from a coroutine of the session on [io] (it reads the journal). While the
+     * editor is still reading its photo the design is not complete and must not go up: [editorComplete] queues it later.
+     */
+    private fun queueCurrent() {
+        val id = uid ?: return
+        val parent = session ?: return
+        scope.launch(parent + io) {
+            if (uid != id) return@launch
+            val mine = currentDesign()
+            if (mine.photoStillLoading()) { currentPushWanted = true; return@launch }
+            pendingCurrent.compareAndSet(null, PendingCurrent(mine, journal.currentStamp()))   // a newer save is already queued: keep that
+            trigger?.trySend(Unit)
+        }
+    }
+
+    /**
+     * Once per session, when the cloud's current design is known (null: it has none): queues this phone's design if the cloud
+     * has none, or if the journal remembers that the design was saved here and never given to the cloud (a push that was cut
+     * off by a restart, an offline close, or signing in on the old phone without editing). Not while a question about a newer
+     * design from another phone is open: the answer decides. A phone still on the default design has nothing to share.
+     */
+    private suspend fun seedCurrent(id: String, rc: RemoteCurrent?) {
+        if (uid != id || currentKnown) return
+        currentKnown = true
+        if (_offer.value != null) return
+        if (rc != null && !withContext(io) { journal.currentDirty() }) return
+        if (currentDesign() == DesignSettings()) return
+        queueCurrent()
+    }
+
     override fun onSavedDesignChanged(change: SavedChange, origin: ChangeOrigin) {
         if (origin != ChangeOrigin.USER) return
         editMade()
@@ -243,7 +300,7 @@ class SyncEngine(
 
     override fun onCurrentSaved(design: DesignSettings, origin: ChangeOrigin) {
         if (origin != ChangeOrigin.USER || uid == null) return
-        pendingCurrent.set(design)
+        pendingCurrent.set(PendingCurrent(design, journal.currentStamp()))
         currentSync = CurrentSync.IN_SYNC   // a new design: whatever went wrong with the old one, ask again
         editMade()
         trigger?.trySend(Unit)
@@ -266,9 +323,7 @@ class SyncEngine(
             OfferChoice.USE_REMOTE -> { lastPushedCurrent = offer.design; applier.apply(offer.design) }
             OfferChoice.KEEP_MINE -> {
                 lastPushedCurrent = null
-                val mine = currentDesign()
-                if (!mine.photoStillLoading()) pendingCurrent.set(mine)   // else the next complete autosave pushes it
-                trigger?.trySend(Unit)
+                queueCurrent()
             }
         }
     }
@@ -494,16 +549,20 @@ class SyncEngine(
      */
     private suspend fun pushCurrentIfNeeded(uid: String) {
         if (this.uid != uid) return   // a pass that outlived its session must not take (or give back) the new session's design
-        val d = pendingCurrent.getAndSet(null) ?: return
+        val p = pendingCurrent.getAndSet(null) ?: return
+        val d = p.design
         if (d.photoStillLoading()) return
-        if (d == lastPushedCurrent) return
+        if (d == lastPushedCurrent) {   // the cloud has it (the design that was just taken from there, say)
+            withContext(io) { journal.markCurrentPushed(p.stamp) }
+            return
+        }
         val mapped = withContext(io) { designToRemoteJson(d, photos) }
         val json = mapped.remoteJson ?: run { currentSync = CurrentSync.TOO_LARGE; return }
         setStatus(uid, SyncStatus.Syncing)
         val written = try {
             write(json.length) { remote.putCurrent(uid, json, deviceId, deviceLabel) }
         } catch (e: Throwable) {
-            if (this.uid == uid) pendingCurrent.compareAndSet(null, d)   // unless a newer edit arrived, or the session is over
+            if (this.uid == uid) pendingCurrent.compareAndSet(null, p)   // unless a newer edit arrived, or the session is over
             if (e !is CancellationException) {
                 currentSync = CurrentSync.RETRY_PENDING
                 currentFailure = (e as? RemoteException)?.let(::statusOf)
@@ -513,6 +572,7 @@ class SyncEngine(
         }
         currentSync = CurrentSync.IN_SYNC
         lastPushedCurrent = d
+        withContext(NonCancellable + io) { journal.markCurrentPushed(p.stamp) }   // only for the save that went up
         notePhoto(CURRENT, mapped)
         noteCurrentSeen(written.updatedAtMs)
     }
@@ -682,7 +742,10 @@ class SyncEngine(
         try {
             when (which) {
                 Watch.DESIGNS -> remote.observeDesigns(id).collect { listenerDelivered(which); onRemoteDesigns(id, it) }
-                Watch.CURRENT -> remote.observeCurrent(id).collect { rc -> listenerDelivered(which); guarded(id) { onRemoteCurrent(id, rc) } }
+                Watch.CURRENT -> remote.observeCurrent(id).collect { rc ->
+                    listenerDelivered(which)
+                    guarded(id) { onRemoteCurrent(id, rc); seedCurrent(id, rc) }
+                }
             }
         } catch (e: CancellationException) {
             throw e

@@ -88,6 +88,13 @@ interface CloudSync {
      * Wiring (Task 12): `true` in the activity's `onStart`, `false` in `onStop`.
      */
     fun setForeground(foreground: Boolean)
+
+    /**
+     * The editor has read its saved photo, so [DesignSettings] it reports is complete again. A push of the design that had to
+     * wait for that (the person answered "keep mine" while the photo was loading; sign-in wants to seed the cloud) happens
+     * now. A no-op when nothing waited. Wiring: `AppModel`, once the photo is attached.
+     */
+    fun editorComplete()
 }
 
 /** Used when there is no cloud: always [SyncStatus.Off]. */
@@ -99,4 +106,5 @@ class NoCloudSync : CloudSync {
     override suspend fun syncNow() {}
     override fun resolveOffer(choice: OfferChoice) {}
     override fun setForeground(foreground: Boolean) {}
+    override fun editorComplete() {}
 }
