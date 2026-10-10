@@ -5,7 +5,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -277,14 +276,15 @@ class OnboardingScreenTest {
 
     // --- a screen reader hears the page change (the clicked button keeps focus while the content is replaced) ---
 
-    @Test fun theProgressLineIsAPoliteLiveRegionAndFollowsThePage() {
+    @Test fun theProgressLineFollowsThePageButIsNotAlsoALiveRegion() {
+        // one announcement per page change: the page container's pane title says it; a live region on the progress text would say a second one
         show()
         val progress = rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS)
-        progress.assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+        progress.assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.LiveRegion))
         progress.assertTextEquals("Step 1 of 4")
         next().performClick(); rule.waitForIdle()
         progress.assertTextEquals("Step 2 of 4")
-        progress.assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+        progress.assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.LiveRegion))
     }
 
     @Test fun eachPageContainerCarriesItsHeadingAsPaneTitle() {

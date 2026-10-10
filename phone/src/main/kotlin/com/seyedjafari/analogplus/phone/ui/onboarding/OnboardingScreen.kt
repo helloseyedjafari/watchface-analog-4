@@ -22,9 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import com.seyedjafari.analogplus.phone.EditorState
@@ -93,7 +91,7 @@ fun OnboardingScreen(
 
             AnimatedContent(page, Modifier.weight(1f).fillMaxWidth(), transitionSpec = rememberSharedAxis<OnboardingPage>()) { shown ->
                 val visible = shown == page
-                // the pane title is announced when the page appears, and the progress text is a live region: the clicked button keeps focus while the content is replaced
+                // the pane title is announced when the page appears (the clicked button keeps focus while the content is replaced); it is the only announcement, the progress text below is plain text
                 val title = stringResource(OnboardingText.pageTitle(shown))
                 Box(Modifier.fillMaxSize().semantics { paneTitle = title }.testTag(Tags.onboardingPage(shown))) {
                     when (shown) {
@@ -131,7 +129,7 @@ private fun Progress(index: Int, count: Int, modifier: Modifier = Modifier) {
         Text(
             stringResource(step.res, *step.args), style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag(Tags.ONBOARDING_PROGRESS),
+            modifier = Modifier.testTag(Tags.ONBOARDING_PROGRESS),
         )
         val progress by animateFloatAsState((index + 1f) / count, motionSpec(Motion.MEDIUM))
         // the text above says the same in words, so a screen reader does not read the bar as a second, bare percentage
