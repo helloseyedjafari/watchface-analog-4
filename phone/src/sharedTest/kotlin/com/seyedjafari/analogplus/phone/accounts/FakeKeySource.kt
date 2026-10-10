@@ -1,5 +1,7 @@
 package com.seyedjafari.analogplus.phone.accounts
 
+import com.seyedjafari.analogplus.facegen.InstallOutcome
+import com.seyedjafari.analogplus.facegen.LocalKeyState
 import com.seyedjafari.analogplus.facegen.SigningKeyException
 
 /** An in-memory [KeySource]. [pem] creates [generated] on first use like the real key store. */
@@ -15,12 +17,19 @@ class FakeKeySource(private var stored: String? = null, private val generated: S
         return stored ?: generated.also { stored = it }
     }
 
-    override fun installPem(pem: String) {
+    override fun installPem(pem: String, onlyIf: (LocalKeyState) -> Boolean): InstallOutcome {
         if (!pem.contains("BEGIN CERTIFICATE") || !pem.contains("BEGIN PRIVATE KEY")) throw SigningKeyException("That is not a complete signing key.")
+        val state = when {
+            damaged -> LocalKeyState.Damaged
+            stored == null -> LocalKeyState.None
+            else -> LocalKeyState.Present(stored!!)
+        }
+        if (!onlyIf(state)) return InstallOutcome.CONDITION_NOT_MET
         previousKey = stored
         stored = pem
         damaged = false
         installs++
+        return InstallOutcome.INSTALLED
     }
 
     companion object {

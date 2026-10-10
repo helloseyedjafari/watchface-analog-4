@@ -127,6 +127,47 @@ class KeyStoreInstallTest {
         assertEquals(pemA, File(context.filesDir, "$name.bak").readText())
     }
 
+    // ---- the condition is checked under the store's lock, together with the install --------------------------------
+
+    @Test fun theConditionSeesAPhoneWithoutAKey() {
+        var seen: LocalKeyState? = null
+        assertEquals(InstallOutcome.INSTALLED, store.installPem(pemA) { seen = it; true })
+        assertEquals(LocalKeyState.None, seen)
+    }
+
+    @Test fun theConditionSeesTheKeyThatWouldBeReplaced() {
+        store.installPem(pemA)
+        var seen: LocalKeyState? = null
+        assertEquals(InstallOutcome.INSTALLED, store.installPem(pemB) { seen = it; true })
+        assertEquals(LocalKeyState.Present(pemA), seen)
+    }
+
+    @Test fun theConditionSeesADamagedKeyFile() {
+        File(context.filesDir, name).writeText("garbage")
+        var seen: LocalKeyState? = null
+        assertEquals(InstallOutcome.INSTALLED, store.installPem(pemA) { seen = it; true })
+        assertEquals(LocalKeyState.Damaged, seen)
+        assertEquals(pemA, store.pem())
+    }
+
+    @Test fun aConditionThatSaysNoInstallsNothingAndKeepsNoCopy() {
+        store.installPem(pemA)
+        assertEquals(InstallOutcome.CONDITION_NOT_MET, store.installPem(pemB) { false })
+        assertEquals(pemA, store.pem())
+        assertFalse(File(context.filesDir, "$name.bak").exists())
+        assertFalse(File(context.filesDir, "$name.tmp").exists())
+    }
+
+    @Test fun aConditionThatSaysNoOnAPhoneWithoutAKeyCreatesNoKey() {
+        assertEquals(InstallOutcome.CONDITION_NOT_MET, store.installPem(pemA) { false })
+        assertFalse(store.hasKey())
+    }
+
+    @Test fun anUnusableKeyIsStillAnErrorWhateverTheConditionSays() {
+        assertThrows(SigningKeyException::class.java) { store.installPem("nope") { true } }
+        assertFalse(store.hasKey())
+    }
+
     private companion object {
         // RSA key generation takes about a second each: make three once for the whole class
         val REAL_A: String by lazy { PackNative.generateKeysPem() }

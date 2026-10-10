@@ -21,6 +21,29 @@ import java.util.Base64
  */
 class SigningKeyException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
 
+/** What [KeyStore] holds right now, as [KeyStore.installPem]'s condition sees it. */
+sealed interface LocalKeyState {
+    /** No key file. */
+    data object None : LocalKeyState
+
+    /** A key file that cannot be used (unreadable or incomplete). */
+    data object Damaged : LocalKeyState
+
+    /** A usable key file with this text. */
+    data class Present(val pem: String) : LocalKeyState {
+        /** Never prints the key. */
+        override fun toString(): String = "Present(${pem.length} characters)"
+    }
+}
+
+/** Whether [KeyStore.installPem] replaced the key. */
+enum class InstallOutcome {
+    INSTALLED,
+
+    /** The caller's condition said no for what the store held at that moment; nothing was changed. */
+    CONDITION_NOT_MET,
+}
+
 /**
  * The face signing key (combined PEM: CERTIFICATE + PKCS#8 PRIVATE KEY), generated once and persisted in app-private
  * storage ([Context.getFilesDir], `MODE_PRIVATE`) so every later face is signed by the same certificate.
@@ -77,14 +100,20 @@ class KeyStore(context: Context, val fileName: String = DEFAULT_FILE_NAME) {
      * moved into place, so a failure keeps the previous copy) so a mistaken restore can be undone by hand; if that
      * fails nothing is replaced. The new file is written atomically (the text is stored verbatim, so the key fingerprint,
      * a hash of the PEM text, is the one the backup was taken with).
+     *
+     * [onlyIf] is asked inside the same lock as the install, with what the store holds at that moment, so a key that
+     * appeared (or changed) since the caller looked cannot be replaced by mistake: no other thread of this process can
+     * create or replace the key between the question and the install. It must be quick and must not wait for other
+     * threads. If it says no, nothing is changed and [InstallOutcome.CONDITION_NOT_MET] is returned.
      * @throws SigningKeyException if [pem] is not a usable key, or the old key could not be kept, or the write failed
      */
-    fun installPem(pem: String) {
+    fun installPem(pem: String, onlyIf: (LocalKeyState) -> Boolean = { true }): InstallOutcome {
         synchronized(LOCK) {
             if (!isUsableKeyPem(pem)) {
                 throw SigningKeyException("That is not a complete, valid signing key (certificate and matching private key).")
             }
             val f = file
+            if (!onlyIf(currentState())) return InstallOutcome.CONDITION_NOT_MET
             val backupTmp = appContext.getFileStreamPath("$fileName.bak.tmp")
             try {
                 if (f.exists()) {
@@ -101,7 +130,16 @@ class KeyStore(context: Context, val fileName: String = DEFAULT_FILE_NAME) {
                 appContext.getFileStreamPath("$fileName.tmp").delete()
                 throw SigningKeyException("The restored key could not be saved (${e.message}).", e)
             }
+            return InstallOutcome.INSTALLED
         }
+    }
+
+    /** Call with [LOCK] held. */
+    private fun currentState(): LocalKeyState {
+        val f = file
+        if (!f.exists()) return LocalKeyState.None
+        val text = try { f.readText() } catch (e: IOException) { return LocalKeyState.Damaged }
+        return if (looksLikeKeyPem(text)) LocalKeyState.Present(text) else LocalKeyState.Damaged
     }
 
     private fun damaged(why: String, cause: Throwable?) = SigningKeyException(
