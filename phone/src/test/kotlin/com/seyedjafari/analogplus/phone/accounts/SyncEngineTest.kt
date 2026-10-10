@@ -44,11 +44,17 @@ class SyncEngineTest {
         var throwOnFetch: Exception? = null
         var onPutDesign: (() -> Unit)? = null
 
+        /** Like the security rules: a document the cloud refuses for its own reasons (name too long, ...). */
+        var refuse: ((name: String) -> RemoteException?)? = null
+        val attemptedNames = ArrayList<String>()
+
         override suspend fun fetchDesigns(uid: String): List<RemoteDesign> { throwOnFetch?.let { throw it }; return inner.fetchDesigns(uid) }
 
         override suspend fun putDesign(uid: String, id: String, name: String, designJson: String, state: DesignState, schema: Int): RemoteDesign {
             if (hangPuts) awaitCancellation()
             putGate?.await()
+            attemptedNames += name
+            refuse?.invoke(name)?.let { throw it }
             onPutDesign?.also { onPutDesign = null }?.invoke()
             return inner.putDesign(uid, id, name, designJson, state, schema)
         }
@@ -567,6 +573,78 @@ class SyncEngineTest {
         a.engine.start("u1"); runCurrent()
         advanceTimeBy(2_000); runCurrent()
         assertEquals(edited, DesignJson.fromJson(remote.designsOf("u1").getValue(designId("Night (this phone)")).designJson))
+    }
+
+    // ---- fix round: one design the cloud will not take must not block the others ------------------------------------------
+
+    @Test fun aNameTheRulesWouldRefuseIsSkippedWithoutBlockingTheDesignsAfterIt() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        flaky.refuse = { name -> if (name.length > 100) RemoteException(RemoteErrorKind.PERMISSION, "name too long") else null }
+        val a = phone(remote, "a", engineRemote = flaky)
+        val longName = "x".repeat(101)
+        a.store.saveNamed(longName, night); a.store.saveNamed("Night", night); a.store.saveNamed("Zed", day)
+        a.engine.start("u1"); runCurrent()
+        assertEquals(setOf("Night", "Zed"), remote.designsOf("u1").values.map { it.name }.toSet())
+        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
+        assertFalse("the long name is not even tried", longName in flaky.attemptedNames)
+        assertEquals(3, a.store.savedDesigns().size)                 // nothing is deleted locally
+        // and it stays that way: the next pass does not choke on it either
+        a.engine.syncNow()
+        assertEquals(2, remote.designsOf("u1").size)
+        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
+    }
+
+    @Test fun theLimitCountsCharactersNotUtf16Units() = runTest {
+        val remote = FakeRemoteStore()
+        val a = phone(remote, "a")
+        val emojis = "\uD83D\uDE00".repeat(100)                      // 100 characters, 200 UTF-16 units
+        a.store.saveNamed(emojis, night)
+        a.engine.start("u1"); runCurrent()
+        assertEquals(1, remote.designsOf("u1").size)
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+    }
+
+    @Test fun aDocumentTheCloudRefusesIsSkippedAndTheFirstReasonIsKept() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        flaky.refuse = { name -> if (name == "Bad") RemoteException(RemoteErrorKind.PERMISSION, "denied: Bad") else null }
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.store.saveNamed("Bad", night); a.store.saveNamed("Good", day)
+        a.engine.start("u1"); runCurrent()
+        assertEquals(listOf("Good"), remote.designsOf("u1").values.map { it.name })
+        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1, "denied: Bad"), a.engine.status.value)
+    }
+
+    @Test fun theCloudBeingOfflineStillAbortsThePassSoNothingIsCountedAsSkipped() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        flaky.refuse = { RemoteException(RemoteErrorKind.OFFLINE, "offline") }
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.store.saveNamed("One", night); a.store.saveNamed("Two", day)
+        a.engine.start("u1"); runCurrent()
+        assertEquals(SyncStatus.Offline, a.engine.status.value)
+        assertEquals(setOf("One"), flaky.attemptedNames.toSet())     // every pass stopped at the first failure
+    }
+
+    @Test fun aLongDeletedNameThatNeverReachedTheCloudIsForgottenNotRetriedForever() = runTest {
+        val remote = FakeRemoteStore()
+        val a = phone(remote, "a")
+        val longName = "y".repeat(101)
+        a.store.saveNamed(longName, night); a.store.deleteNamed(longName)
+        a.engine.start("u1"); runCurrent()
+        assertTrue(a.journal.entries().isEmpty())
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+    }
+
+    @Test fun aCloudDocumentWhoseIdIsNotTheHashOfItsNameIsSkippedNotReappliedForever() = runTest {
+        val remote = FakeRemoteStore()
+        remote.seedDesign("u1", RemoteDesign("00000000000000000000000000000002", "Night", DesignJson.toJson(night), 1_500_000, DesignState.LIVE, 1))
+        val a = phone(remote, "a")
+        a.engine.start("u1"); runCurrent()
+        assertEquals(emptyList<String>(), a.names())
+        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
+        assertTrue(a.journal.entries().isEmpty())
     }
 
     @Test fun aPassStillRunningWhenTheUserSignsOutDoesNotBringTheStatusBack() = runTest {

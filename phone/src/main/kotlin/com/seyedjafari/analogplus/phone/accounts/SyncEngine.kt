@@ -187,7 +187,7 @@ class SyncEngine(
 
     // ---- a pass -------------------------------------------------------------------------------------------------
 
-    private class Problem(val kind: SyncProblem, val count: Int = 0)
+    private class Problem(val kind: SyncProblem, val count: Int = 0, val detail: String = "")
 
     private suspend fun onRemoteDesigns(id: String, list: List<RemoteDesign>) {
         if (uid != id) return
@@ -211,13 +211,24 @@ class SyncEngine(
         val actions = capNewDesigns(planned, remoteList)
         val byId = local.associateBy { it.id }
         var skipped = 0
+        var firstReason = ""
         for (action in actions) {
             if (uid != id) break   // signed out meanwhile: stop writing for that account
-            if (execute(id, action, byId[action.id]) == Outcome.UNSYNCABLE) skipped++
+            val outcome = try {
+                execute(id, action, byId[action.id])
+            } catch (e: RemoteException) {
+                // One document the cloud refuses (rules, a field it does not like) must not block the designs after it, now
+                // or in every later pass. Offline, an expired sign-in and a used-up quota would fail all the others too:
+                // those end the pass.
+                if (e.kind != RemoteErrorKind.PERMISSION && e.kind != RemoteErrorKind.OTHER) throw e
+                if (firstReason.isEmpty()) firstReason = e.message.orEmpty()
+                Outcome.UNSYNCABLE
+            }
+            if (outcome == Outcome.UNSYNCABLE) skipped++
         }
         lastRemoteSignature = signatureOf(remoteList)
         when {
-            skipped > 0 -> Problem(SyncProblem.DESIGNS_SKIPPED, skipped)
+            skipped > 0 -> Problem(SyncProblem.DESIGNS_SKIPPED, skipped, firstReason)
             planned.size != actions.size -> Problem(SyncProblem.TOO_MANY_DESIGNS, MAX_SYNCED_DESIGNS)
             else -> null
         }
@@ -265,6 +276,7 @@ class SyncEngine(
         when (action) {
             is SyncAction.PushLive -> {
                 val design = local?.design ?: return Outcome.UNSYNCABLE
+                if (nameTooLong(local.name)) return Outcome.UNSYNCABLE
                 val mapped = withContext(io) { designToRemoteJson(design, photos) }
                 val json = mapped.remoteJson ?: return Outcome.UNSYNCABLE
                 val written = call { remote.putDesign(uid, local.id, local.name, json, DesignState.LIVE, DESIGN_SCHEMA) }
@@ -278,6 +290,7 @@ class SyncEngine(
                 withContext(io) { journal.markPushed(e.id, e.modifiedAtMs, written.updatedAtMs) }
             }
             is SyncAction.ApplyRemoteLive -> {
+                if (idDiffersFromName(action.remote)) return Outcome.UNSYNCABLE
                 val design = designFromRemoteJson(action.remote.designJson) ?: return Outcome.UNSYNCABLE
                 val applied = withContext(io) {
                     if (!unchangedSince(action.id, local)) return@withContext false
@@ -304,6 +317,7 @@ class SyncEngine(
             is SyncAction.Drop -> withContext(io) { journal.drop(action.id) }
             is SyncAction.KeepBoth -> {
                 val mine = local?.design ?: return Outcome.UNSYNCABLE
+                if (idDiffersFromName(action.remote)) return Outcome.UNSYNCABLE
                 val theirs = designFromRemoteJson(action.remote.designJson) ?: return Outcome.UNSYNCABLE
                 // This phone's version is saved under its new name first, so that nothing can end with it gone.
                 val kept = withContext(io) {
@@ -325,6 +339,15 @@ class SyncEngine(
         }
         return Outcome.DONE
     }
+
+    /** The rules cap a design name at [MAX_DESIGN_NAME_CHARS] characters; asking would only get the whole write refused. */
+    private fun nameTooLong(name: String) = name.codePointCount(0, name.length) > MAX_DESIGN_NAME_CHARS
+
+    /**
+     * A cloud document is this app's only if its id is the hash of its name ([designId]). Another writer's document would be
+     * saved here under its name but recorded under its id, and every pass would apply it again.
+     */
+    private fun idDiffersFromName(doc: RemoteDesign) = designId(doc.name) != doc.id
 
     private fun localEntries(): List<LocalDesignEntry> {
         val saved = store.savedDesigns()
@@ -398,7 +421,7 @@ class SyncEngine(
 
     private fun finish(id: String, problem: Problem?) = setStatus(
         id,
-        if (problem != null) SyncStatus.Error(problem.kind, problem.count) else SyncStatus.Idle(clock(), withoutPhoto.size),
+        if (problem != null) SyncStatus.Error(problem.kind, problem.count, problem.detail) else SyncStatus.Idle(clock(), withoutPhoto.size),
     )
 
     /** A cloud call; no answer for [callTimeoutMs] is [RemoteErrorKind.OFFLINE] (the retry then asks again). */
