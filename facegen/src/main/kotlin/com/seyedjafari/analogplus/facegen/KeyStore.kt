@@ -64,6 +64,29 @@ class KeyStore(context: Context, val fileName: String = DEFAULT_FILE_NAME) {
         }
     }
 
+    /**
+     * Makes [pem] (restored from a backup) the signing key. It must hold a complete certificate and private key. The key
+     * being replaced, if there is one, is first copied to `<fileName>.bak` (one generation) so a mistaken restore can be
+     * undone by hand; if that copy fails nothing is replaced. The new file is written atomically (the text is stored
+     * verbatim, so the key fingerprint, a hash of the PEM text, is the one the backup was taken with).
+     * @throws SigningKeyException if [pem] is not a complete key, or the old key could not be kept, or the write failed
+     */
+    fun installPem(pem: String) {
+        synchronized(LOCK) {
+            if (!looksLikeKeyPem(pem)) throw SigningKeyException("That is not a complete signing key (certificate and private key).")
+            val f = file
+            try {
+                if (f.exists()) {
+                    Files.copy(f.toPath(), appContext.getFileStreamPath("$fileName.bak").toPath(), StandardCopyOption.REPLACE_EXISTING)
+                }
+                writeAtomically(pem)
+            } catch (e: IOException) {
+                appContext.getFileStreamPath("$fileName.tmp").delete() // never leave a half-written temp file behind
+                throw SigningKeyException("The restored key could not be saved (${e.message}).", e)
+            }
+        }
+    }
+
     private fun damaged(why: String, cause: Throwable?) = SigningKeyException(
         "The saved signing key is damaged ($why). A new key would not be accepted by the watch for updates of the " +
             "face that is already installed: you could only install the new face after removing the old one on the watch. " +
