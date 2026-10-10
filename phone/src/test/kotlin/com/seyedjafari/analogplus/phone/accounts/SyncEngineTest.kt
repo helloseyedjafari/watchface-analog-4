@@ -584,5 +584,31 @@ class SyncEngineTest {
         gate.complete(Unit)
         pass.join()
         assertEquals(SyncStatus.Off, a.engine.status.value)
+        // fix round item 2a: nothing is written for the account that was signed out of, and the journal is untouched
+        assertEquals(0, remote.designsOf("u1").size)
+        assertEquals(SyncMark.DIRTY, a.journal.entries().getValue(designId("Night")).mark)
+        assertNull(a.journal.entries().getValue(designId("Night")).baseRemoteAtMs)
+    }
+
+    /** Fix round item 2b. */
+    @Test fun aPassOfTheOldAccountCannotMarkDesignsSyncedForTheNextAccount() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.engine.start("u1"); runCurrent()
+        a.store.saveNamed("Night", night)
+        val gate = CompletableDeferred<Unit>()
+        flaky.putGate = gate
+        val pass = launch { a.engine.syncNow() }
+        runCurrent()                                         // the pass for u1 waits inside the put
+        a.engine.stop()
+        a.engine.start("u2"); runCurrent()                   // signed in again with another account
+        gate.complete(Unit)
+        runCurrent(); pass.join(); advanceTimeBy(2_000); runCurrent()
+        assertEquals(0, remote.designsOf("u1").size)
+        val doc = remote.designsOf("u2").getValue(designId("Night"))      // merged into the new account ...
+        val entry = a.journal.entries().getValue(designId("Night"))
+        assertEquals(doc.updatedAtMs, entry.baseRemoteAtMs)               // ... and recorded against ITS time, not the old one
+        assertEquals("u2", a.journal.boundUid())
     }
 }

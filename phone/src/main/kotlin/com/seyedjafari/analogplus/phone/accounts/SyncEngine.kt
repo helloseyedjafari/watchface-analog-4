@@ -11,6 +11,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -86,6 +87,7 @@ class SyncEngine(
     private val withoutPhoto: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     override fun start(uid: String) {
+        val previous = session
         stop()
         this.uid = uid
         _status.value = SyncStatus.Syncing
@@ -93,24 +95,30 @@ class SyncEngine(
         trigger = channel
         val ready = CompletableDeferred<Unit>()
         bound = ready
-        session = scope.launch {
+        // Lazy, so that `session` is set before the body can run (an immediate dispatcher would start it inside `launch`).
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            // The previous account's session, and every pass running in it, must be completely over before the journal is
+            // re-bound: a dying pass would otherwise stamp entries of the new account with the old account's cloud times.
+            previous?.join()
             withContext(io) {
                 restorePending = journal.boundUid() != uid && isEmptyDevice()
                 journal.bindTo(uid)
                 seenCurrentAtMs = journal.currentSeenRemoteAtMs()
             }
             ready.complete(Unit)
-            syncNow()
+            runPass(uid)
             guarded(uid) { onRemoteCurrent(uid, call { remote.getCurrent(uid) }) }
             launch {
                 for (t in channel) {
                     do { delay(debounceMs) } while (channel.tryReceive().isSuccess)   // waits until edits stop for debounceMs
-                    syncNow()
+                    runPass(uid)
                 }
             }
             launch { keepRunning(uid) { remote.observeDesigns(uid).collect { list -> onRemoteDesigns(uid, list) } } }
             launch { keepRunning(uid) { remote.observeCurrent(uid).collect { rc -> guarded(uid) { onRemoteCurrent(uid, rc) } } } }
         }
+        session = job
+        job.start()
     }
 
     override fun stop() {
@@ -132,8 +140,18 @@ class SyncEngine(
         _status.value = SyncStatus.Off
     }
 
+    /**
+     * The pass runs as a child of the session, not in the caller's coroutine: [stop] cancels it, so a pass can neither write
+     * for an account that was signed out of (account deletion!) nor stamp the next account's journal. If the caller is
+     * cancelled the pass carries on; it belongs to the session.
+     */
     override suspend fun syncNow() {
+        val job = session ?: return
         val id = uid ?: return
+        scope.launch(job) { runPass(id) }.join()
+    }
+
+    private suspend fun runPass(id: String) {
         bound?.await()
         if (uid != id) return
         guarded(id) {
