@@ -46,7 +46,6 @@ class SyncEngineTest {
 
     private val night = DesignSettings(name = "Night", accent = "#FF1E6BFF")
     private val day = DesignSettings(name = "Day", accent = "#FFFFAA00")
-    private val suffix = " (this phone)"
 
     /** A [RemoteStore] that can fail, hang or call back on chosen calls; everything else goes to [inner]. */
     private class FlakyRemote(val inner: FakeRemoteStore) : RemoteStore by inner {
@@ -164,7 +163,7 @@ class SyncEngineTest {
         val applied = ArrayList<DesignSettings>()
         val engine = SyncEngine(
             store, journal, engineRemote, scope, photos, { applied += it; current = it }, { current },
-            deviceId = id, deviceLabel = "Phone $id", copySuffix = suffix, clock = { now() }, io = io,
+            deviceId = id, deviceLabel = "Phone $id", copySuffix = copyNameSuffix("Phone $id", { " ($it)" }, "copy"), clock = { now() }, io = io,
             debounceMs = 1_000, currentDebounceMs = currentDebounceMs, retryMs = 30_000, maxRetryMs = 300_000,
             callTimeoutMs = 20_000, random = random,
         )
@@ -539,9 +538,12 @@ class SyncEngineTest {
         val a = phone(remote, "a")
         a.store.saveNamed("Night", night.copy(accent = "#FF111111"))
         a.engine.start("u1"); runCurrent()
-        assertEquals(listOf("Night", "Night (this phone)"), a.names())
+        assertEquals(listOf("Night", "Night (Phone a)"), a.names())
         assertEquals("#FF222222", a.store.savedDesigns().first { it.name == "Night" }.design.accent)
-        assertEquals("#FF111111", a.store.savedDesigns().first { it.name == "Night (this phone)" }.design.accent)
+        assertEquals("#FF111111", a.store.savedDesigns().first { it.name == "Night (Phone a)" }.design.accent)
+        // the copy travels: the other phone sees it labelled with the phone that made it, not "this phone"
+        other.engine.syncNow()
+        assertEquals(listOf("Night", "Night (Phone a)"), other.names())
         assertEquals(2, remote.designsOf("u1").size)
     }
 
@@ -936,10 +938,10 @@ class SyncEngineTest {
         val mine = night.copy(accent = "#FF111111")
         a.store.saveNamed("Night", mine)
         val edited = mine.copy(accent = "#FF999999")
-        flaky.onPutDesign = { a.store.saveNamed("Night (this phone)", edited) }   // the user edits the copy being uploaded
+        flaky.onPutDesign = { a.store.saveNamed("Night (Phone a)", edited) }   // the user edits the copy being uploaded
         a.engine.start("u1"); runCurrent()
         advanceTimeBy(2_000); runCurrent()
-        assertEquals(edited, DesignJson.fromJson(remote.designsOf("u1").getValue(designId("Night (this phone)")).designJson))
+        assertEquals(edited, DesignJson.fromJson(remote.designsOf("u1").getValue(designId("Night (Phone a)")).designJson))
     }
 
     // ---- fix round items 8, 9 and 13 ------------------------------------------------------------------------------------------
@@ -1363,7 +1365,7 @@ class SyncEngineTest {
         assertEquals("Night must not be overwritten using u1's base", night, a.store.savedDesigns().first { it.name == "Night" }.design)
         gate.complete(Unit); runCurrent(); pass.join(); advanceTimeBy(2_000); runCurrent()
         assertEquals(theirs, a.store.savedDesigns().first { it.name == "Night" }.design)
-        assertEquals(night, a.store.savedDesigns().first { it.name == "Night (this phone)" }.design)   // kept both ways
+        assertEquals(night, a.store.savedDesigns().first { it.name == "Night (Phone a)" }.design)   // kept both ways
     }
 
     @Test fun aPassStillRunningWhenTheUserSignsOutDoesNotBringTheStatusBack() = runTest {

@@ -17,7 +17,7 @@ class SyncResolverTest {
     private fun local(
         id: String, d: DesignSettings?, modified: Long, base: Long?, mark: SyncMark, state: EntryState = EntryState.LIVE, name: String = "n",
     ) = LocalDesignEntry(id, name, d, state, modified, base, mark)
-    private val suffix = " (this phone)"
+    private val suffix = " (Pixel 8)"
     private val toJson: (DesignSettings) -> String? = { DesignJson.toJson(it) }
     private fun plan(l: List<LocalDesignEntry>, r: List<RemoteDesign>) = planSync(l, r, l.map { it.name }.toSet(), toJson, suffix)
 
@@ -116,20 +116,20 @@ class SyncResolverTest {
     @Test fun differingContentWithoutHistoryKeepsBoth() {
         val r = remote("1", b, 5_000, name = "Night")
         val l = local("1", a, 9_000, null, SyncMark.DIRTY, name = "Night")
-        assertEquals(listOf(SyncAction.KeepBoth("1", r, "Night (this phone)")), plan(listOf(l), listOf(r)))
+        assertEquals(listOf(SyncAction.KeepBoth("1", r, "Night (Pixel 8)")), plan(listOf(l), listOf(r)))
     }
 
     @Test fun keepBothPicksAFreeName() {
         val r = remote("1", b, 5_000, name = "Night")
         val l = local("1", a, 9_000, null, SyncMark.DIRTY, name = "Night")
-        val taken = setOf("Night", "Night (this phone)")
-        assertEquals("Night (this phone) 2", (planSync(listOf(l), listOf(r), taken, toJson, suffix).single() as SyncAction.KeepBoth).copyName)
+        val taken = setOf("Night", "Night (Pixel 8)")
+        assertEquals("Night (Pixel 8) 2", (planSync(listOf(l), listOf(r), taken, toJson, suffix).single() as SyncAction.KeepBoth).copyName)
     }
 
     @Test fun unreadableRemoteJsonIsNeverTreatedAsEqual() {
         val bad = RemoteDesign("1", "n", "{not json", 5_000, DesignState.LIVE, 1)
         val actions = plan(listOf(local("1", a, 9_000, null, SyncMark.DIRTY, name = "Night")), listOf(bad))
-        assertEquals(listOf(SyncAction.KeepBoth("1", bad, "Night (this phone)")), actions)
+        assertEquals(listOf(SyncAction.KeepBoth("1", bad, "Night (Pixel 8)")), actions)
     }
 
     // ---- no shared history (base == null): nothing may be deleted in either direction --------------------------------
@@ -157,7 +157,7 @@ class SyncResolverTest {
         for (cloudAt in listOf(5_000L, 20_000L)) {
             val r = remote("1", b, cloudAt, name = "Night")
             val l = local("1", a, 10_000, null, SyncMark.DIRTY, name = "Night")
-            assertEquals(listOf(SyncAction.KeepBoth("1", r, "Night (this phone)")), plan(listOf(l), listOf(r)))
+            assertEquals(listOf(SyncAction.KeepBoth("1", r, "Night (Pixel 8)")), plan(listOf(l), listOf(r)))
         }
     }
 
@@ -181,7 +181,7 @@ class SyncResolverTest {
         val actions = planSync(local, listOf(rNight, rDay, rMine), local.map { it.name }.toSet(), toJson, suffix)
         assertEquals(
             setOf(
-                SyncAction.KeepBoth(designId("Night"), rNight, "Night (this phone)"),
+                SyncAction.KeepBoth(designId("Night"), rNight, "Night (Pixel 8)"),
                 SyncAction.ApplyRemoteLive(designId("Day"), rDay),
                 SyncAction.PushLive(designId("Mine")),
             ),
@@ -194,11 +194,11 @@ class SyncResolverTest {
 
     @Test fun aKeepBothCopyNeverTakesTheNameOfADocumentThatIsOnlyInTheCloud() {
         val rNight = remote("1", b, 5_000, name = "Night")
-        val rCopy = remote("2", b, 5_000, name = "Night (this phone)")
-        val rGone = remote("3", a, 5_000, DesignState.TOMBSTONE, name = "Night (this phone) 2")
+        val rCopy = remote("2", b, 5_000, name = "Night (Pixel 8)")
+        val rGone = remote("3", a, 5_000, DesignState.TOMBSTONE, name = "Night (Pixel 8) 2")
         val l = local("1", a, 9_000, null, SyncMark.DIRTY, name = "Night")
         val copy = (planSync(listOf(l), listOf(rNight, rCopy, rGone), setOf("Night"), toJson, suffix).first { it.id == "1" } as SyncAction.KeepBoth).copyName
-        assertEquals("Night (this phone) 3", copy)
+        assertEquals("Night (Pixel 8) 3", copy)
     }
 
     @Test fun theCopySuffixIsTheCallersNotHardCoded() {
@@ -208,8 +208,21 @@ class SyncResolverTest {
         assertEquals("Night [mon téléphone]", copy)
     }
 
-    @Test fun theSuffixStringResourceIsTheEnglishTheTestsUse() {
-        assertEquals(suffix, com.seyedjafari.analogplus.phone.StringsXml.text("sync_copy_suffix"))
+    @Test fun theSuffixNamesTheDeviceThatMadeTheCopyInTheEnglishOfTheStrings() {
+        val strings = com.seyedjafari.analogplus.phone.StringsXml
+        fun suffixFor(label: String) = copyNameSuffix(label, { strings.text("sync_copy_suffix", it) }, strings.text("sync_copy_fallback"))
+        assertEquals(suffix, suffixFor("Pixel 8"))
+        assertEquals(" (copy)", suffixFor(""))
+        assertEquals("a blank name counts as none", " (copy)", suffixFor("   "))
+        assertEquals(" (Pixel 8)", suffixFor("  Pixel 8 "))
+    }
+
+    @Test fun aLongDeviceNameIsCutSoTheCopyKeepsMostOfTheDesignsName() {
+        val cut = copyNameSuffix("x".repeat(80), { " ($it)" }, "copy")
+        assertEquals(" (" + "x".repeat(MAX_COPY_DEVICE_CHARS) + ")", cut)
+        val emoji = "a" + "\uD83D\uDE00".repeat(20)          // the cut at 30 units falls between the two halves of a character
+        val suffix = copyNameSuffix(emoji, { " ($it)" }, "copy")
+        assertEquals(" (a" + "\uD83D\uDE00".repeat(14) + ")", suffix)
     }
 
     @Test fun uniqueNameNeverExceedsTheFirestoreNameLimit() {
@@ -281,12 +294,12 @@ class SyncResolverTest {
     @Test fun twoKeepBothCopiesGetDifferentNames() {
         val l = listOf(
             local("1", a, 9_000, null, SyncMark.DIRTY, name = "Night"),
-            local("2", a, 9_000, null, SyncMark.DIRTY, name = "Night (this phone)"),
+            local("2", a, 9_000, null, SyncMark.DIRTY, name = "Night (Pixel 8)"),
         )
-        val r = listOf(remote("1", b, 5_000, name = "Night"), remote("2", b, 5_000, name = "Night (this phone)"))
-        val names = planSync(l, r, setOf("Night", "Night (this phone)"), toJson, suffix).map { (it as SyncAction.KeepBoth).copyName }
+        val r = listOf(remote("1", b, 5_000, name = "Night"), remote("2", b, 5_000, name = "Night (Pixel 8)"))
+        val names = planSync(l, r, setOf("Night", "Night (Pixel 8)"), toJson, suffix).map { (it as SyncAction.KeepBoth).copyName }
         assertEquals(2, names.toSet().size)
-        assertTrue(names.none { it == "Night" || it == "Night (this phone)" })
+        assertTrue(names.none { it == "Night" || it == "Night (Pixel 8)" })
     }
 
     @Test fun aRenameIsATombstoneForTheOldIdPlusANewDocument() {
@@ -317,11 +330,11 @@ class SyncResolverTest {
 
     @Test fun aCloudNameWithATrailingSpaceStillBlocksTheCopyName() {
         val rNight = remote("1", b, 5_000, name = "Night")
-        val rSpaced = remote("2", b, 5_000, name = "Night (this phone) ") // same document id as "Night (this phone)"
+        val rSpaced = remote("2", b, 5_000, name = "Night (Pixel 8) ") // same document id as "Night (Pixel 8)"
         val l = local("1", a, 9_000, null, SyncMark.DIRTY, name = "Night")
         val copy = (planSync(listOf(l), listOf(rNight, rSpaced), setOf("Night"), toJson, suffix).first { it.id == "1" } as SyncAction.KeepBoth).copyName
-        assertEquals("Night (this phone) 2", copy)
-        assertTrue(designId(copy) != designId("Night (this phone) "))
+        assertEquals("Night (Pixel 8) 2", copy)
+        assertTrue(designId(copy) != designId("Night (Pixel 8) "))
     }
 
     @Test fun uniqueNameComparesCanonicalNames() {

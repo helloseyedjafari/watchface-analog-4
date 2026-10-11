@@ -26,8 +26,12 @@
     <!-- Application -->
     <string name="app_name">Analog Plus</string>
 
-    <!-- Sync: appended to the name of this phone's copy when a design differs in the cloud and on the phone (planSync copySuffix) -->
-    <string name="sync_copy_suffix">" (this phone)"</string>
+    <!-- Sync: appended to the name of the copy that keeps this phone's version when a design with the same name differs in the
+         cloud and on the phone (planSync copySuffix): "Night (Pixel 8)", %1$s being the model of the phone that made the copy.
+         The copy is shared with the account's other phones, so it names its maker. The leading space is quoted. -->
+    <string name="sync_copy_suffix">" (%1$s)"</string>
+    <!-- Sync: stands in for the model in sync_copy_suffix when the phone reports none: "Night (copy)" -->
+    <string name="sync_copy_fallback">copy</string>
 
     <!-- Share link and QR code problems (ShareProblem.text(Resources); the English wording is ShareProblem.english) -->
     <string name="share_error_empty_link">Paste an analogplus://design link first.</string>

@@ -36,6 +36,23 @@ sealed interface SyncAction {
     data class KeepBoth(override val id: String, val remote: RemoteDesign, val copyName: String) : SyncAction
 }
 
+/** The longest device name a copy's suffix quotes; more would leave too little of the design's own name. */
+const val MAX_COPY_DEVICE_CHARS = 30
+
+/**
+ * The suffix of a kept-both copy: the name of the phone that made it, so "Night (Pixel 8)" tells every phone of the account
+ * which one's version it is, or [fallbackWord] when the phone gave no name. [pattern] puts the name into the wording
+ * (the string resource " (%1$s)"). A long name is cut to [MAX_COPY_DEVICE_CHARS] characters, never inside a surrogate pair.
+ */
+fun copyNameSuffix(deviceLabel: String, pattern: (String) -> String, fallbackWord: String): String {
+    var label = deviceLabel.trim()
+    if (label.length > MAX_COPY_DEVICE_CHARS) {
+        label = label.take(MAX_COPY_DEVICE_CHARS)
+        if (label.last().isHighSurrogate()) label = label.dropLast(1)
+    }
+    return pattern(label.ifEmpty { fallbackWord })
+}
+
 /** Firestore rules cap a design name at this many characters. */
 const val MAX_DESIGN_NAME_CHARS = 100
 
@@ -54,8 +71,8 @@ const val MAX_DESIGN_NAME_CHARS = 100
  *
  * [localRemoteJson] turns a local design into the `design` string it would be written as (photo shrunk), so that the two
  * sides are compared like with like; null means "cannot be written", which is never equal to the cloud copy.
- * [copySuffix] is the text appended to the name of this phone's copy in a [SyncAction.KeepBoth] (a string resource,
- * resolved by the caller). The copy name is free among [takenNames] and every name in [remote], tombstones included.
+ * [copySuffix] is the text appended to the name of this phone's copy in a [SyncAction.KeepBoth] (see [copyNameSuffix];
+ * the caller resolves it from the string resources). The copy name is free among [takenNames] and every name in [remote], tombstones included.
  */
 fun planSync(
     local: List<LocalDesignEntry>, remote: List<RemoteDesign>, takenNames: Set<String>,

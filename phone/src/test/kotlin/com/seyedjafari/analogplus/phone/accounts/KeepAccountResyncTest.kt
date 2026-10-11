@@ -20,7 +20,7 @@ import org.junit.rules.TemporaryFolder
  * "Keep my account" against the real [SyncEngine] and journal. After a wipe that the journal does not know about, a plain
  * restart of sync never puts the designs back (the planner takes a synced design that vanished from the cloud for one
  * deleted elsewhere); after [AccountDeletion.keep] it does, and it does so without losing the history of the designs: an
- * edit or a deletion made while the deletion was pending is not turned into a "(this phone)" copy or undone.
+ * edit or a deletion made while the deletion was pending is not turned into a "copy" copy or undone.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class KeepAccountResyncTest {
@@ -40,7 +40,7 @@ class KeepAccountResyncTest {
         var current = DesignSettings()
         val engine = SyncEngine(
             store, journal, remote, scope, PhotoDownscaler { it }, { current = it }, { current },
-            deviceId = "a", deviceLabel = "Phone", copySuffix = " (this phone)", clock = clock, io = Dispatchers.Unconfined,
+            deviceId = "a", deviceLabel = "Phone", copySuffix = " (Phone)", clock = clock, io = Dispatchers.Unconfined,
             debounceMs = 1_000, currentDebounceMs = 1_000, retryMs = 30_000, maxRetryMs = 300_000, callTimeoutMs = 20_000, random = { 1.0 },
         )
         val deletion = AccountDeletion(accounts, remote, engine, journal, marks, Dispatchers.Unconfined)
@@ -90,7 +90,7 @@ class KeepAccountResyncTest {
         rig.store.deleteNamed("Day")                      // deleted while sync was off
         assertTrue(rig.deletion.keep("u1"))
         rig.engine.start("u1"); runCurrent()
-        assertEquals(listOf("Night"), rig.names())        // no "Night (this phone)", Day stays deleted
+        assertEquals(listOf("Night"), rig.names())        // no "Night (Phone)", Day stays deleted
         assertEquals(listOf("Night"), rig.cloudNames())
         assertEquals(nightEdited.accent, rig.store.savedDesigns().single().design.accent)
         val cloudNight = com.seyedjafari.analogplus.facegen.design.DesignJson.fromJson(remote.designsOf("u1").getValue(designId("Night")).designJson)

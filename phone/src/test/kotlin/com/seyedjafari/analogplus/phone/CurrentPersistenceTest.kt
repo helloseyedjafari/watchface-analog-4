@@ -77,7 +77,7 @@ class CurrentPersistenceTest {
         val journal = SyncJournal(MemoryKeyValueStore())
         val engine = SyncEngine(
             store, journal, remote, scope.backgroundScope, PhotoDownscaler { it }, CurrentApplier { state.replaceWholeDesign(it) },
-            { state.design }, deviceId = "a", deviceLabel = "Phone", copySuffix = " (this phone)",
+            { state.design }, deviceId = "a", deviceLabel = "Phone", copySuffix = " (Phone)",
             clock = { scope.testScheduler.currentTime + 5_000_000 }, io = Dispatchers.Unconfined, debounceMs = 1_000, currentDebounceMs = 1_000,
         )
         /** The controller of the app over this engine: it starts sync for the signed-in account and is what the photo read reports to. */

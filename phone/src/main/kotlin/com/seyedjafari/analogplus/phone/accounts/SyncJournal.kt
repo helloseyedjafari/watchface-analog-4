@@ -134,7 +134,7 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
      * binding, the bases, the edit times ([JournalEntry.modifiedAtMs]), the deletions (tombstones) and
      * [currentSeenRemoteAtMs] stay, so the planner's normal rules decide per design: a design the cloud lost is pushed
      * back, one that survived and was changed elsewhere goes through last-write-wins on the edit times, an edit made while
-     * sync was off is still the newer one, a deletion made meanwhile stays a deletion, and nothing becomes a "(this phone)"
+     * sync was off is still the newer one, a deletion made meanwhile stays a deletion, and nothing becomes a kept-both
      * copy or comes back to life. A journal bound to another account is left alone: its sign-in merges everything.
      * Returns false only when the write was refused; then the journal is as it was (the store's memory is put back, as
      * `SharedPreferences.commit()` keeps the new value in memory when the disk refuses it).

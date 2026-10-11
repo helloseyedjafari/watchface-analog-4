@@ -73,9 +73,11 @@ object AccountsFactory {
         if (setup.mode == FirebaseMode.NOT_CONFIGURED) return AccountsController.unavailable(scope)
 
         val remote = FirestoreRemoteStore(FirebaseFirestore.getInstance())
+        val deviceLabel = Build.MODEL.orEmpty().take(MAX_DEVICE_LABEL)
         val engine = SyncEngine(
             store, journal, remote, scope, AndroidPhotoDownscaler(), applier, currentDesign,
-            deviceId = deviceId(syncKv), deviceLabel = Build.MODEL.orEmpty().take(MAX_DEVICE_LABEL), copySuffix = app.getString(R.string.sync_copy_suffix),
+            deviceId = deviceId(syncKv), deviceLabel = deviceLabel,
+            copySuffix = copyNameSuffix(deviceLabel, { app.getString(R.string.sync_copy_suffix, it) }, app.getString(R.string.sync_copy_fallback)),
         )
         store.addObserver(engine)
         // the emulator has no Google account and nothing cached to clear
