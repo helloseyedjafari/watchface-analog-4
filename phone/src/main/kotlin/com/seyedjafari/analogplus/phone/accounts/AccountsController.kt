@@ -74,7 +74,7 @@ sealed interface Notice {
     data class WrongPassphrase(val nextWaitMs: Long) : Notice { override val kind = NoticeKind.ERROR }
     data class TooManyTries(val waitMs: Long) : Notice { override val kind = NoticeKind.ERROR }
 
-    /** The backup was made by a newer version of the app. */
+    /** This version of the app cannot open the backup (another format version, or settings or sizes outside what it accepts). [reason] is the vault's own text. */
     data class BackupUnsupported(val reason: String) : Notice { override val kind = NoticeKind.ERROR }
 
     /** The phone's signing key changed since the restore was planned. */

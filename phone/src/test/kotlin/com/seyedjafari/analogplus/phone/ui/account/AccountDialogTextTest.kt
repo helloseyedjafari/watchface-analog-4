@@ -8,6 +8,7 @@ import com.seyedjafari.analogplus.phone.accounts.RemoteErrorKind
 import com.seyedjafari.analogplus.phone.accounts.RestorePlan
 import com.seyedjafari.analogplus.phone.accounts.ResetPath
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -55,7 +56,7 @@ class AccountDialogTextTest {
         assertEquals(ForgotVariant.NEW_PASSPHRASE, forgotVariant(RestorePlan.AlreadyHaveThisKey(cloud)))
         assertEquals(ForgotVariant.REPLACE_BACKUP, forgotVariant(RestorePlan.ReplaceLocal(phone, cloud)))
         assertEquals(ForgotVariant.RESET, forgotVariant(RestorePlan.InstallNew(cloud)))
-        assertEquals(ForgotVariant.RESET, forgotVariant(RestorePlan.ReplaceDamaged(cloud)))
+        assertEquals(ForgotVariant.RESET_DAMAGED, forgotVariant(RestorePlan.ReplaceDamaged(cloud)))
         assertNull(forgotVariant(RestorePlan.NotSignedIn))
         assertNull(forgotVariant(RestorePlan.NoBackup))
         assertNull(forgotVariant(RestorePlan.Unknown(RemoteErrorKind.OFFLINE, "")))
@@ -71,10 +72,16 @@ class AccountDialogTextTest {
         assertEquals("Delete the old backup?", en(b.title))
         assertTrue(body(b).contains("delete it and back up the key that is on this phone instead"))
         assertEquals("Delete old backup", en(b.confirm))
+        // the usual reason for another key on this phone is a face on the watch signed with the backed-up one
+        assertTrue(body(b).contains("If the face on your watch was signed with the backed-up key"))
+        assertTrue(body(b).contains("uninstall the Analog Plus watch face"))
         assertEquals("Keep it", en(b.cancel))
         val c = forgotText(ForgotVariant.RESET)
         assertEquals(KeyResetCopy.current(), c)
-        assertEquals(ForgotVariant.entries.size, listOf(a, b, c).map { en(it.title) }.toSet().size)
+        val d = forgotText(ForgotVariant.RESET_DAMAGED)
+        assertEquals(KeyResetCopy.damagedCurrent(), d)
+        assertNotEquals(body(c), body(d))
+        assertEquals(3, listOf(a, b, c).map { en(it.title) }.toSet().size)
     }
 
     @Test fun theResetTextsDifferAndEachNamesWhatThePersonMustDo() {
@@ -110,6 +117,30 @@ class AccountDialogTextTest {
         assertEquals("Another device saved a different version of the design you are editing (\"Night\"). Use that one here, or keep the one on this phone?", en(offer.body))
         assertEquals("Use theirs", en(offer.use))
         assertEquals("Keep mine", en(offer.keep))
+    }
+
+    @Test fun aDamagedKeyGetsATextThatSaysTheTruth() {
+        for (path in ResetPath.entries) {
+            val text = body(KeyResetCopy.damagedCopyFor(path))
+            assertTrue(path.name, text.contains("is damaged, so sending a face fails until you use Reset signing key"))
+            assertTrue(path.name, text.contains("Deleting the backup does not do that for you"))
+            // a damaged key file is never replaced by itself: no promise of an automatic new key
+            assertFalse(path.name, text.contains("makes a new signing key", ignoreCase = true))
+            assertFalse(path.name, text.contains("new key is made", ignoreCase = true))
+            assertTrue(path.name, text.contains("saved designs are not affected"))
+        }
+        val adb = body(KeyResetCopy.damagedCopyFor(ResetPath.NEEDS_ADB))
+        assertTrue(adb.contains("adb shell pm uninstall com.seyedjafari.analogplus.watchfacepush.analog"))
+        // and the key-less text keeps its promise: there the next send does make a key
+        assertTrue(body(KeyResetCopy.copyFor(ResetPath.SELF_SERVICE)).contains("makes a new signing key the next time you send a face"))
+    }
+
+    @Test fun aDeviceLabelFromTheCloudIsCleanedAndCut() {
+        val dirty = offerText(CurrentOffer("Pi\u202Exel\u0007 8", DesignSettings(name = "Night"), 5))
+        assertEquals("Use the design from Pixel 8?", en(dirty.title))
+        val long = offerText(CurrentOffer("d".repeat(80), DesignSettings(name = "Night"), 5))
+        assertEquals("Use the design from " + "d".repeat(40) + "…?", en(long.title))
+        assertEquals("Use the design from another device?", en(offerText(CurrentOffer("\u202E\u0007", DesignSettings(name = "Night"), 5)).title))
     }
 
     @Test fun anEmptyDeviceLabelAndAnEmptyDesignNameHaveWords() {

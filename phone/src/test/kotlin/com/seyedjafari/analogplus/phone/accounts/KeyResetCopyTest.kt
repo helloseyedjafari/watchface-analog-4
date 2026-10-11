@@ -35,6 +35,9 @@ class KeyResetCopyTest {
         assertTrue("several entries named Analog Plus", text.contains("several entries named Analog Plus: the watch app and the watch faces"))
         assertTrue("the one to remove is the watch face", text.contains("The one to uninstall is the watch face"))
         assertTrue("the picker is a may, not a promise", text.contains("may need to be picked"))
+        assertTrue("the version hint stays", text.contains("its details page may show no version number"))
+        assertFalse("storage does not tell the face from the other entries", text.contains("storage"))
+        assertTrue("the step is one the person takes", text.contains("After you send it again"))
         // the spike ran on an emulator; the screen does not say which watch it was seen on
         assertFalse(text.contains("Galaxy") || text.contains("Samsung") || text.contains("emulator"))
     }

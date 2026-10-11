@@ -57,15 +57,19 @@ enum class ForgotVariant {
     /** This phone holds another key: delete the unreadable backup and back this phone's key up instead. */
     REPLACE_BACKUP,
 
-    /** This phone holds no usable key: delete the backup and start over; the wording is [KeyResetCopy]. */
+    /** This phone holds no key: delete the backup and start over; the wording is [KeyResetCopy]. */
     RESET,
+
+    /** This phone's key file is damaged: delete the backup, then use Reset signing key; nothing makes a new key by itself. */
+    RESET_DAMAGED,
 }
 
 /** Which variant a plan leads to; null for the plans that never reach the forgotten-passphrase dialog. */
 fun forgotVariant(plan: RestorePlan): ForgotVariant? = when (plan) {
     is RestorePlan.AlreadyHaveThisKey -> ForgotVariant.NEW_PASSPHRASE
     is RestorePlan.ReplaceLocal -> ForgotVariant.REPLACE_BACKUP
-    is RestorePlan.InstallNew, is RestorePlan.ReplaceDamaged -> ForgotVariant.RESET
+    is RestorePlan.InstallNew -> ForgotVariant.RESET
+    is RestorePlan.ReplaceDamaged -> ForgotVariant.RESET_DAMAGED
     RestorePlan.NotSignedIn, RestorePlan.NoBackup, is RestorePlan.Unknown -> null
 }
 
@@ -74,10 +78,12 @@ fun forgotText(variant: ForgotVariant): DialogText = when (variant) {
         R.string.account_forgot_new_title, listOf(uiText(R.string.account_forgot_new_body)), R.string.account_forgot_new_confirm,
     )
     ForgotVariant.REPLACE_BACKUP -> DialogText(
-        R.string.account_forgot_replace_title, listOf(uiText(R.string.account_forgot_replace_body)),
+        R.string.account_forgot_replace_title,
+        listOf(uiText(R.string.account_forgot_replace_body), uiText(R.string.account_forgot_replace_watch)) + removalParagraphs(KeyResetCopy.CURRENT),
         R.string.account_forgot_replace_confirm, R.string.account_forgot_replace_cancel,
     )
     ForgotVariant.RESET -> KeyResetCopy.current()
+    ForgotVariant.RESET_DAMAGED -> KeyResetCopy.damagedCurrent()
 }
 
 fun deleteAccountText(): DialogText =
@@ -90,7 +96,8 @@ private const val OFFER_NAME_MAX = 40
 
 /** An empty device label reads "another device"; a design without a visible name reads "(no name)". */
 fun offerText(offer: CurrentOffer): OfferText {
-    val device = if (offer.fromDevice.isBlank()) uiText(R.string.account_offer_other_device) else offer.fromDevice.trim()
+    // the label comes from the cloud: control and invisible formatting characters are removed, like in a design name
+    val device = dialogName(offer.fromDevice, OFFER_NAME_MAX, noName = "").ifEmpty { null } ?: uiText(R.string.account_offer_other_device)
     val name = dialogName(offer.design.name, OFFER_NAME_MAX, noName = "").ifEmpty { null } ?: uiText(R.string.common_no_name)
     return OfferText(
         uiText(R.string.account_offer_title, device), uiText(R.string.account_offer_body, name),

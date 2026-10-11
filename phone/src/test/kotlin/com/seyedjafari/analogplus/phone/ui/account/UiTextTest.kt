@@ -28,6 +28,13 @@ class UiTextTest {
         assertEquals("1 day ago", StringsXml.text(uiPlural(R.plurals.account_age_days, 1, 1)))
         assertEquals("0 days ago", StringsXml.text(uiPlural(R.plurals.account_age_days, 0, 0)))
         assertEquals("2 days ago", StringsXml.text(uiPlural(R.plurals.account_age_days, 2, 2)))
-        assertEquals("Synced 3 h ago", StringsXml.text(uiText(R.string.account_sync_synced, uiText(R.string.account_age_hours, 3))))
+        assertEquals("Synced 3 h ago", StringsXml.text(uiText(R.string.account_sync_synced, uiPlural(R.plurals.account_age_hours, 3, 3))))
+    }
+
+    @Test fun theJvmFormatterIsAsStrictAsResources() {
+        org.junit.Assert.assertThrows(java.util.IllegalFormatException::class.java) { StringsXml.format("%1\$d min", arrayOf<Any>("five")) }
+        org.junit.Assert.assertThrows(java.util.IllegalFormatException::class.java) { StringsXml.format("100% sure", arrayOf<Any>()) }
+        org.junit.Assert.assertThrows(java.util.IllegalFormatException::class.java) { StringsXml.format("%1\$s %2\$s", arrayOf<Any>("a")) }
+        assertEquals("100% sure", StringsXml.format("100%% sure", arrayOf<Any>()))
     }
 }

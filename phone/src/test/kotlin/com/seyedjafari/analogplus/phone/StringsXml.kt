@@ -100,7 +100,9 @@ object StringsXml {
         return out.toString()
     }
 
-    /** `String.format` for the two conversions the strings use, `%n$s` and `%n$d`, and `%%`. */
-    fun format(template: String, args: Array<out Any>): String =
-        Regex("""%(?:(\d+)\$[sd]|%)""").replace(template) { m -> m.groupValues[1].takeIf { it.isNotEmpty() }?.let { args[it.toInt() - 1].toString() } ?: "%" }
+    /**
+     * `Resources.getString(id, *args)` runs `String.format` on the template whatever the arguments, so a `%d` given a
+     * String, a missing argument or a lone `%` throw in the app; they throw here too.
+     */
+    fun format(template: String, args: Array<out Any>): String = String.format(java.util.Locale.ROOT, template, *args)
 }

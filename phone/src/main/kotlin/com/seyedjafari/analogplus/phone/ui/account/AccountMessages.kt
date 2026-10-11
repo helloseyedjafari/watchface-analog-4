@@ -51,7 +51,7 @@ fun waitBeforeTypingText(waitMs: Long): UiText? =
 fun noticeMessage(notice: Notice): AccountMessage = when (notice) {
     Notice.SignInFirst -> bad(R.string.account_msg_sign_in_first)
     is Notice.KeyBackedUp -> good(R.string.account_msg_key_backed_up, notice.fingerprint)
-    is Notice.PassphraseNotAccepted -> bad(R.string.account_msg_passphrase_not_accepted, assessmentText(notice.assessment))
+    is Notice.PassphraseNotAccepted -> bad(R.string.account_msg_passphrase_not_accepted, refusalText(notice.assessment))
     is Notice.KeyUnreadable -> bad(R.string.account_msg_key_unreadable, detail = notice.detail)
     Notice.BackupNotVerified -> bad(R.string.account_msg_backup_not_verified)
     Notice.BackupChanged -> bad(R.string.account_msg_backup_changed)
@@ -90,7 +90,7 @@ private fun deleteAccountProblemRes(problem: AccountDeleteProblem): Int = when (
 fun uploadMessage(result: UploadResult): AccountMessage = when (result) {
     is UploadResult.Ok -> good(R.string.account_msg_key_backed_up, result.fingerprint)
     UploadResult.NotSignedIn -> bad(R.string.account_msg_sign_in_first)
-    is UploadResult.PassphraseRefused -> bad(R.string.account_msg_passphrase_not_accepted, assessmentText(result.assessment))
+    is UploadResult.PassphraseRefused -> bad(R.string.account_msg_passphrase_not_accepted, refusalText(result.assessment))
     is UploadResult.BackupDiffers -> bad(R.string.account_msg_backup_changed)
     is UploadResult.KeyUnreadable -> bad(R.string.account_msg_key_unreadable, detail = result.message)
     UploadResult.SelfTestFailed -> bad(R.string.account_msg_backup_not_verified)
@@ -113,8 +113,39 @@ fun restoreMessage(result: RestoreResult): AccountMessage = when (result) {
     is RestoreResult.Failed -> bad(R.string.account_msg_restore_failed, remoteReason(result.kind), detail = result.message)
 }
 
-/** The line inside the passphrase dialog after a failed restore; null when the restore worked. */
-fun restoreErrorText(result: RestoreResult): AccountMessage? = if (result is RestoreResult.Restored) null else restoreMessage(result)
+/**
+ * What the passphrase dialog does after a restore answered. A plan that no longer holds ([PLAN_AGAIN]) or a result that
+ * ends the attempt ([CLOSE]) must never leave the dialog open with a "try again": the plan is checked before the
+ * passphrase, so every further try would get the same answer.
+ */
+enum class RestoreNext {
+    /** The key is on this phone: close the dialog. */
+    DONE,
+
+    /** The passphrase (or the connection) was the problem: keep the dialog open and show [restoreErrorText]. */
+    TRY_AGAIN_HERE,
+
+    /** The plan the person confirmed is stale: close the dialog, run `planRestore()` again and show its confirmation again. */
+    PLAN_AGAIN,
+
+    /** Nothing more can be done in this dialog: close it. The controller's notice carries the words. */
+    CLOSE,
+}
+
+fun restoreNext(result: RestoreResult): RestoreNext = when (result) {
+    is RestoreResult.Restored -> RestoreNext.DONE
+    is RestoreResult.WrongPassphrase, is RestoreResult.Throttled, is RestoreResult.Failed -> RestoreNext.TRY_AGAIN_HERE
+    RestoreResult.BackupChanged, RestoreResult.LocalKeyChanged -> RestoreNext.PLAN_AGAIN
+    RestoreResult.NoBackup, RestoreResult.NotSignedIn, is RestoreResult.Unsupported,
+    RestoreResult.FingerprintMismatch, is RestoreResult.KeyRejected, RestoreResult.InstallNotVerified -> RestoreNext.CLOSE
+}
+
+/**
+ * The line inside the passphrase dialog; only for [RestoreNext.TRY_AGAIN_HERE], null for every other result (the
+ * controller's notice says the rest, and the dialog is closed).
+ */
+fun restoreErrorText(result: RestoreResult): AccountMessage? =
+    if (restoreNext(result) == RestoreNext.TRY_AGAIN_HERE) restoreMessage(result) else null
 
 fun discardMessage(result: DiscardResult): AccountMessage = when (result) {
     DiscardResult.Deleted -> good(R.string.account_msg_backup_deleted)

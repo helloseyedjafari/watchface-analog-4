@@ -306,7 +306,7 @@
     <!-- Account: the Backup and sync card (keys account_<purpose>; AccountText.kt, AccountMessages.kt, AccountDialogText.kt and KeyResetText.kt list the ids) -->
     <string name="account_not_configured">Sign-in is not set up in this build. Your designs are saved on this phone only.</string>
     <string name="account_signed_out_benefit">Sign in with Google to keep your saved designs on all your devices and to back up your signing key, so a new phone can keep updating the face on your watch. Everything works without signing in.</string>
-    <string name="account_signed_out_privacy">Only your email address and the designs you create are stored. You can delete them at any time.</string>
+    <string name="account_signed_out_privacy">The cloud stores your email address, your designs, an encrypted copy of your signing key if you back it up, and the model name of your phone with a random device ID. You can delete all of it at any time.</string>
     <string name="account_sign_in">Sign in with Google</string>
     <string name="account_signing_in">Signing in...</string>
     <string name="account_signed_in_as">Signed in as %1$s</string>
@@ -350,18 +350,27 @@
     </plurals>
     <string name="account_sync_offline">Offline, will retry</string>
     <string name="account_sync_refused">The cloud refused the sync</string>
-    <string name="account_sync_sign_in_needed">Sign in again to keep syncing</string>
+    <string name="account_sync_sign_in_needed">Sign out and in again to keep syncing</string>
     <string name="account_sync_quota">Cloud limit reached</string>
     <string name="account_sync_failed">Sync failed</string>
-    <string name="account_sync_too_many">Only %1$d designs sync; the rest stay on this phone</string>
+    <plurals name="account_sync_too_many">
+        <item quantity="one">Only %1$d design syncs; the rest stay on this phone</item>
+        <item quantity="other">Only %1$d designs sync; the rest stay on this phone</item>
+    </plurals>
     <plurals name="account_sync_skipped">
         <item quantity="one">%1$d saved design could not be synced</item>
         <item quantity="other">%1$d saved designs could not be synced</item>
     </plurals>
-    <string name="account_sync_current_too_large">The design you are editing is too large to sync</string>
+    <string name="account_sync_current_too_large">The design you are editing is too large to sync. Try removing or shrinking its photo.</string>
     <string name="account_age_just_now">just now</string>
-    <string name="account_age_minutes">%1$d min ago</string>
-    <string name="account_age_hours">%1$d h ago</string>
+    <plurals name="account_age_minutes">
+        <item quantity="one">%1$d min ago</item>
+        <item quantity="other">%1$d min ago</item>
+    </plurals>
+    <plurals name="account_age_hours">
+        <item quantity="one">%1$d h ago</item>
+        <item quantity="other">%1$d h ago</item>
+    </plurals>
     <plurals name="account_age_days">
         <item quantity="one">%1$d day ago</item>
         <item quantity="other">%1$d days ago</item>
@@ -380,7 +389,7 @@
 
     <!-- Account: why a call to the cloud failed (RemoteErrorKind) -->
     <string name="account_remote_offline">The cloud could not be reached. Check your connection.</string>
-    <string name="account_remote_auth">Your sign-in has expired. Sign in again.</string>
+    <string name="account_remote_auth">Your sign-in has expired. Sign out and sign in again.</string>
     <string name="account_remote_permission">The cloud refused the request.</string>
     <string name="account_remote_quota">The cloud limit was reached. Try again later.</string>
     <string name="account_remote_other">Something went wrong in the cloud.</string>
@@ -404,24 +413,24 @@
     <string name="account_msg_sign_in_first">Sign in first.</string>
     <string name="account_msg_key_backed_up">Signing key backed up (key %1$s).</string>
     <string name="account_msg_passphrase_not_accepted">That passphrase was not accepted. %1$s.</string>
-    <string name="account_msg_key_unreadable">The signing key on this phone cannot be read, so it was not backed up.</string>
+    <string name="account_msg_key_unreadable">The signing key on this phone cannot be read, so it was not backed up. If a backup already exists, restore it; otherwise use Reset signing key.</string>
     <string name="account_msg_backup_not_verified">The new backup could not be checked, so it was taken back. A backup that was there before is unchanged.</string>
-    <string name="account_msg_backup_changed">The backup in the cloud, or the key on this phone, is not what you confirmed. Nothing was changed. Check the details and try again.</string>
+    <string name="account_msg_backup_changed">The backup in the cloud, or the key on this phone, is not what you confirmed. Nothing in the cloud was changed. Look at the backup line above, then start again.</string>
     <string name="account_msg_backup_failed">The signing key could not be backed up. %1$s</string>
     <string name="account_msg_key_restored">Signing key restored (key %1$s).</string>
     <string name="account_msg_no_backup">There is no backup for this account.</string>
-    <string name="account_msg_unsupported">This backup was made by a newer version of the app. Update Analog Plus.</string>
-    <string name="account_msg_local_key_changed">This phone\'s signing key changed meanwhile. Close this and start the restore again.</string>
-    <string name="account_msg_key_mismatch">The backup opened but holds a different key than it should, so it was not used.</string>
-    <string name="account_msg_key_rejected">This phone refused the key from the backup, so it was not used. The key on this phone is unchanged.</string>
-    <string name="account_msg_restore_not_verified">The restore did not leave the backed-up key on this phone. Open Signing key to see which key this phone has, then restore again.</string>
+    <string name="account_msg_unsupported">This version of Analog Plus cannot open this backup. If an update is available, install it. Otherwise the backup cannot be used here, and you can delete it with the I forgot the passphrase button.</string>
+    <string name="account_msg_local_key_changed">This phone\'s signing key changed meanwhile. Nothing was changed. Start the restore again.</string>
+    <string name="account_msg_key_mismatch">The backup opened but holds a different key than it should, so it was not used. You can delete this backup with the I forgot the passphrase button and make a new one.</string>
+    <string name="account_msg_key_rejected">This phone refused the key from the backup, so it was not used. The key on this phone is unchanged. If this keeps happening, the backup cannot be restored here and you can delete it with the I forgot the passphrase button.</string>
+    <string name="account_msg_restore_not_verified">The restore did not leave the backed-up key on this phone. Look at the backup line above: it says whether this phone has the same key as the backup. Then restore again.</string>
     <string name="account_msg_restore_failed">The restore failed. %1$s</string>
     <string name="account_msg_backup_check_failed">Could not check whether a backup exists. %1$s</string>
     <string name="account_msg_backup_deleted">The backup was deleted.</string>
     <string name="account_msg_backup_delete_failed">The backup could not be deleted. %1$s</string>
     <string name="account_msg_account_deleted">Your account and its cloud data were deleted. Designs and the signing key on this phone are untouched.</string>
     <string name="account_msg_delete_not_confirmed">Nothing was deleted: your Google account could not be confirmed.</string>
-    <string name="account_msg_delete_not_started">Nothing was deleted: this phone could not write the deletion down first, and one that cannot be remembered is not started. Try again.</string>
+    <string name="account_msg_delete_not_started">Nothing was deleted: this phone could not save that the deletion started, so it was not started. Try again.</string>
     <string name="account_msg_delete_data_failed">Your cloud data could not be deleted completely. %1$s Choose Finish deleting to try again, or keep your account.</string>
     <string name="account_msg_delete_account_needs_login">Your cloud data is deleted but your account is not: Google wants you to confirm again. Choose Finish deleting.</string>
     <string name="account_msg_delete_account_changed">The cloud data of the account you were deleting is gone, but that account still exists. Sign in to it again to finish deleting it or to keep it.</string>
@@ -482,12 +491,16 @@
     <string name="account_reset_title">Start over without the passphrase?</string>
     <string name="account_reset_common_backup">Without the passphrase the backup can never be opened, so it will be deleted. Analog Plus makes a new signing key the next time you send a face. Your saved designs are not affected.</string>
     <string name="account_reset_common_watch">The face that is on your watch now was signed with the old key, so the watch refuses updates to it.</string>
-    <string name="account_reset_self_remove">To fix that, open Settings on the watch, go to its list of apps (Apps, or Apps &amp; notifications and then App info) and uninstall the Analog Plus watch face. The list may show several entries named Analog Plus: the watch app and the watch faces. The one to uninstall is the watch face; if you are unsure, its details page may show no version number and only a little storage. Then press Send to watch again.</string>
-    <string name="account_reset_self_pick">After you add the new face, it may need to be picked: if it is not shown, press and hold the watch face and choose Analog Plus.</string>
+    <string name="account_reset_self_remove">To fix that, open Settings on the watch, go to its list of apps (Apps, or Apps &amp; notifications and then App info) and uninstall the Analog Plus watch face. The list may show several entries named Analog Plus: the watch app and the watch faces. The one to uninstall is the watch face; if you are unsure, its details page may show no version number. Then press Send to watch again.</string>
+    <string name="account_reset_self_pick">After you send it again, the new face may need to be picked: if it is not shown, press and hold the watch face and choose Analog Plus.</string>
     <string name="account_reset_self_confirm">Delete backup and start over</string>
     <string name="account_reset_adb_remove">That old face cannot be removed from the watch itself; it needs a computer with adb, the Android debug tool: adb shell pm uninstall com.seyedjafari.analogplus.watchfacepush.analog. Until it is removed, Send to watch will keep failing. If you cannot do that, keep the backup and keep looking for the passphrase.</string>
     <string name="account_reset_adb_confirm">Delete backup anyway</string>
     <string name="account_reset_cancel">Keep the backup</string>
+    <string name="account_reset_damaged_backup">Without the passphrase the backup can never be opened, so it will be deleted. Your saved designs are not affected.</string>
+    <string name="account_reset_damaged_key">The signing key saved on this phone is damaged, so sending a face fails until you use Reset signing key in the Signing key card. Deleting the backup does not do that for you.</string>
+    <string name="account_forgot_replace_watch">If the face on your watch was signed with the backed-up key, the watch will refuse faces from this phone\'s key until that face is removed from the watch.</string>
+    <string name="account_refusal_too_short">A passphrase needs at least %1$d characters</string>
     <string name="signing_key_explanation">Every face is signed with a key stored in this app. If the app complains that the key is damaged, or the watch rejects updates after a reinstall, you can make a new key here.</string>
     <string name="signing_key_button_reset">Reset signing key</string>
     <string name="signing_key_dialog_title">Reset the signing key?</string>

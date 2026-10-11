@@ -66,8 +66,8 @@ fun relativeAge(thenMs: Long, nowMs: Long): RelativeAge {
 
 fun RelativeAge.text(): UiText = when (unit) {
     AgeUnit.JUST_NOW -> uiText(R.string.account_age_just_now)
-    AgeUnit.MINUTES -> uiText(R.string.account_age_minutes, count)
-    AgeUnit.HOURS -> uiText(R.string.account_age_hours, count)
+    AgeUnit.MINUTES -> uiPlural(R.plurals.account_age_minutes, count, count)
+    AgeUnit.HOURS -> uiPlural(R.plurals.account_age_hours, count, count)
     AgeUnit.DAYS -> uiPlural(R.plurals.account_age_days, count, count)
 }
 
@@ -129,7 +129,7 @@ private fun syncProblemPill(error: SyncStatus.Error): PillText {
         SyncProblem.SIGN_IN_NEEDED -> PillText(uiText(R.string.account_sync_sign_in_needed), StatusKind.WARNING, detail = detail)
         SyncProblem.QUOTA -> PillText(uiText(R.string.account_sync_quota), StatusKind.WARNING, detail = detail)
         SyncProblem.FAILED -> PillText(uiText(R.string.account_sync_failed), StatusKind.ERROR, detail = detail)
-        SyncProblem.TOO_MANY_DESIGNS -> PillText(uiText(R.string.account_sync_too_many, error.count), StatusKind.WARNING, detail = detail)
+        SyncProblem.TOO_MANY_DESIGNS -> PillText(uiPlural(R.plurals.account_sync_too_many, error.count, error.count), StatusKind.WARNING, detail = detail)
         SyncProblem.DESIGNS_SKIPPED ->
             PillText(uiPlural(R.plurals.account_sync_skipped, error.count, error.count), StatusKind.WARNING, detail = detail)
         SyncProblem.CURRENT_TOO_LARGE -> PillText(uiText(R.string.account_sync_current_too_large), StatusKind.ERROR, detail = detail)

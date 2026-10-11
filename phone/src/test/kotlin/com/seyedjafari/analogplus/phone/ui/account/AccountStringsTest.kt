@@ -26,7 +26,8 @@ class AccountStringsTest {
     private val placeholder = setOf("account_signin_coming")
 
     @Test fun everyAccountStringIsUsedByCode() {
-        val unused = names.filter { it !in placeholder && !accountCode.contains("R.string.$it") && !accountCode.contains("R.plurals.$it") }
+        // whole names: R.string.account_sign_in must not be satisfied by R.string.account_sign_in_failed_network
+        val unused = names.filter { it !in placeholder && !Regex("""R\.(?:string|plurals)\.${Regex.escape(it)}\b""").containsMatchIn(accountCode) }
         assertEquals("account strings no code shows", emptyList<String>(), unused)
     }
 

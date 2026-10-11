@@ -17,6 +17,7 @@ import com.seyedjafari.analogplus.phone.accounts.vault.PassphraseAssessment
 import com.seyedjafari.analogplus.phone.accounts.vault.PassphraseIssue
 import com.seyedjafari.analogplus.phone.accounts.vault.PassphraseStrength
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -28,6 +29,18 @@ class AccountMessagesTest {
     private val weak = PassphraseAssessment(PassphraseStrength.WEAK, PassphraseIssue.COMMON_PASSWORD)
     private val offline = RemoteErrorKind.OFFLINE
     private val offlineWords = "The cloud could not be reached. Check your connection."
+    private val unsupportedWords = "This version of Analog Plus cannot open this backup. If an update is available, install it. " +
+        "Otherwise the backup cannot be used here, and you can delete it with the I forgot the passphrase button."
+    private val changedWords = "The backup in the cloud, or the key on this phone, is not what you confirmed. Nothing in the cloud was changed. " +
+        "Look at the backup line above, then start again."
+    private val unreadableWords = "The signing key on this phone cannot be read, so it was not backed up. " +
+        "If a backup already exists, restore it; otherwise use Reset signing key."
+    private val mismatchWords = "The backup opened but holds a different key than it should, so it was not used. " +
+        "You can delete this backup with the I forgot the passphrase button and make a new one."
+    private val rejectedWords = "This phone refused the key from the backup, so it was not used. The key on this phone is unchanged. " +
+        "If this keeps happening, the backup cannot be restored here and you can delete it with the I forgot the passphrase button."
+    private val notVerifiedWords = "The restore did not leave the backed-up key on this phone. Look at the backup line above: " +
+        "it says whether this phone has the same key as the backup. Then restore again."
 
     private fun en(m: AccountMessage) = StringsXml.text(m.text)
 
@@ -51,27 +64,27 @@ class AccountMessagesTest {
             Notice.PassphraseNotAccepted(weak), NoticeKind.ERROR,
             "That passphrase was not accepted. Estimate: weak, add more words or characters. It looks like a common password.",
         ),
-        Row(Notice.KeyUnreadable("EACCES"), NoticeKind.ERROR, "The signing key on this phone cannot be read, so it was not backed up.", "EACCES"),
+        Row(Notice.KeyUnreadable("EACCES"), NoticeKind.ERROR, unreadableWords, "EACCES"),
         Row(Notice.BackupNotVerified, NoticeKind.ERROR, "The new backup could not be checked, so it was taken back. A backup that was there before is unchanged."),
-        Row(Notice.BackupChanged, NoticeKind.ERROR, "The backup in the cloud, or the key on this phone, is not what you confirmed. Nothing was changed. Check the details and try again."),
+        Row(Notice.BackupChanged, NoticeKind.ERROR, changedWords),
         Row(Notice.BackupFailed(offline, "unavailable"), NoticeKind.ERROR, "The signing key could not be backed up. $offlineWords", "unavailable"),
         Row(Notice.KeyRestored(fp), NoticeKind.INFO, "Signing key restored (key $fp)."),
         Row(Notice.NoBackup, NoticeKind.ERROR, "There is no backup for this account."),
         Row(Notice.WrongPassphrase(0), NoticeKind.ERROR, "That passphrase did not open the backup. Check it and try again."),
         Row(Notice.WrongPassphrase(5_000), NoticeKind.ERROR, "That passphrase did not open the backup. Wait 5 seconds before trying again."),
         Row(Notice.TooManyTries(5_001), NoticeKind.ERROR, "Too many wrong tries. Wait 6 seconds."),
-        Row(Notice.BackupUnsupported("backup version 2"), NoticeKind.ERROR, "This backup was made by a newer version of the app. Update Analog Plus.", "backup version 2"),
-        Row(Notice.LocalKeyChanged, NoticeKind.ERROR, "This phone's signing key changed meanwhile. Close this and start the restore again."),
-        Row(Notice.BackupKeyMismatch, NoticeKind.ERROR, "The backup opened but holds a different key than it should, so it was not used."),
-        Row(Notice.KeyRejected("bad pem"), NoticeKind.ERROR, "This phone refused the key from the backup, so it was not used. The key on this phone is unchanged.", "bad pem"),
-        Row(Notice.RestoreNotVerified, NoticeKind.ERROR, "The restore did not leave the backed-up key on this phone. Open Signing key to see which key this phone has, then restore again."),
-        Row(Notice.RestoreFailed(RemoteErrorKind.AUTH, "401"), NoticeKind.ERROR, "The restore failed. Your sign-in has expired. Sign in again.", "401"),
+        Row(Notice.BackupUnsupported("backup version 2"), NoticeKind.ERROR, unsupportedWords, "backup version 2"),
+        Row(Notice.LocalKeyChanged, NoticeKind.ERROR, "This phone's signing key changed meanwhile. Nothing was changed. Start the restore again."),
+        Row(Notice.BackupKeyMismatch, NoticeKind.ERROR, mismatchWords),
+        Row(Notice.KeyRejected("bad pem"), NoticeKind.ERROR, rejectedWords, "bad pem"),
+        Row(Notice.RestoreNotVerified, NoticeKind.ERROR, notVerifiedWords),
+        Row(Notice.RestoreFailed(RemoteErrorKind.AUTH, "401"), NoticeKind.ERROR, "The restore failed. Your sign-in has expired. Sign out and sign in again.", "401"),
         Row(Notice.BackupCheckFailed(offline, "x"), NoticeKind.ERROR, "Could not check whether a backup exists. $offlineWords", "x"),
         Row(Notice.BackupDeleted, NoticeKind.INFO, "The backup was deleted."),
         Row(Notice.BackupDeleteFailed(RemoteErrorKind.PERMISSION, "denied"), NoticeKind.ERROR, "The backup could not be deleted. The cloud refused the request.", "denied"),
         Row(Notice.AccountDeleted, NoticeKind.INFO, "Your account and its cloud data were deleted. Designs and the signing key on this phone are untouched."),
         Row(Notice.DeleteNotConfirmed("cancelled by system"), NoticeKind.ERROR, "Nothing was deleted: your Google account could not be confirmed.", "cancelled by system"),
-        Row(Notice.DeleteNotStarted, NoticeKind.ERROR, "Nothing was deleted: this phone could not write the deletion down first, and one that cannot be remembered is not started. Try again."),
+        Row(Notice.DeleteNotStarted, NoticeKind.ERROR, "Nothing was deleted: this phone could not save that the deletion started, so it was not started. Try again."),
         Row(
             Notice.DeleteDataFailed(RemoteErrorKind.QUOTA, "quota"), NoticeKind.ERROR,
             "Your cloud data could not be deleted completely. The cloud limit was reached. Try again later. Choose Finish deleting to try again, or keep your account.", "quota",
@@ -141,13 +154,13 @@ class AccountMessagesTest {
         Row(UploadResult.NotSignedIn, NoticeKind.ERROR, "Sign in first."),
         Row(
             UploadResult.PassphraseRefused(PassphraseAssessment(PassphraseStrength.TOO_SHORT, PassphraseIssue.NONE)), NoticeKind.ERROR,
-            "That passphrase was not accepted. Estimate: too short, use at least 12 characters.",
+            "That passphrase was not accepted. A passphrase needs at least 12 characters.",
         ),
         Row(
             UploadResult.BackupDiffers(CloudBackup.Present(fp, "w"), KeyOnPhone.None), NoticeKind.ERROR,
-            "The backup in the cloud, or the key on this phone, is not what you confirmed. Nothing was changed. Check the details and try again.",
+            changedWords,
         ),
-        Row(UploadResult.KeyUnreadable("EACCES"), NoticeKind.ERROR, "The signing key on this phone cannot be read, so it was not backed up.", "EACCES"),
+        Row(UploadResult.KeyUnreadable("EACCES"), NoticeKind.ERROR, unreadableWords, "EACCES"),
         Row(UploadResult.SelfTestFailed, NoticeKind.ERROR, "The new backup could not be checked, so it was taken back. A backup that was there before is unchanged."),
         Row(UploadResult.Failed(offline, "x"), NoticeKind.ERROR, "The signing key could not be backed up. $offlineWords", "x"),
     )
@@ -172,34 +185,69 @@ class AccountMessagesTest {
         Row(RestoreResult.WrongPassphrase(0), NoticeKind.ERROR, "That passphrase did not open the backup. Check it and try again."),
         Row(RestoreResult.WrongPassphrase(5_000), NoticeKind.ERROR, "That passphrase did not open the backup. Wait 5 seconds before trying again."),
         Row(RestoreResult.Throttled(5_001), NoticeKind.ERROR, "Too many wrong tries. Wait 6 seconds."),
-        Row(RestoreResult.Unsupported("backup version 2"), NoticeKind.ERROR, "This backup was made by a newer version of the app. Update Analog Plus.", "backup version 2"),
-        Row(RestoreResult.LocalKeyChanged, NoticeKind.ERROR, "This phone's signing key changed meanwhile. Close this and start the restore again."),
+        Row(RestoreResult.Unsupported("backup version 2"), NoticeKind.ERROR, unsupportedWords, "backup version 2"),
+        Row(RestoreResult.LocalKeyChanged, NoticeKind.ERROR, "This phone's signing key changed meanwhile. Nothing was changed. Start the restore again."),
         Row(
             RestoreResult.BackupChanged, NoticeKind.ERROR,
-            "The backup in the cloud, or the key on this phone, is not what you confirmed. Nothing was changed. Check the details and try again.",
+            changedWords,
         ),
-        Row(RestoreResult.FingerprintMismatch, NoticeKind.ERROR, "The backup opened but holds a different key than it should, so it was not used."),
-        Row(RestoreResult.KeyRejected("bad pem"), NoticeKind.ERROR, "This phone refused the key from the backup, so it was not used. The key on this phone is unchanged.", "bad pem"),
+        Row(RestoreResult.FingerprintMismatch, NoticeKind.ERROR, mismatchWords),
+        Row(RestoreResult.KeyRejected("bad pem"), NoticeKind.ERROR, rejectedWords, "bad pem"),
         Row(
             RestoreResult.InstallNotVerified, NoticeKind.ERROR,
-            "The restore did not leave the backed-up key on this phone. Open Signing key to see which key this phone has, then restore again.",
+            notVerifiedWords,
         ),
-        Row(RestoreResult.Failed(RemoteErrorKind.AUTH, "401"), NoticeKind.ERROR, "The restore failed. Your sign-in has expired. Sign in again.", "401"),
+        Row(RestoreResult.Failed(RemoteErrorKind.AUTH, "401"), NoticeKind.ERROR, "The restore failed. Your sign-in has expired. Sign out and sign in again.", "401"),
     )
 
     @Test fun everyRestoreResultHasWords() = check(restoreRows) { restoreMessage(it as RestoreResult) }
 
     @Test fun everyRestoreResultCaseHasARow() = assertSealedCovered(RestoreResult::class.java, restoreRows.map { it.case })
 
-    @Test fun restoreErrorsExplainWhatToDoAndSuccessHasNone() {
-        assertNull(restoreErrorText(RestoreResult.Restored(fp)))
-        for (row in restoreRows.filter { it.case !is RestoreResult.Restored }) {
-            assertEquals("${row.case}", restoreMessage(row.case as RestoreResult), restoreErrorText(row.case))
+    private val nextOf = mapOf(
+        RestoreResult.Restored(fp) to RestoreNext.DONE,
+        RestoreResult.WrongPassphrase(0) to RestoreNext.TRY_AGAIN_HERE,
+        RestoreResult.Throttled(5_000) to RestoreNext.TRY_AGAIN_HERE,
+        RestoreResult.Failed(offline, "x") to RestoreNext.TRY_AGAIN_HERE,
+        RestoreResult.BackupChanged to RestoreNext.PLAN_AGAIN,
+        RestoreResult.LocalKeyChanged to RestoreNext.PLAN_AGAIN,
+        RestoreResult.NoBackup to RestoreNext.CLOSE,
+        RestoreResult.NotSignedIn to RestoreNext.CLOSE,
+        RestoreResult.Unsupported("v2") to RestoreNext.CLOSE,
+        RestoreResult.FingerprintMismatch to RestoreNext.CLOSE,
+        RestoreResult.KeyRejected("x") to RestoreNext.CLOSE,
+        RestoreResult.InstallNotVerified to RestoreNext.CLOSE,
+    )
+
+    @Test fun everyRestoreResultHasATypedNextStep() {
+        assertSealedCovered(RestoreResult::class.java, nextOf.keys)
+        for ((result, next) in nextOf) assertEquals("$result", next, restoreNext(result))
+    }
+
+    @Test fun onlyAResultThatLeavesTheDialogOpenHasALineInIt() {
+        for ((result, next) in nextOf) {
+            if (next == RestoreNext.TRY_AGAIN_HERE) assertEquals("$result", restoreMessage(result), restoreErrorText(result))
+            else assertNull("$result", restoreErrorText(result))
         }
         assertTrue(en(restoreErrorText(RestoreResult.WrongPassphrase(0))!!).contains("Check it and try again"))
         assertTrue(en(restoreErrorText(RestoreResult.WrongPassphrase(5_000))!!).contains("Wait 5 seconds"))
-        assertTrue(en(restoreErrorText(RestoreResult.LocalKeyChanged)!!).contains("start the restore again"))
-        assertTrue(en(restoreErrorText(RestoreResult.FingerprintMismatch)!!).contains("different key"))
+    }
+
+    @Test fun noStalePlanOrEndedAttemptEverSaysTryAgain() {
+        for ((result, next) in nextOf) {
+            if (next == RestoreNext.PLAN_AGAIN || next == RestoreNext.CLOSE) {
+                assertFalse("$result: ${en(restoreMessage(result))}", en(restoreMessage(result)).contains("try again", ignoreCase = true))
+            }
+        }
+        assertTrue(en(restoreMessage(RestoreResult.LocalKeyChanged)).contains("Start the restore again"))
+        assertTrue(en(restoreMessage(RestoreResult.BackupChanged)).contains("start again"))
+    }
+
+    @Test fun anUnsupportedBackupDoesNotClaimItIsFromANewerVersion() {
+        val text = en(restoreMessage(RestoreResult.Unsupported("kdf iterations 100")))
+        assertFalse(text.contains("newer", ignoreCase = true))
+        assertTrue(text.contains("cannot open this backup"))
+        assertEquals("kdf iterations 100", restoreMessage(RestoreResult.Unsupported("kdf iterations 100")).detail)
     }
 
     @Test fun aRestoreAndItsNoticeSayTheSameThing() {
@@ -217,7 +265,7 @@ class AccountMessagesTest {
         Row(DiscardResult.NotSignedIn, NoticeKind.ERROR, "Sign in first."),
         Row(
             DiscardResult.BackupChanged(CloudBackup.Absent), NoticeKind.ERROR,
-            "The backup in the cloud, or the key on this phone, is not what you confirmed. Nothing was changed. Check the details and try again.",
+            changedWords,
         ),
         Row(DiscardResult.Failed(offline, "x"), NoticeKind.ERROR, "The backup could not be deleted. $offlineWords", "x"),
     )
@@ -228,7 +276,7 @@ class AccountMessagesTest {
 
     private val deletionRows = listOf(
         Row(DeletionResult.Done, NoticeKind.INFO, "Your account and its cloud data were deleted. Designs and the signing key on this phone are untouched."),
-        Row(DeletionResult.NotStarted, NoticeKind.ERROR, "Nothing was deleted: this phone could not write the deletion down first, and one that cannot be remembered is not started. Try again."),
+        Row(DeletionResult.NotStarted, NoticeKind.ERROR, "Nothing was deleted: this phone could not save that the deletion started, so it was not started. Try again."),
         Row(DeletionResult.ReauthFailed("no"), NoticeKind.ERROR, "Nothing was deleted: your Google account could not be confirmed.", "no"),
         Row(
             DeletionResult.DataFailed(offline, "x"), NoticeKind.ERROR,

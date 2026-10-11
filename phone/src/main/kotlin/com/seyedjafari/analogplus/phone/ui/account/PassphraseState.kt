@@ -91,3 +91,8 @@ fun assessmentText(assessment: PassphraseAssessment): UiText {
     val issue = issueText(assessment.issue) ?: return strength
     return uiText(R.string.account_strength_with_issue, strength, issue)
 }
+
+/** Why a passphrase was refused: a length is a rule, so it is not worded as an estimate; the rest is the estimate. */
+fun refusalText(assessment: PassphraseAssessment): UiText =
+    if (assessment.strength == PassphraseStrength.TOO_SHORT) uiText(R.string.account_refusal_too_short, MIN_PASSPHRASE_LENGTH)
+    else assessmentText(assessment)

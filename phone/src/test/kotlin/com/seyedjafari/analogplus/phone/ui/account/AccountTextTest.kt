@@ -12,6 +12,7 @@ import com.seyedjafari.analogplus.phone.accounts.SyncProblem
 import com.seyedjafari.analogplus.phone.accounts.SyncStatus
 import com.seyedjafari.analogplus.phone.ui.components.StatusKind
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -67,12 +68,12 @@ class AccountTextTest {
     @Test fun everySyncProblemHasWordsAndALook() {
         val expected = mapOf(
             SyncProblem.REFUSED to ("The cloud refused the sync" to StatusKind.ERROR),
-            SyncProblem.SIGN_IN_NEEDED to ("Sign in again to keep syncing" to StatusKind.WARNING),
+            SyncProblem.SIGN_IN_NEEDED to ("Sign out and in again to keep syncing" to StatusKind.WARNING),
             SyncProblem.QUOTA to ("Cloud limit reached" to StatusKind.WARNING),
             SyncProblem.FAILED to ("Sync failed" to StatusKind.ERROR),
             SyncProblem.TOO_MANY_DESIGNS to ("Only 200 designs sync; the rest stay on this phone" to StatusKind.WARNING),
             SyncProblem.DESIGNS_SKIPPED to ("3 saved designs could not be synced" to StatusKind.WARNING),
-            SyncProblem.CURRENT_TOO_LARGE to ("The design you are editing is too large to sync" to StatusKind.ERROR),
+            SyncProblem.CURRENT_TOO_LARGE to ("The design you are editing is too large to sync. Try removing or shrinking its photo." to StatusKind.ERROR),
         )
         assertEquals("a SyncProblem has no row here", SyncProblem.entries.toSet(), expected.keys)
         expected.forEach { (problem, words) ->
@@ -84,6 +85,10 @@ class AccountTextTest {
     @Test fun oneSkippedDesignIsSingular() {
         val one = syncPill(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, count = 1), 0)
         assertEquals("1 saved design could not be synced", en(one.text))
+    }
+
+    @Test fun oneSyncableDesignIsSingular() {
+        assertEquals("Only 1 design syncs; the rest stay on this phone", en(syncPill(SyncStatus.Error(SyncProblem.TOO_MANY_DESIGNS, count = 1), 0).text))
     }
 
     @Test fun theSystemsOwnSyncMessageIsADetailNeverThePillText() {
@@ -136,7 +141,7 @@ class AccountTextTest {
     @Test fun everyRemoteErrorKindHasItsOwnSentence() {
         val words = RemoteErrorKind.entries.associateWith { en(remoteReason(it)) }
         assertEquals("The cloud could not be reached. Check your connection.", words[RemoteErrorKind.OFFLINE])
-        assertEquals("Your sign-in has expired. Sign in again.", words[RemoteErrorKind.AUTH])
+        assertEquals("Your sign-in has expired. Sign out and sign in again.", words[RemoteErrorKind.AUTH])
         assertEquals("The cloud refused the request.", words[RemoteErrorKind.PERMISSION])
         assertEquals("The cloud limit was reached. Try again later.", words[RemoteErrorKind.QUOTA])
         assertEquals("Something went wrong in the cloud.", words[RemoteErrorKind.OTHER])
@@ -183,6 +188,10 @@ class AccountTextTest {
         assertEquals("Backup and sync", en(AccountText.SECTION_TITLE))
         assertEquals(R.string.account_backup_title, AccountText.SECTION_TITLE)
         assertTrue(en(AccountText.SIGNED_OUT_BENEFIT).contains("Everything works without signing in."))
+        // what the cloud really holds: email, designs, the encrypted key backup, the phone model and a random device ID
+        val privacy = en(AccountText.SIGNED_OUT_PRIVACY)
+        for (word in listOf("email address", "designs", "encrypted copy of your signing key", "model name", "device ID")) assertTrue(word, privacy.contains(word))
+        assertFalse("no more 'only'", privacy.contains("Only", ignoreCase = true))
         assertEquals("Details: x", en(uiText(AccountText.DETAIL_LINE, "x")))
     }
 }

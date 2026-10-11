@@ -77,9 +77,28 @@ class PassphraseStateTest {
         assertEquals(PassphraseStrength.TOO_SHORT, state.strength)
     }
 
-    @Test fun theStateNeverPrintsWhatWasTyped() {
-        val state = choosing(good)
-        assertFalse(state.toString().contains("horse"))
+    /** Addendum 5: a passphrase is never written into saved state. Any file that holds a PassphraseState may not use rememberSaveable. */
+    @Test fun noFileThatHoldsAPassphraseStateUsesRememberSaveable() {
+        val offenders = java.io.File("src/main/kotlin/com/seyedjafari/analogplus/phone").walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .filter { f -> f.readText().let { it.contains("PassphraseState") || it.contains("rememberPassphraseState") } }
+            .filter { f ->
+                f.readLines().any { line ->
+                    val code = line.trim()
+                    !code.startsWith("*") && !code.startsWith("/*") && !code.startsWith("//") && Regex("""rememberSaveable\s*[({]""").containsMatchIn(code)
+                }
+            }
+            .map { it.name }.toList()
+        assertEquals(emptyList<String>(), offenders)
+    }
+
+    @Test fun aRefusalForLengthIsARuleNotAnEstimate() {
+        val short = StringsXml.text(refusalText(PassphraseAssessment(PassphraseStrength.TOO_SHORT, PassphraseIssue.NONE)))
+        assertEquals("A passphrase needs at least 12 characters", short)
+        assertEquals(
+            "Estimate: weak, add more words or characters",
+            StringsXml.text(refusalText(PassphraseAssessment(PassphraseStrength.WEAK, PassphraseIssue.NONE))),
+        )
     }
 
     @Test fun everyStrengthAndIssueHasWords() {
