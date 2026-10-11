@@ -1053,13 +1053,14 @@ class SyncEngineTest {
         a.store.saveNamed(longName, night); a.store.saveNamed("Night", night); a.store.saveNamed("Zed", day)
         a.engine.start("u1"); runCurrent()
         assertEquals(setOf("Night", "Zed"), remote.designsOf("u1").values.map { it.name }.toSet())
-        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
+        // the pill can say which design: the name, cut for display, travels as the status's detail
+        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1, "x".repeat(40)), a.engine.status.value)
         assertFalse("the long name is not even tried", longName in flaky.attemptedNames)
         assertEquals(3, a.store.savedDesigns().size)                 // nothing is deleted locally
         // and it stays that way: the next pass does not choke on it either
         a.engine.syncNow()
         assertEquals(2, remote.designsOf("u1").size)
-        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
+        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1, "x".repeat(40)), a.engine.status.value)
     }
 
     /** The rules count UTF-16 units (checked against the emulator in rules.test.js): 50 emoji fit, 51 do not. */
@@ -1073,7 +1074,7 @@ class SyncEngineTest {
         a.engine.start("u1"); runCurrent()
         assertEquals(listOf(fits), remote.designsOf("u1").values.map { it.name })
         assertFalse("the long name is not even tried", tooLong in flaky.attemptedNames)
-        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
+        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1, "\uD83D\uDE00".repeat(20)), a.engine.status.value)
     }
 
     @Test fun aDocumentTheCloudRefusesIsSkippedAndTheFirstReasonIsKept() = runTest {

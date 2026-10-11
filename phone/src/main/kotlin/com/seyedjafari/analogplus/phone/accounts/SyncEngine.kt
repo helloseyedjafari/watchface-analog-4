@@ -497,7 +497,12 @@ class SyncEngine(
                 // unreadable one, and the others still go through
                 Outcome.UNSYNCABLE
             }
-            if (outcome == Outcome.UNSYNCABLE) skipped++
+            if (outcome == Outcome.UNSYNCABLE) {
+                skipped++
+                // a name the cloud will not take is named in the status, so the person can see which design it is
+                val long = byId[action.id]?.name?.takeIf { action is SyncAction.PushLive && nameTooLong(it) }
+                if (firstReason.isEmpty() && long != null) firstReason = displayNameOf(long)
+            }
         }
         lastRemoteSignature = signatureOf(remoteList)
         val problem = when {

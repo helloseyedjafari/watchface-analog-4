@@ -226,6 +226,17 @@ class SyncResolverTest {
     }
 
     /** The rules count UTF-16 units (see MAX_DESIGN_NAME_CHARS); an emoji is two of them. */
+    @Test fun theNameFieldLimitsTheFormThatIsStoredNotOnlyWhatWasTyped() {
+        // U+0958 is on Unicode's composition-exclusion list: it becomes two units (U+0915 U+093C) when the store normalises it
+        val typed = "\u0958".repeat(80)                                          // 80 units typed, 160 stored
+        val cut = limitDesignName(typed)
+        assertTrue(com.seyedjafari.analogplus.phone.canonicalDesignName(cut).length <= MAX_DESIGN_NAME_CHARS)
+        assertEquals("as much as fits: 50 of them", 50, cut.length)
+        assertEquals("a name that fits is kept whole", "Night", limitDesignName("Night"))
+        // trailing white space is not stored, so it does not count
+        assertEquals("x".repeat(MAX_DESIGN_NAME_CHARS) + "   ", limitDesignName("x".repeat(MAX_DESIGN_NAME_CHARS) + "   "))
+    }
+
     @Test fun theNameFieldStopsAtTheLimitTheCloudAcceptsCountingUtf16Units() {
         assertEquals("Night", limitDesignName("Night"))
         assertEquals("x".repeat(MAX_DESIGN_NAME_CHARS), limitDesignName("x".repeat(250)))

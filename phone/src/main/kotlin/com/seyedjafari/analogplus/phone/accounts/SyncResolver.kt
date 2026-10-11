@@ -62,13 +62,26 @@ fun copyNameSuffix(deviceLabel: String, pattern: (String) -> String, fallbackWor
 const val MAX_DESIGN_NAME_CHARS = 100
 
 /**
- * [input] cut to [MAX_DESIGN_NAME_CHARS] UTF-16 units (never in the middle of a surrogate pair), for the field a design is
- * named in: a longer name is never accepted by the cloud, so the field does not take it in the first place.
+ * [input] cut from the end until the name the store will keep (trimmed and normalised, [canonicalDesignName]) has at most
+ * [MAX_DESIGN_NAME_CHARS] UTF-16 units (never in the middle of a surrogate pair), for the field a design is named in: a
+ * longer name is never accepted by the cloud, so the field does not take it in the first place. The stored form counts, not
+ * the typed one: some characters become two units when normalised, and trailing white space is not stored at all.
  */
 fun limitDesignName(input: String): String {
-    if (input.length <= MAX_DESIGN_NAME_CHARS) return input
-    val cut = if (input[MAX_DESIGN_NAME_CHARS - 1].isHighSurrogate()) MAX_DESIGN_NAME_CHARS - 1 else MAX_DESIGN_NAME_CHARS
-    return input.substring(0, cut)
+    var cut = if (input.length > 4 * MAX_DESIGN_NAME_CHARS) input.substring(0, 4 * MAX_DESIGN_NAME_CHARS) else input
+    while (cut.isNotEmpty() && canonicalDesignName(cut).length > MAX_DESIGN_NAME_CHARS) {
+        cut = if (cut.length >= 2 && cut.last().isLowSurrogate() && cut[cut.length - 2].isHighSurrogate()) cut.dropLast(2) else cut.dropLast(1)
+    }
+    return cut
+}
+
+/** How much of a name that cannot be synced the status shows (the name is the status's detail). */
+const val SKIPPED_NAME_DISPLAY_CHARS = 40
+
+fun displayNameOf(name: String): String {
+    if (name.length <= SKIPPED_NAME_DISPLAY_CHARS) return name
+    val cut = if (name[SKIPPED_NAME_DISPLAY_CHARS - 1].isHighSurrogate()) SKIPPED_NAME_DISPLAY_CHARS - 1 else SKIPPED_NAME_DISPLAY_CHARS
+    return name.substring(0, cut)
 }
 
 /**
