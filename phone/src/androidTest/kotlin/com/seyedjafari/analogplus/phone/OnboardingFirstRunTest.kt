@@ -40,6 +40,8 @@ class OnboardingFirstRunTest {
     private var scenario: ActivityScenario<MainActivity>? = null
 
     @Before fun emptyTheStore() {
+        // a fresh process has the default; without this the flag a test before this one left behind would hide a controller that was built too early
+        OnboardingConfig.accountsAvailable = false
         snapshot.backUp()
         syncSnapshot.backUp()
         FirebaseTestSession.signOut(context)

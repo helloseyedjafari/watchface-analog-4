@@ -43,12 +43,14 @@ fun BackupPage(onDone: () -> Unit) {
     )
 
     PageLayout(stringResource(OnboardingText.BACKUP_TITLE)) {
-        Text(
-            stringResource(BackupPageText.INTRO), style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
-        )
         val account = ui.account as? AccountState.SignedIn
-        if (account != null) {
+        // the explanation is for before signing in; afterwards the room goes to the step itself (at large text it would push the button off the screen)
+        if (account == null) {
+            Text(
+                stringResource(BackupPageText.INTRO), style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+            )
+        } else {
             Text(uiTextResource(signedInAsText(account.email)), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag(AccountTags.EMAIL))
             Pill(backupPill(ui.backup), AccountTags.BACKUP_STATUS)
         }

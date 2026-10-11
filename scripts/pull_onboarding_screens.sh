@@ -38,7 +38,7 @@ adb -s "$ANDROID_SERIAL" shell rm -rf "$REMOTE"
 # the output is captured first: `... | grep -q` could stop reading early and kill the writer with SIGPIPE under pipefail
 out="$(adb -s "$ANDROID_SERIAL" shell am instrument -w -e screenshots true \
   -e class com.seyedjafari.analogplus.phone.OnboardingScreenshotTest \
-  "$APP.test/androidx.test.runner.AndroidJUnitRunner" | tee /dev/stderr)"
+  "$APP.test/com.seyedjafari.analogplus.phone.AccountsTestRunner" | tee /dev/stderr)"
 grep -q '^OK (' <<<"$out" || { echo "the screenshot test did not pass" >&2; exit 1; }
 
 adb -s "$ANDROID_SERIAL" pull "$REMOTE/." "$tmp" >/dev/null

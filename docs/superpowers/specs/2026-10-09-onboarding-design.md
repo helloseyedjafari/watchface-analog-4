@@ -18,8 +18,8 @@ onboarding never blocks an existing user and never shows twice unless asked.
 Five pages in a paged flow with a progress indicator ("Step N of M"), Skip on every page, Back works. There is no swipe:
 the user moves with Back, Skip and the primary button only (and the system Back button), and pages change with a
 shared-axis slide (a plain change when animations are off). System Back goes one page back; on the first page a first run leaves the app, while a run restarted from Account's "Run setup again" counts Back as Skip and returns to the app (the controller keeps how the run started, `OnboardingOrigin`, in memory only: after process death a run is a first run). Only the visible page is composed, so the pairing check
-starts when the connect page is reached and a neighbouring page never plays its animation. Until accounts ship the flow
-has four pages (the fifth, backup, is hidden).
+starts when the connect page is reached and a neighbouring page never plays its animation. A build without accounts (no Firebase
+project) has four pages (the fifth, backup, is hidden); the backup page ships with accounts (the accounts-sync plan, task 15) and is the fifth page of every build that has them.
 
 1. **Welcome.** Lottie loop: a watch face morphing between designs (colours, ring layout, complication slots).
    Headline and one line. Primary: Get started.

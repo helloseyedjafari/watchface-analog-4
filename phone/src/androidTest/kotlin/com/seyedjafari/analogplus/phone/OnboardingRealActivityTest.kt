@@ -52,6 +52,7 @@ class OnboardingRealActivityTest {
     private val neon = Templates.all.first { it.name == "Neon" }
 
     @Before fun emptyTheStore() {
+        OnboardingConfig.accountsAvailable = false      // a fresh process: the app sets it before it builds the controller (see OnboardingFirstRunTest)
         awaitNoMainActivities(); snapshot.backUp(); syncSnapshot.backUp()
         FirebaseTestSession.signOut(context)
     }
