@@ -50,7 +50,7 @@ class ShareLinkActionsTest {
         open(state)
         assertEquals(DesignJson.shareLink(state.design), shownLink())
         val neon = Templates.all.first { it.name == "Neon" }
-        rule.runOnUiThread { state.replace(neon) }
+        rule.runOnUiThread { state.replaceWholeDesign(neon) }
         rule.waitForIdle()
         assertEquals(DesignJson.shareLink(neon), shownLink())
     }

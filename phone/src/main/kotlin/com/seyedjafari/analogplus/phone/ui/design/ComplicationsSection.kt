@@ -94,7 +94,7 @@ fun ComplicationsSection(state: EditorState) {
     val selected = design.slots.take(SlotGeometry.MAX_SHOWN).firstOrNull { it.id == selectedId }
 
     fun apply(r: SlotResult) {
-        if (r.refusal == null) state.replace(r.design)
+        if (r.refusal == null) state.update { r.design }   // an edit, not a replacement of the design: the photo being read stays wanted
         message = r.refusal
     }
 
@@ -172,7 +172,7 @@ fun ComplicationsSection(state: EditorState) {
             SecondaryButton(
                 stringResource(R.string.complications_button_remove_slot),
                 {
-                    selected?.let { state.replace(SlotGeometry.removeSlot(state.design, it.id)) }
+                    selected?.let { state.update { d -> SlotGeometry.removeSlot(d, it.id) } }
                     selectedId = null
                     message = null
                 },

@@ -57,6 +57,6 @@ fun parseShareLink(link: String): ShareLinkResult {
  * The design is replaced as is (it may be invalid; the editor then shows what is wrong).
  */
 fun loadShareLink(state: EditorState, link: String): ShareProblem? = when (val r = parseShareLink(link)) {
-    is ShareLinkResult.Ok -> { state.replace(r.design); null }
+    is ShareLinkResult.Ok -> { state.replaceWholeDesign(r.design); null }
     is ShareLinkResult.Problem -> r.problem
 }

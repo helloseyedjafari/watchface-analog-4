@@ -122,7 +122,7 @@ class ComplicationsTest {
         click(Tags.field("nudge_up")) // 35: corner (205,35) is outside radius 190
         rule.onNodeWithTag(Tags.field("slot_message")).assertTextEquals("Keep slots inside the dial")
         assertEquals(40, slot(state, 0).y)
-        rule.runOnIdle { state.replace(DesignSettings(slots = listOf(SlotDesign(0, "a", 150, 100, 80, 60)))) }
+        rule.runOnIdle { state.replaceWholeDesign(DesignSettings(slots = listOf(SlotDesign(0, "a", 150, 100, 80, 60)))) }
         click(Tags.field("nudge_step_10"))
         repeat(5) { click(Tags.field("nudge_down")) } // 110,120,130,140,150: bottom edge reaches 210 > 207
         rule.onNodeWithTag(Tags.field("slot_message")).assertTextEquals("Too close to the hands' centre")

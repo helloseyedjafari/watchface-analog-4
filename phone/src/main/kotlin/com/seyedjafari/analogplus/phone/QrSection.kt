@@ -131,7 +131,7 @@ internal fun QrSection(state: EditorState, modifier: Modifier = Modifier, scanne
     }
 
     incoming?.let { design ->
-        LoadSharedDesignDialog(design, onLoad = { state.replace(design); incoming = null }, onKeep = { incoming = null })
+        LoadSharedDesignDialog(design, onLoad = { state.replaceWholeDesign(design); incoming = null }, onKeep = { incoming = null })
     }
 }
 

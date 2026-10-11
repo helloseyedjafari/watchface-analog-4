@@ -54,9 +54,9 @@ fun TemplatePage(state: EditorState, modifier: Modifier = Modifier) {
     val choose: (DesignSettings) -> Unit = { target ->
         // an equal design needs no confirmation (see needsReplaceConfirmation) and replacing it with itself changes nothing
         if (needsReplaceConfirmation(state.design, target)) pending = PendingReplace(target.name, target)
-        else state.replace(target)
+        else state.replaceWholeDesign(target)
     }
-    ReplaceDialog(pending, onConfirm = { state.replace(it.design); pending = null }, onCancel = { pending = null })
+    ReplaceDialog(pending, onConfirm = { state.replaceWholeDesign(it.design); pending = null }, onCancel = { pending = null })
 
     PageLayout(stringResource(OnboardingText.TEMPLATE_TITLE), modifier) {
         Text(

@@ -81,7 +81,7 @@ fun LibraryScreen(state: EditorState, store: Store, modifier: Modifier = Modifie
     val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf<PendingReplace?>(null) }
     val askToReplace: (String, DesignSettings) -> Unit = { name, target -> if (target != state.design) pending = PendingReplace(name, target) }
-    ReplaceDialog(pending, onConfirm = { state.replace(it.design); pending = null }, onCancel = { pending = null })
+    ReplaceDialog(pending, onConfirm = { state.replaceWholeDesign(it.design); pending = null }, onCancel = { pending = null })
     Column(modifier.fillMaxSize()) {
         SectionChips(LibrarySection.entries, selected, {
             if (it != selected) scope.launch(start = CoroutineStart.UNDISPATCHED) { scrolls.getValue(it).scrollTo(0) }

@@ -37,7 +37,7 @@ class EditorStateTest {
         val state = EditorState()
         state.update { it.copy(accent = "#FF00FF00") }
         assertEquals(0, state.replacements)
-        state.replace(DesignSettings(name = "Other"))
+        state.replaceWholeDesign(DesignSettings(name = "Other"))
         assertEquals(1, state.replacements)
     }
 }

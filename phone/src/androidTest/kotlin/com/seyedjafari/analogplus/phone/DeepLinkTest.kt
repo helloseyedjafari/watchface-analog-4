@@ -61,14 +61,14 @@ class DeepLinkTest {
         ActivityScenario.launch(MainActivity::class.java).use { s ->
             s.onActivity {
                 val state = ViewModelProvider(it)[AppModel::class.java].state
-                if (state.design == neon) state.replace(DesignSettings())
+                if (state.design == neon) state.replaceWholeDesign(DesignSettings())
             }
         }
     }
 
     @After fun putTheDesignBack() {
         val keep = original
-        if (keep != null) scenario?.onActivity { ViewModelProvider(it)[AppModel::class.java].state.replace(keep) }
+        if (keep != null) scenario?.onActivity { ViewModelProvider(it)[AppModel::class.java].state.replaceWholeDesign(keep) }
         // ActivityScenario follows its activity by the intent it started it with and ignores every lifecycle event once the activity's
         // intent is another one (which onNewIntent does with setIntent): give it back the start intent so that close() sees the end.
         scenario?.onActivity { it.intent = startIntent }

@@ -50,15 +50,21 @@ class EditorState(initial: DesignSettings = DesignSettings(), photoLoad: PhotoLo
     }
 
     /**
-     * How often the whole design was replaced (template, share link, saved design, a design from the cloud). An edit with
-     * [update] does not count. The start-up photo read uses it to tell "the person replaced the design" from "the person
+     * How often the whole design was replaced with [replaceWholeDesign] (template, share link, saved design, a design from the
+     * cloud). An edit with [update] does not count, however much of the design it rewrites (a slot edit computes a whole new design
+     * from the old one and is still an edit). The start-up photo read uses it to tell "the person replaced the design" from "the person
      * edited it": only a replacement means the saved photo is no longer wanted.
      */
     @Volatile var replacements: Int = 0
         private set
 
-    /** Replaces the whole design (template, share link, saved design). */
-    fun replace(d: DesignSettings) {
+    /**
+     * Throws the design being edited away for [d] (template, share link, QR, saved design, onboarding template, a design from the
+     * cloud): the person chose another design, so a photo still being read for the old one is no longer wanted. Edits of
+     * any kind, also those that build the new design from the old one, are [update]s. The name says it so that the next caller
+     * does not use it for an edit (a slot edit that did lost the saved photo).
+     */
+    fun replaceWholeDesign(d: DesignSettings) {
         replacements++
         design = d
     }

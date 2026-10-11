@@ -171,7 +171,7 @@ class ShareTemplatesTest {
         rule.onNodeWithTag(Tags.saved("Mine")).performClick()
         rule.onNodeWithTag(Tags.field("replace_dialog")).assertDoesNotExist()
 
-        state.replace(DesignSettings())
+        state.replaceWholeDesign(DesignSettings())
         rule.onNodeWithTag(Tags.saved("Mine")).performClick() // the name asks like the Load button does
         rule.onNodeWithTag(Tags.field("replace_dialog")).assertIsDisplayed()
         rule.onNodeWithTag(Tags.field("replace_cancel")).performClick()
