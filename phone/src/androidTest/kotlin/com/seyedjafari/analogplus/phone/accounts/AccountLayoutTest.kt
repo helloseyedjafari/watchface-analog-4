@@ -1,5 +1,20 @@
 package com.seyedjafari.analogplus.phone.accounts
 
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.unit.Density
+import androidx.test.core.app.ActivityScenario
+import com.seyedjafari.analogplus.phone.ui.account.CloudDialog
+import com.seyedjafari.analogplus.phone.ui.account.ForgotPassphraseDialog
+import com.seyedjafari.analogplus.phone.ui.onboarding.ScrollHint
+import com.seyedjafari.analogplus.phone.ui.onboarding.ScrollHintKey
+import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
+import org.junit.rules.RuleChain
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -8,6 +23,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -19,6 +35,7 @@ import com.seyedjafari.analogplus.phone.ui.account.AccountSection
 import com.seyedjafari.analogplus.phone.ui.account.AccountTags
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -73,6 +90,9 @@ class AccountLayoutTest(private val window: WindowDp, private val fontScale: Flo
         waitForText("Signing key is not backed up")
         rule.onNodeWithTag(AccountTags.BACK_UP).performScrollTo().performClick()
         waitForTag(AccountTags.PASSPHRASE)
+        // a dialog is a window of its own: the font scale of the surrounding composition must reach it, or this test (and the
+        // pictures) would show a font scale nobody tested
+        assertEquals(fontScale, rule.onNodeWithText("Back up your signing key").fontScaleOfText())
         rule.onNodeWithTag(AccountTags.PASSPHRASE).performTextInput(f.passphrase)
         rule.onNodeWithTag(AccountTags.PASSPHRASE_CONFIRM).performScrollTo().assertIsDisplayed().performTextInput(f.passphrase)
         reach(AccountTags.PASSPHRASE_SUBMIT)
@@ -86,6 +106,7 @@ class AccountLayoutTest(private val window: WindowDp, private val fontScale: Flo
         waitForText("The backup holds another key")
         rule.onNodeWithTag(AccountTags.RESTORE).performScrollTo().performClick()
         waitForTag(AccountTags.REPLACE_CONFIRM)
+        assertEquals(fontScale, rule.onNodeWithText("Replace the signing key on this phone?").fontScaleOfText())
         reach(AccountTags.REPLACE_CONFIRM)
         reach(AccountTags.REPLACE_CANCEL)
         rule.onNodeWithTag(AccountTags.REPLACE_CONFIRM).performClick()
@@ -93,6 +114,7 @@ class AccountLayoutTest(private val window: WindowDp, private val fontScale: Flo
         reach(AccountTags.FORGOT)
         rule.onNodeWithTag(AccountTags.FORGOT).performClick()
         waitForTag(AccountTags.RESET_CONFIRM)
+        assertEquals(fontScale, rule.onNodeWithText("Delete the old backup?").fontScaleOfText())
         reach(AccountTags.RESET_CONFIRM)
         reach(AccountTags.RESET_CANCEL)
     }
@@ -148,5 +170,45 @@ class AccountRotationTest {
         restoration.emulateSavedInstanceStateRestore()
         f.gated.putGate!!.complete(Unit)
         rule.waitUntil(10_000) { rule.onAllNodes(hasText("Signing key backed up", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+    }
+}
+
+/**
+ * A dialog in a window that is really short and wide (the activity is turned sideways, so the dialog window is too) at font
+ * scale 2: it is one scrolling page, the fade at its edge says that it goes on, and the buttons are reached by scrolling.
+ */
+@RunWith(AndroidJUnit4::class)
+class AccountLandscapeDialogTest {
+    private val rule = createEmptyComposeRule()
+    @get:Rule val chain: RuleChain = RuleChain.outerRule(rule)
+
+    @Test fun aLongDialogInARealLandscapeWindowIsOnePageWithAFadeAndReachableButtons() {
+        ActivityScenario.launch(ComponentActivity::class.java).use { scenario ->
+            scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+            rule.waitUntil(15_000) {
+                var landscape = false
+                scenario.onActivity { landscape = it.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE }
+                landscape
+            }
+            scenario.onActivity { activity ->
+                activity.setContent {
+                    val base = LocalDensity.current
+                    CompositionLocalProvider(LocalDensity provides Density(base.density, 2f)) {
+                        AnalogTheme {
+                            ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.ReplaceDamaged("0123456789abcdef"), "w1"), busy = false, onConfirm = {}, onBack = {})
+                        }
+                    }
+                }
+            }
+            rule.waitUntil(10_000) { rule.onAllNodes(hasTestTag(AccountTags.DIALOG_SCROLL)).fetchSemanticsNodes().isNotEmpty() }
+            assertEquals("the dialog is drawn at the font scale of the place that shows it", 2f, rule.onNodeWithText("Start over without the passphrase?").fontScaleOfText())
+            assertEquals(ScrollHint.MORE_BELOW, rule.onNodeWithTag(AccountTags.DIALOG_SCROLL).fetchSemanticsNode().config[ScrollHintKey])
+            rule.onNodeWithTag(AccountTags.RESET_CONFIRM).performScrollTo().assertIsDisplayed()
+            rule.onNodeWithTag(AccountTags.RESET_CANCEL).assertIsDisplayed()
+            // scrolled to the buttons the page has something above it now
+            val after = rule.onNodeWithTag(AccountTags.DIALOG_SCROLL).fetchSemanticsNode().config[ScrollHintKey]
+            assertTrue("$after", after == ScrollHint.MORE_ABOVE || after == ScrollHint.MORE_BOTH)
+            scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
+        }
     }
 }

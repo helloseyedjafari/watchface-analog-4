@@ -64,7 +64,7 @@ import org.junit.runners.model.Statement
  * Pictures of the Backup and sync card in every state and of every dialog, taken of the real screen (the display, so the
  * dialogs and the keyboard are in them) in light and dark, upright and sideways, at font scale 1 and 2. The files go to the app's
  * external files directory `account-screens/` as `account-<scene>-<light|dark>-<portrait|landscape>[-2x].png`
- * at half the size of the screen (about 1.3 pixels per dp). `scripts/pull_account_screens.sh` runs this class and pulls them into
+ * at two fifths of the screen size (about 1 pixel per dp), system bars cut off. `scripts/pull_account_screens.sh` runs this class and pulls them into
  * `docs/screenshots/accounts/`.
  *
  * It takes a few minutes, so the normal suite skips it: it runs only with the runner argument `screenshots=true`.
@@ -156,13 +156,23 @@ class AccountScreenshotTest(private val variant: Variant) {
         },
         Scene("dlg-reask-gone") { dialogCard(); ConfirmDialog(CloudDialog.Confirm(ConfirmKind.REPLACE_BACKUP, reAskGoneText(), CloudDialog.None), {}, {}) },
         Scene("dlg-reask-same") { dialogCard(); ConfirmDialog(CloudDialog.Confirm(ConfirmKind.REPLACE_BACKUP, reAskSameText(cloudFp), CloudDialog.None), {}, {}) },
-        Scene("dlg-forgot-new") { dialogCard(); ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.AlreadyHaveThisKey(cloudFp), "w1"), {}, {}) },
-        Scene("dlg-forgot-replace-backup") { dialogCard(); ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.ReplaceLocal(phoneFp, cloudFp), "w1"), {}, {}) },
-        Scene("dlg-forgot-reset") { dialogCard(); ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.InstallNew(cloudFp), "w1"), {}, {}) },
-        Scene("dlg-forgot-damaged") { dialogCard(); ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.ReplaceDamaged(cloudFp), "w1"), {}, {}) },
+        Scene("dlg-forgot-new") { dialogCard(); ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.AlreadyHaveThisKey(cloudFp), "w1"), busy = false, onConfirm = {}, onBack = {}) },
+        Scene("dlg-forgot-replace-backup") { dialogCard(); ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.ReplaceLocal(phoneFp, cloudFp), "w1"), busy = false, onConfirm = {}, onBack = {}) },
+        Scene("dlg-forgot-reset") { dialogCard(); ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.InstallNew(cloudFp), "w1"), busy = false, onConfirm = {}, onBack = {}) },
+        Scene("dlg-forgot-damaged") { dialogCard(); ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.ReplaceDamaged(cloudFp), "w1"), busy = false, onConfirm = {}, onBack = {}) },
         Scene("dlg-delete") { dialogCard(); DeleteAccountDialog(busy = false, onConfirm = {}, onDismiss = {}) },
         Scene("dlg-offer") { dialogCard(); OfferDialog(CurrentOffer("Pixel 8", DesignSettings(name = "Night"), now), {}, {}) },
     )
+
+    /** The room the status bar and the navigation bar take, in pixels (cut off, so the clock is not in a picture). */
+    private fun systemBars(scenario: ActivityScenario<ComponentActivity>): androidx.core.graphics.Insets {
+        var bars = androidx.core.graphics.Insets.NONE
+        scenario.onActivity { activity ->
+            val insets = androidx.core.view.ViewCompat.getRootWindowInsets(activity.window.decorView)
+            if (insets != null) bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        }
+        return bars
+    }
 
     private fun screenshot(): Bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
 
@@ -211,7 +221,9 @@ class AccountScreenshotTest(private val variant: Variant) {
                     last = picture
                     same >= 2
                 }
-                val scaled = Bitmap.createScaledBitmap(last, last.width / 2, last.height / 2, true)
+                val bars = systemBars(scenario)
+                val cropped = Bitmap.createBitmap(last, bars.left, bars.top, last.width - bars.left - bars.right, last.height - bars.top - bars.bottom)
+                val scaled = Bitmap.createScaledBitmap(cropped, cropped.width * 2 / 5, cropped.height * 2 / 5, true)
                 val file = File(dir, "account-${scene.name}-${variant.suffix}.png")
                 file.outputStream().use { check(scaled.compress(Bitmap.CompressFormat.PNG, 100, it)) }
                 assertTrue("${file.name} is a real picture", file.length() > 1_000)
@@ -235,8 +247,7 @@ class AccountScreenshotTest(private val variant: Variant) {
 
         @JvmStatic @Parameterized.Parameters(name = "{0}")
         fun variants() = listOf(
-            Variant(dark = false, landscape = false, fontScale = 1f), Variant(dark = true, landscape = false, fontScale = 2f),
-            Variant(dark = false, landscape = true, fontScale = 1f), Variant(dark = true, landscape = true, fontScale = 2f),
-        ).map { arrayOf<Any>(it) }
+            false, true,
+        ).flatMap { dark -> listOf(false, true).flatMap { landscape -> listOf(1f, 2f).map { font -> arrayOf<Any>(Variant(dark, landscape, font)) } } }
     }
 }

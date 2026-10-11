@@ -13,7 +13,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import com.seyedjafari.analogplus.phone.PHONE_PORTRAIT
 import com.seyedjafari.analogplus.phone.PinnedWindow
@@ -38,11 +42,15 @@ import kotlinx.coroutines.SupervisorJob
 internal class GatedRemote(val inner: FakeRemoteStore) : RemoteStore by inner {
     @Volatile var putGate: CompletableDeferred<Unit>? = null
 
+    /** While set, every read of the backup waits for it: a restore (and the status refresh after it) is held under way. */
+    @Volatile var readGate: CompletableDeferred<Unit>? = null
+
     /** How often the backup was read (a restore reads it once, and the status refresh after it once more). */
     val reads = java.util.concurrent.atomic.AtomicInteger()
 
     override suspend fun getBackup(uid: String): RemoteBackup? {
         reads.incrementAndGet()
+        readGate?.await()
         return inner.getBackup(uid)
     }
 
@@ -66,7 +74,8 @@ internal class AccountUiFixture(
     initial: AccountState = AccountState.SignedIn("u1", "me@example.com"),
     pendingDeletion: Boolean = false,
 ) {
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // like the app's view model scope: the controller is called from, and answers on, the main thread
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val accounts = FakeAccountManager(initial)
     val remote = FakeRemoteStore()
     val gated = GatedRemote(remote)
@@ -137,4 +146,12 @@ internal class AccountUiFixture(
             }
         }
     }
+}
+
+/** The font scale a text node was laid out with: what the user sees, whichever window the text is in. */
+internal fun SemanticsNodeInteraction.fontScaleOfText(): Float {
+    val results = mutableListOf<TextLayoutResult>()
+    val action = fetchSemanticsNode().config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action
+    check(action != null && action(results) && results.isNotEmpty()) { "the node has no text layout" }
+    return results.first().layoutInput.density.fontScale
 }

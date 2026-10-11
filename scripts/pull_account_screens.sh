@@ -43,6 +43,6 @@ grep -q '^OK (' <<<"$out" || { echo "the screenshot test did not pass" >&2; exit
 
 adb -s "$ANDROID_SERIAL" pull "$REMOTE/." "$tmp" >/dev/null
 count="$(ls "$tmp"/account-*.png | wc -l | tr -d ' ')"
-[ "$count" -eq 112 ] || { echo "expected 112 pictures, got $count" >&2; exit 1; }
+[ "$count" -eq 224 ] || { echo "expected 224 pictures, got $count" >&2; exit 1; }
 cp "$tmp"/account-*.png "$OUT/"
 echo "wrote $count pictures to $OUT"

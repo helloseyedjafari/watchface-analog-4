@@ -4,7 +4,10 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -16,6 +19,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.keyFingerprint
 import com.seyedjafari.analogplus.phone.ui.account.AccountTags
+import kotlinx.coroutines.launch
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -445,31 +449,16 @@ class AccountSectionTest {
 
     // ---- other-device offer, delete, sign out ---------------------------------------------------------------------------------
 
-    @Test fun theOfferDialogAsksWhichDesignToUseAndNamesAnUnnamedDeviceAsAnotherDevice() {
+    @Test fun theCardItselfHostsNoOfferDialog() {
+        // the question is asked app-wide by the shell (AccountOfferTest), never twice and never only on this tab
         val f = fixture()
         f.show(rule)
         waitForTag(AccountTags.SYNC_STATUS)
-        f.sync.setOffer(CurrentOffer("", DesignSettings(name = "Night"), 5))
-        waitForTag(AccountTags.OFFER_USE)
-        rule.onNodeWithText("Use the design from another device?").assertExists()
-        rule.onNodeWithText("Another device saved a different version of the design you are editing (\"Night\").", substring = true).assertExists()
-        click(AccountTags.OFFER_KEEP)
-        assertEquals(listOf(OfferChoice.KEEP_MINE), f.sync.choices)
-        waitUntilGone(AccountTags.OFFER_USE)
-        f.sync.setOffer(CurrentOffer("Pixel 8", DesignSettings(name = "Day"), 6))
-        waitForTag(AccountTags.OFFER_USE)
-        rule.onNodeWithText("Use the design from Pixel 8?").assertExists()
-        click(AccountTags.OFFER_USE)
-        assertEquals(listOf(OfferChoice.KEEP_MINE, OfferChoice.USE_REMOTE), f.sync.choices)
-    }
-
-    @Test fun aDeviceLabelFromTheCloudIsCleanedOfInvisibleControlCharactersBeforeItIsShown() {
-        val f = fixture()
-        f.show(rule)
-        waitForTag(AccountTags.SYNC_STATUS)
-        f.sync.setOffer(CurrentOffer("Pix‮el\u0000 8", DesignSettings(name = "Night"), 5))
-        waitForTag(AccountTags.OFFER_USE)
-        rule.onNodeWithText("Use the design from Pixel 8?").assertExists()
+        f.sync.setOffer(CurrentOffer("Pixel 8", DesignSettings(name = "Night"), 5))
+        rule.waitUntil(10_000) { f.controller.ui.value.offer != null }
+        rule.waitForIdle()
+        gone(AccountTags.OFFER_USE)
+        gone(AccountTags.OFFER_KEEP)
     }
 
     @Test fun deletingTheAccountAsksFirstThenRemovesTheCloudDataAndSignsOut() {
@@ -523,14 +512,30 @@ class AccountSectionTest {
         rule.onNodeWithTag(AccountTags.DELETE).performScrollTo().assertIsEnabled()
     }
 
-    @Test fun finishDeletingGoesThroughTheDeletionAndEndsSignedOut() {
+    @Test fun finishDeletingAsksFirstAndTheAnswerGoesThroughTheDeletionAndEndsSignedOut() {
         val f = fixture(pending = true)
         f.show(rule)
         waitForTag(AccountTags.FINISH_DELETION)
         click(AccountTags.FINISH_DELETION)
+        waitForTag(AccountTags.DELETE_CONFIRM)
+        rule.onNodeWithText("Delete your account?").assertExists()
+        assertEquals(0, f.accounts.deleteCalls)
+        click(AccountTags.DELETE_CONFIRM)
         waitForTag(AccountTags.SIGN_IN)
         assertEquals(1, f.accounts.deleteCalls)
         waitForText("Your account and its cloud data were deleted")
+    }
+
+    @Test fun cancelingTheQuestionOfFinishDeletingDeletesNothingAndTheCardStays() {
+        val f = fixture(pending = true)
+        f.show(rule)
+        waitForTag(AccountTags.FINISH_DELETION)
+        click(AccountTags.FINISH_DELETION)
+        waitForTag(AccountTags.DELETE_CANCEL)
+        click(AccountTags.DELETE_CANCEL)
+        waitUntilGone(AccountTags.DELETE_CANCEL)
+        assertEquals(0, f.accounts.deleteCalls)
+        rule.onNodeWithTag(AccountTags.DELETION_PENDING).assertExists()
     }
 
     @Test fun aDeletionThatFailsStaysPendingWithTheReasonAndTheSystemsWordsAsDetail() {
@@ -543,5 +548,83 @@ class AccountSectionTest {
         rule.onNodeWithTag(AccountTags.NOTICE).assertTextContains("Your cloud data could not be deleted completely.", substring = true)
         rule.onNodeWithTag(AccountTags.NOTICE).assertTextContains("Details: UNAVAILABLE: no route", substring = true)
         rule.onNodeWithTag(AccountTags.FINISH_DELETION).assertIsEnabled()
+    }
+
+    // ---- an answer belongs to the dialog that asked --------------------------------------------------------------------------------
+
+    @Test fun whileARestoreRunsIForgotAndTheDialogsConfirmAreOffAndACancelledDialogStaysClosed() {
+        val f = fixture(FakeKeySource(null))
+        f.otherPhoneBacksUp(pemA)
+        f.show(rule)
+        waitForText("A backup exists; this phone has no key yet")
+        click(AccountTags.RESTORE)
+        waitForTag(AccountTags.PASSPHRASE)
+        f.gated.readGate = kotlinx.coroutines.CompletableDeferred()
+        type(AccountTags.PASSPHRASE, "not the passphrase")
+        rule.onNodeWithTag(AccountTags.PASSPHRASE_SUBMIT).performClick()
+        waitForTag(AccountTags.BUSY)
+        // the delete of the backup would queue behind the restore: it cannot be asked for now
+        rule.onNodeWithTag(AccountTags.FORGOT).assertIsNotEnabled()
+        rule.onNodeWithTag(AccountTags.PASSPHRASE_CANCEL).performClick()
+        waitUntilGone(AccountTags.PASSPHRASE)
+        f.gated.readGate!!.complete(Unit)
+        waitUntilGone(AccountTags.BUSY)
+        rule.waitForIdle()
+        // the wrong answer of that restore does not reopen the dialog that was closed
+        gone(AccountTags.PASSPHRASE)
+    }
+
+    @Test fun theConfirmOfTheForgottenDialogIsOffWhileSomethingRuns() {
+        val f = fixture(FakeKeySource(null))
+        f.otherPhoneBacksUp(pemA)
+        f.show(rule)
+        waitForText("A backup exists; this phone has no key yet")
+        click(AccountTags.RESTORE)
+        waitForTag(AccountTags.FORGOT)
+        click(AccountTags.FORGOT)
+        waitForTag(AccountTags.RESET_CONFIRM)
+        rule.onNodeWithTag(AccountTags.RESET_CONFIRM).assertIsEnabled()
+        // something else starts (a plan is asked for) and is held under way: the delete would queue behind it
+        f.gated.readGate = kotlinx.coroutines.CompletableDeferred()
+        f.scope.launch { f.controller.planRestore() }
+        rule.waitUntil(10_000) { f.controller.ui.value.busy != Busy.NONE }
+        rule.onNodeWithTag(AccountTags.RESET_CONFIRM).assertIsNotEnabled()
+        f.gated.readGate!!.complete(Unit)
+        rule.waitUntil(10_000) { f.controller.ui.value.busy == Busy.NONE }
+        rule.waitUntil(10_000) { runCatching { rule.onNodeWithTag(AccountTags.RESET_CONFIRM).assertIsEnabled() }.isSuccess }
+    }
+
+    // ---- where the notice is, what leaves with the account, what a screen reader hears -------------------------------------------------
+
+    @Test fun theNoticeIsUnderThePillsAsTheTextsSayAndItIsALiveRegionWithADescribedDismiss() {
+        val f = fixture()
+        f.show(rule)
+        waitForText("Signing key is not backed up")
+        click(AccountTags.BACK_UP)
+        type(AccountTags.PASSPHRASE, f.passphrase)
+        type(AccountTags.PASSPHRASE_CONFIRM, f.passphrase)
+        rule.onNodeWithTag(AccountTags.PASSPHRASE_SUBMIT).performClick()
+        waitForTag(AccountTags.NOTICE)
+        val pills = rule.onNodeWithTag(AccountTags.BACKUP_STATUS).fetchSemanticsNode().boundsInRoot
+        val notice = rule.onNodeWithTag(AccountTags.NOTICE).fetchSemanticsNode()
+        assertTrue("the notice (${notice.boundsInRoot.top}) is under the backup pill (${pills.bottom})", notice.boundsInRoot.top >= pills.bottom)
+        assertEquals(LiveRegionMode.Polite, notice.config[SemanticsProperties.LiveRegion])
+        rule.onNodeWithContentDescription("Dismiss this message").assertExists()
+    }
+
+    @Test fun theScreensOwnNoteDoesNotSurviveASignOut() {
+        val f = fixture(FakeKeySource(pemB))
+        f.otherPhoneBacksUp(pemA)
+        f.show(rule)
+        waitForText("The backup holds another key than this phone")
+        // another phone's backup is now of this phone's key: Replace finds a stale line and says so itself
+        f.remote.deleteBackupDirectly("u1")
+        f.otherPhoneBacksUp(pemB, refresh = false)
+        click(AccountTags.REPLACE_BACKUP)
+        waitForText("The backup line above was out of date")
+        click(AccountTags.SIGN_OUT)
+        waitForTag(AccountTags.SIGN_IN)
+        rule.onNodeWithText("The backup line above was out of date", substring = true).assertDoesNotExist()
+        gone(AccountTags.NOTICE)
     }
 }

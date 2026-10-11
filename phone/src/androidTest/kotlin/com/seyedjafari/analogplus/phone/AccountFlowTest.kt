@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.Density
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.seyedjafari.analogplus.facegen.KeyStore
+import com.seyedjafari.analogplus.phone.accounts.fontScaleOfText
 import com.seyedjafari.analogplus.phone.ui.account.AccountScreen
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme
 import org.junit.After
@@ -78,6 +79,8 @@ class AccountFlowTest {
     @Test fun atFontScale2TheResetQuestionKeepsBothAnswersReachable() {
         show(fontScale = 2f)
         rule.onNodeWithTag(Tags.RESET_KEY_BUTTON).performScrollTo().assertIsDisplayed().performClick()
+        // the dialog is a window of its own: the font scale reaches it only if the dialog passes it on
+        assertEquals(2f, rule.onNodeWithText("Reset the signing key?").fontScaleOfText())
         rule.onNodeWithTag(Tags.RESET_KEY_CONFIRM).assertIsDisplayed()
         rule.onNodeWithText("Cancel").assertIsDisplayed()
     }
