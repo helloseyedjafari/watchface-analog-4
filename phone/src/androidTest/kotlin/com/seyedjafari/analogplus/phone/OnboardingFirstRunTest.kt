@@ -75,6 +75,27 @@ class OnboardingFirstRunTest {
         rule.onNodeWithTag(Tags.ONBOARDING_ROOT).assertExists()
     }
 
+    /**
+     * The build has accounts (a debug build always does), so the very first run of the very first launch has five steps: the flag
+     * is set before the view model builds the onboarding controller, which reads it when it is built. Set after it, the first
+     * launch of a process would show four.
+     */
+    @Test fun aBuildWithAccountsShowsFiveStepsFromTheFirstLaunchAndTheBackupPageIsTheLastOne() {
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 1 of 5")
+        assertTrue(OnboardingConfig.accountsAvailable)
+        repeat(4) { next() }
+        rule.onNodeWithTag(Tags.onboardingPage(OnboardingPage.BACKUP)).assertExists()
+        rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 5 of 5")
+        rule.onNodeWithTag(com.seyedjafari.analogplus.phone.ui.account.AccountTags.PAGE_SIGN_IN).assertExists()
+        rule.onNodeWithTag(Tags.ONBOARDING_NEXT).assertDoesNotExist()
+        notNow()
+        rule.onNodeWithTag(Destination.DESIGN.tag).assertIsSelected()
+        assertEquals(OnboardingState.Completed, Store(context).onboardingState())
+    }
+
+    private fun notNow() = rule.notNow()
+
     @Test fun anUpdateFromThePocGoesStraightToTheEditor() {
         Store(context).saveCurrent(Templates.all[1])        // what the POC left behind; no onboarding decision yet
         scenario = ActivityScenario.launch(MainActivity::class.java)
@@ -112,11 +133,11 @@ class OnboardingFirstRunTest {
         rule.onNodeWithTag(Tags.onboardingPage(OnboardingPage.PERMISSION)).assertExists()
         rotateTo(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
         rule.onNodeWithTag(Tags.onboardingPage(OnboardingPage.PERMISSION)).assertExists()
-        rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 3 of 4")
+        rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 3 of ${REAL_APP_PAGES.size}")
         next()                                                            // the template page, in the other layout
         rotateTo(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
         rule.onNodeWithTag(Tags.onboardingPage(OnboardingPage.TEMPLATE)).assertExists()
-        rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 4 of 4")
+        rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 4 of ${REAL_APP_PAGES.size}")
     }
 
     @Test fun aRestartOfTheAppResumesAtTheStoredPageAndTheTemplateChoiceIsKept() {
@@ -128,8 +149,10 @@ class OnboardingFirstRunTest {
         scenario!!.close()                                                // the process is gone: a new view model, controller and state
         scenario = ActivityScenario.launch(MainActivity::class.java)
         rule.onNodeWithTag(Tags.onboardingPage(OnboardingPage.TEMPLATE)).assertExists()
-        rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 4 of 4")
-        next()
+        rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 4 of ${REAL_APP_PAGES.size}")
+        next()                                                            // the backup page, the last one
+        rule.onNodeWithTag(Tags.onboardingPage(OnboardingPage.BACKUP)).assertExists()
+        notNow()
         rule.onNodeWithTag(Destination.DESIGN.tag).assertIsSelected()
         assertEquals(OnboardingState.Completed, Store(context).onboardingState())
         assertEquals("the chosen template is what is stored", chosen, Store(context).loadCurrentWithoutPhoto())

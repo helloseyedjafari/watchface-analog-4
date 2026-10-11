@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ProvidedValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalConfiguration
@@ -17,6 +18,9 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -24,6 +28,10 @@ import androidx.lifecycle.LifecycleRegistry
 import androidx.test.platform.app.InstrumentationRegistry
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseTestSession
+import com.seyedjafari.analogplus.phone.accounts.AccountsController
+import com.seyedjafari.analogplus.phone.ui.account.AccountTags
+import com.seyedjafari.analogplus.phone.ui.account.BackupPage
+import com.seyedjafari.analogplus.phone.ui.account.LocalAccounts
 import com.seyedjafari.analogplus.phone.ui.onboarding.BackupPageSlot
 import com.seyedjafari.analogplus.phone.ui.onboarding.OnboardingHost
 import com.seyedjafari.analogplus.phone.ui.send.WatchStatus
@@ -97,6 +105,8 @@ internal class ShellFixture(
         animationScale: Float? = 1f,
         onPendingLinkResolved: () -> Unit = {},
         backupPage: BackupPageSlot? = null,
+        /** The accounts the screens below see (`LocalAccounts`); with one and no [backupPage] the real [BackupPage] is the fifth page. */
+        accountsController: AccountsController? = null,
         fontScale: Float? = null,
         /** true / false force the dark / light theme (the night mode the app reads); null follows the device. */
         dark: Boolean? = null,
@@ -111,13 +121,18 @@ internal class ShellFixture(
             CompositionLocalProvider(
                 LocalAnimationScale provides animationScale, LocalDensity provides Density(base.density, fontScale ?: base.fontScale),
                 LocalConfiguration provides themed,
+                *(if (accountsController == null) emptyArray<ProvidedValue<*>>() else arrayOf<ProvidedValue<*>>(LocalAccounts provides accountsController)),
             ) {
                 PinnedWindow(window) {
                     // the tagged box is exactly the pinned window: a test that wants "inside the window" compares with it, not with the (larger) compose view
                     Box(Modifier.fillMaxSize().testTag(SHELL_WINDOW_TAG)) {
                         AppShell(
                             state, store, send, watch, pendingLink,
-                            if (backupPage == null) OnboardingHost(controller) else OnboardingHost(controller, backupPage),
+                            when {
+                                backupPage != null -> OnboardingHost(controller, backupPage)
+                                accountsController != null -> OnboardingHost(controller, { onDone -> BackupPage(onDone) })
+                                else -> OnboardingHost(controller)
+                            },
                             onPendingLinkResolved,
                         )
                     }
@@ -125,6 +140,18 @@ internal class ShellFixture(
             }
         }
     }
+}
+
+/**
+ * The pages of setup in the real app under test. The debug build the instrumented tests run in always has accounts (emulator mode
+ * when there is no google-services.json, the owner's project when there is), so the real activity has the backup page last.
+ */
+internal val REAL_APP_PAGES: List<OnboardingPage> = onboardingPages(accountsAvailable = true)
+
+/** The backup page's own "Not now" / "Skip for now": it declines the page and, as the last one, completes setup. */
+internal fun ComposeTestRule.notNow() {
+    onNodeWithTag(AccountTags.PAGE_SKIP).performScrollTo().performClick()
+    waitForIdle()
 }
 
 fun ComposeTestRule.waitForTag(tag: String, timeoutMs: Long = 5_000) {

@@ -75,11 +75,15 @@ class OnboardingRealActivityTest {
     }
 
     private fun next() { rule.onNodeWithTag(Tags.ONBOARDING_NEXT).performClick(); rule.waitForIdle() }
+    private fun notNow() = rule.notNow()
     private fun pageIs(p: OnboardingPage, step: Int) {
         rule.onNodeWithTag(Tags.onboardingPage(p)).assertExists()
-        rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step $step of 4")
+        rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step $step of ${pages.size}")
     }
-    private val pages = onboardingPages(false)
+    /** The debug build these tests run in always has accounts (emulator mode without google-services.json): setup has the backup page last. */
+    private val pages = REAL_APP_PAGES
+    /** Through every page to the end: Next on the first four, then the backup page's own "Not now". */
+    private fun finishSetup() { repeat(pages.size - 1) { next() }; notNow() }
 
     private fun design(): DesignSettings {
         var d: DesignSettings? = null
@@ -120,14 +124,14 @@ class OnboardingRealActivityTest {
             pageIs(p, i + 2)
             rule.onNodeWithTag(Tags.ONBOARDING_BACK).assertExists()
         }
-        next()                                                           // Finish
+        notNow()                                                         // the backup page declines and setup is over
         rule.onNodeWithTag(Destination.DESIGN.tag).assertIsSelected()
         assertEquals(OnboardingState.Completed, Store(context).onboardingState())
     }
 
     @Test fun theAppKeepsTheStoredCompletedStateAndDoesNotShowSetupAgainOnTheNextOpening() {
         launch()
-        repeat(4) { next() }
+        finishSetup()
         rule.onNodeWithTag(Destination.DESIGN.tag).assertIsSelected()
         scenario!!.close()
         runBlocking { AppModel.awaitPendingSaves() }
@@ -146,7 +150,7 @@ class OnboardingRealActivityTest {
             pageIs(p, i + 1)
             if (i < pages.lastIndex) next()
         }
-        next()
+        notNow()
         rule.onNodeWithTag(Destination.DESIGN.tag).assertIsSelected()
     }
 
@@ -200,7 +204,7 @@ class OnboardingRealActivityTest {
         rule.onNodeWithTag(Tags.field("qr_load")).performClick(); rule.waitForIdle()
         assertEquals(neon, design())
         pageIs(OnboardingPage.WELCOME, 1)
-        repeat(4) { next() }
+        finishSetup()
         rule.onNodeWithTag(Destination.DESIGN.tag).assertIsSelected()
         assertEquals("Finish loads nothing else", neon, design())
     }
@@ -234,7 +238,7 @@ class OnboardingRealActivityTest {
 
     @Test fun walkingThroughSetupNeverPutsASystemPermissionPromptInFrontOfTheApp() {
         launch()
-        for (i in 1..4) {
+        for (i in 1..pages.size) {
             // a window gets focus a moment after the activity is RESUMED (more so right after another test's activity went
             // away); a system dialog in front would keep the focus away for good, so waiting a few seconds still finds one
             val deadline = System.currentTimeMillis() + 5_000
@@ -245,7 +249,7 @@ class OnboardingRealActivityTest {
             }
             assertTrue("page $i keeps the window focus, so no system dialog is on top", focused)
             assertEquals(Lifecycle.State.RESUMED, scenario!!.state)
-            next()
+            if (i < pages.size) next() else notNow()
         }
         assertEquals(Lifecycle.State.RESUMED, scenario!!.state)
         rule.onNodeWithTag(Destination.DESIGN.tag).assertIsSelected()

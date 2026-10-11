@@ -52,6 +52,8 @@ class AccountsFactoryTest {
         )
         // under the test runner the emulator marker exists, so this is EMULATOR mode; any mode but NOT_CONFIGURED offers sign-in
         assertEquals(AccountsAvailability.AVAILABLE, controller.availability)
+        // the app asks the same question before it builds anything (the onboarding page list depends on it): the same answer
+        assertEquals(controller.availability, AccountsFactory.availability(context))
         assertEquals(AccountState.SignedOut, controller.ui.value.account)
         store.saveNamed("Night", DesignSettings(name = "Night"))
         assertTrue(SyncJournal(syncKv).entries().containsKey(designId("Night")))
