@@ -46,8 +46,20 @@ object AccountsFactory {
     private const val SYNC_PREFS = "analogplus_sync"
     private const val KEY_DEVICE_ID = "device_id"
 
-    /** The rules accept a device label of up to 80 characters. */
-    private const val MAX_DEVICE_LABEL = 80
+    /**
+     * The name of this phone as the cloud and the other phones see it: the name the person set in Settings
+     * (`Settings.Global.DEVICE_NAME`, API 25+), else `Build.MODEL`; cleaned and cut ([deviceLabelOf]). It is the `deviceLabel`
+     * of the current design (shown in "use the design from <phone>?") and the name in a kept-both copy, so both agree. The
+     * Settings name is free text and often the owner's own name; it goes into the cloud as typed (see the privacy texts).
+     */
+    fun deviceLabel(context: Context): String {
+        val named = try {
+            android.provider.Settings.Global.getString(context.applicationContext.contentResolver, android.provider.Settings.Global.DEVICE_NAME)
+        } catch (e: Exception) {
+            null   // unreadable: the model stands in
+        }
+        return deviceLabelOf(named, Build.MODEL)
+    }
 
     /**
      * Whether this build can reach a Firebase project (or, in a debug build, the emulator), asked without building anything: the
@@ -73,7 +85,7 @@ object AccountsFactory {
         if (setup.mode == FirebaseMode.NOT_CONFIGURED) return AccountsController.unavailable(scope)
 
         val remote = FirestoreRemoteStore(FirebaseFirestore.getInstance())
-        val deviceLabel = Build.MODEL.orEmpty().take(MAX_DEVICE_LABEL)
+        val deviceLabel = deviceLabel(app)
         val engine = SyncEngine(
             store, journal, remote, scope, AndroidPhotoDownscaler(), applier, currentDesign,
             deviceId = deviceId(syncKv), deviceLabel = deviceLabel,

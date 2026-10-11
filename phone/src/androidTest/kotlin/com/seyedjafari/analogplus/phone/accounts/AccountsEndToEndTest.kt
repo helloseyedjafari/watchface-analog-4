@@ -1,6 +1,5 @@
 package com.seyedjafari.analogplus.phone.accounts
 
-import android.os.Build
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -554,9 +553,9 @@ class AccountsEndToEndTest {
         val (_, phone2) = anotherDeviceHasADifferentDesign()
         waitForTag(AccountTags.OFFER_USE)
         // the device label is the other phone's model; the question names both designs: the other device's and the one edited here
-        waitForText(text(R.string.account_offer_title, Build.MODEL))
+        waitForText(text(R.string.account_offer_title, AccountsFactory.deviceLabel(context)))
         // this test's offer host is not told the name of the design edited here (the app passes state.design.name), so it reads "(no name)"
-        waitForText(text(R.string.account_offer_body, Build.MODEL, editingOnPhone1.name, text(R.string.common_no_name)))
+        waitForText(text(R.string.account_offer_body, AccountsFactory.deviceLabel(context), editingOnPhone1.name, text(R.string.common_no_name)))
         click(AccountTags.OFFER_USE)
         waitUntilGone(AccountTags.OFFER_USE)
         await("the design of the other device to be applied") { phone2.current.get() == editingOnPhone1 }
