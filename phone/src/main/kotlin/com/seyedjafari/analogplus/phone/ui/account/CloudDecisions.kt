@@ -306,18 +306,37 @@ fun noteAfterKeep(result: KeepResult): AccountMessage? = when (result) {
     KeepResult.NOT_PENDING, KeepResult.NOT_SIGNED_IN -> keepMessage(result)
 }
 
-/** A countdown is announced to a screen reader at most every this many seconds (and when it first shows). */
+/** A countdown is announced to a screen reader every this many seconds under a minute (and when it first shows)... */
 const val COUNTDOWN_ANNOUNCE_STEP_SECONDS = 10
+
+/** ...and every minute above that, so a five minute wait is not read out thirty times. */
+const val COUNTDOWN_ANNOUNCE_LONG_STEP_SECONDS = 60
+
+private const val COUNTDOWN_LONG_ABOVE_SECONDS = 60
 
 /**
  * Whether the line of a wait with [remainingMs] left is news for a screen reader: any line that is no countdown (nothing
  * left to wait for), the countdown as it first shows (by its whole seconds: it must stay announced for a second, not one frame),
- * and then only when the seconds reach a multiple of [COUNTDOWN_ANNOUNCE_STEP_SECONDS].
+ * and then only when the seconds reach a multiple of [COUNTDOWN_ANNOUNCE_STEP_SECONDS] (of [COUNTDOWN_ANNOUNCE_LONG_STEP_SECONDS]
+ * while more than a minute is left).
  */
 fun countdownIsNews(firstRemainingMs: Long, remainingMs: Long): Boolean {
     if (remainingMs <= 0) return true
     val seconds = secondsToWait(remainingMs)
-    return seconds == secondsToWait(firstRemainingMs) || seconds % COUNTDOWN_ANNOUNCE_STEP_SECONDS == 0
+    val step = if (seconds > COUNTDOWN_LONG_ABOVE_SECONDS) COUNTDOWN_ANNOUNCE_LONG_STEP_SECONDS else COUNTDOWN_ANNOUNCE_STEP_SECONDS
+    return seconds == secondsToWait(firstRemainingMs) || seconds % step == 0
+}
+
+/** The start of a countdown: the moment it was started and the moment it ends. */
+data class CountdownStart(val nowMs: Long, val untilMs: Long)
+
+/**
+ * Starts a countdown of [waitMs]. The clock is read ONCE for both moments: with two readings of a running clock the first
+ * remaining wait would be a few milliseconds longer than the wait itself and, rounded up, a whole second too long.
+ */
+fun startCountdown(readClock: () -> Long, waitMs: Long): CountdownStart {
+    val now = readClock()
+    return CountdownStart(now, now + waitMs)
 }
 
 /** Milliseconds still to wait at [nowMs] for a wait that ends at [untilMs]; never negative. */

@@ -124,11 +124,14 @@ Texts below are the English texts of the app (`phone/src/main/res/values/strings
 
 ## G. Found by the final review (not tried anywhere)
 
-- [ ] **NOT RUN** G1. **Another phone still signed in during a deletion.** The kill switch (`kill-switch-spec.md`) was not in the
-  code when this line was written; if it is not built, expect the old behaviour (see the accounts spec, Known limits). Sign in on two
+- [ ] **NOT RUN** G1. **Another phone still signed in during a deletion.** The kill switch (`kill-switch-spec.md`) is built (commit
+  c403885) and tested only against the emulators; the question "Delete your account?" now says that other phones are signed out, and
+  nothing more, the next time they reach the cloud, that their designs and signing keys stay, and that an offline phone stays signed
+  in until it reconnects: read it. Sign in on two
   phones with the same account and keep phone 2's app open. Delete the account on phone 1. Phone 2 should be signed out of the
   account on its next check (within about a minute while the app is open, or when it next tries to sync), keep its saved designs and
-  signing key, and show a notice that the account was deleted. An edit made on phone 2 after the deletion must not appear in the
+  signing key, and show the notice "This account was deleted on another phone, so this phone was signed out. The designs and the
+  signing key on this phone are kept." An edit made on phone 2 after the deletion must not appear in the
   console (`users/<uid>` stays empty, also after 15 seconds). Also try it with phone 2 offline during the deletion and online
   afterwards. Phone 2's Google sign-in token itself is not revoked and lasts up to an hour; that is expected, the cloud refuses its
   writes.

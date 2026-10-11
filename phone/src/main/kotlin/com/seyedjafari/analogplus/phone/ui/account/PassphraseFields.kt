@@ -3,6 +3,7 @@ package com.seyedjafari.analogplus.phone.ui.account
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -14,6 +15,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.seyedjafari.analogplus.phone.accounts.NoticeKind
@@ -26,14 +28,21 @@ import com.seyedjafari.analogplus.phone.ui.theme.Spacing
  * words stay a detail line under it.
  */
 @Composable
-fun PassphraseFields(state: PassphraseState, error: AccountMessage?, modifier: Modifier = Modifier, errorIsNews: Boolean = true) {
-    // a password field: the keyboard offers no suggestions and no autocorrect, and nothing is shown as typed
-    val keyboard = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false)
+fun PassphraseFields(
+    state: PassphraseState, error: AccountMessage?, modifier: Modifier = Modifier, errorIsNews: Boolean = true,
+    /** What Done on the last field does (submit when the dialog allows it); the keyboard closes either way. */
+    onDone: (() -> Unit)? = null,
+) {
+    // a password field: the keyboard offers no suggestions and no autocorrect, and nothing is shown as typed. When two entries are
+    // asked for, Next goes from the first to the second (at a large font the second is out of sight with the keyboard up) and Done ends it
+    val first = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = if (state.confirmTwice) ImeAction.Next else ImeAction.Done)
+    val last = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = ImeAction.Done)
+    val done = KeyboardActions(onDone = { onDone?.invoke(); defaultKeyboardAction(ImeAction.Done) })
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         OutlinedTextField(
             value = state.passphrase, onValueChange = { state.passphrase = it }, singleLine = true,
             label = { Text(stringResource(state.firstLabel)) },
-            visualTransformation = PasswordVisualTransformation(), keyboardOptions = keyboard,
+            visualTransformation = PasswordVisualTransformation(), keyboardOptions = first, keyboardActions = done,
             modifier = Modifier.fillMaxWidth().testTag(AccountTags.PASSPHRASE),
         )
         state.strengthLine?.let {
@@ -45,7 +54,7 @@ fun PassphraseFields(state: PassphraseState, error: AccountMessage?, modifier: M
                 label = { Text(stringResource(PassphraseFieldText.AGAIN_LABEL)) },
                 isError = state.entriesDiffer,
                 supportingText = { if (state.entriesDiffer) Text(stringResource(PassphraseFieldText.DIFFER)) },
-                visualTransformation = PasswordVisualTransformation(), keyboardOptions = keyboard,
+                visualTransformation = PasswordVisualTransformation(), keyboardOptions = last, keyboardActions = done,
                 modifier = Modifier.fillMaxWidth().testTag(AccountTags.PASSPHRASE_CONFIRM),
             )
         }

@@ -27,7 +27,7 @@ class AccountDialogTextTest {
         assertEquals("Replace the signing key on this phone?", en(local.title))
         assertEquals(
             "This phone already has a signing key ($phone). The backup holds a different key ($cloud). " +
-                "Replace it only if the face on your watch was signed with the backed-up key. Replacing cannot be undone from the app: the key now on this phone will be gone from it.",
+                "Replace it only if the face on your watch was signed with the backed-up key. Replacing cannot be undone here: the app cannot go back to the key now on this phone.",
             body(local),
         )
         assertEquals("Replace", en(local.confirm))
@@ -99,6 +99,10 @@ class AccountDialogTextTest {
         val delete = deleteAccountText()
         assertEquals("Delete your account?", en(delete.title))
         assertTrue(body(delete).contains("You will be asked to choose your Google account again to confirm."))
+        // the kill switch, said plainly: a sign-out and nothing more, for phones that reach the cloud; an offline phone stays signed in
+        assertTrue(body(delete).contains("Your other phones are signed out, and nothing more, the next time they reach the cloud; their designs and signing keys stay too."))
+        assertTrue(body(delete).contains("A phone that is offline stays signed in until it reconnects."))
+        assertFalse(body(delete).contains("first", ignoreCase = true))     // the old advice to sign out the other phones first is gone
         assertEquals("Delete account", en(delete.confirm))
         val set = setPassphraseText()
         assertEquals("Back up your signing key", en(set.title))
@@ -115,8 +119,8 @@ class AccountDialogTextTest {
         val offer = offerText(CurrentOffer("Pixel 8", DesignSettings(name = "Sunset"), 5), localName = "Ocean")
         assertEquals("Use the design from Pixel 8?", en(offer.title))
         assertEquals(
-            "Pixel 8 saved \"Sunset\". This phone is editing \"Ocean\". Use theirs replaces \"Ocean\" here, and no copy of it is kept " +
-                "unless you saved it in My designs. Keep mine changes nothing here.",
+            "Pixel 8 saved \"Sunset\". This phone is editing \"Ocean\". Use theirs replaces \"Ocean\" here: whatever you have not saved in My designs is lost. " +
+                "Keep mine changes nothing here.",
             en(offer.body),
         )
         assertEquals("Use theirs", en(offer.use))
@@ -126,12 +130,17 @@ class AccountDialogTextTest {
     @Test fun onlyWhenTheNamesReallyMatchItIsADifferentVersionOfTheDesignBeingEdited() {
         val same = offerText(CurrentOffer("Pixel 8", DesignSettings(name = "Night"), 5), localName = "Night")
         assertEquals(
-            "Pixel 8 saved a different version of the design you are editing (\"Night\"). Use theirs replaces your version here, and no copy of it " +
-                "is kept unless you saved it in My designs. Keep mine changes nothing here.",
+            "Pixel 8 saved a different version of the design you are editing (\"Night\"). Use theirs replaces your version here: whatever you have not saved " +
+                "in My designs is lost. Keep mine changes nothing here.",
             en(same.body),
         )
         // the same words with another spelling of the same name (spaces around it) still match
         assertEquals(en(same.body), en(offerText(CurrentOffer("Pixel 8", DesignSettings(name = " Night "), 5), localName = "Night").body))
+        // two names that are the same for 40 characters and differ after that are two names (the cut is for display only)
+        val shared = "x".repeat(40)
+        val long = offerText(CurrentOffer("Pixel 8", DesignSettings(name = shared + "a"), 5), localName = shared + "b")
+        assertFalse(en(long.body).contains("a different version"))
+        assertTrue(en(offerText(CurrentOffer("Pixel 8", DesignSettings(name = shared + "a"), 5), localName = shared + "a").body).contains("a different version"))
         // a different name is never called a version of the design being edited
         assertFalse(en(offerText(CurrentOffer("Pixel 8", DesignSettings(name = "Night 2"), 5), localName = "Night").body).contains("a different version"))
     }

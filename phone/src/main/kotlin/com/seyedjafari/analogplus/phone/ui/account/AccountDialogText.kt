@@ -97,16 +97,18 @@ private const val OFFER_NAME_MAX = 40
 
 /**
  * The question about a design another device saved. It names both designs (the other device's and the one being edited here,
- * [localName]) and says what "Use theirs" costs: the design here is replaced and no copy is kept unless it was saved in My
- * designs. When the two names are the same it says "a different version of the design you are editing" instead, which is
- * then true. An empty device label reads "another device"; a design without a visible name reads "(no name)".
+ * [localName]) and says what "Use theirs" costs: the design here is replaced, and whatever was not saved in My
+ * designs is lost. When the two names are the same it says "a different version of the design you are
+ * editing" instead, which is then true. An empty device label reads "another device"; a design without a visible name reads "(no name)".
  */
 fun offerText(offer: CurrentOffer, localName: String): OfferText {
     // the label comes from the cloud: control and invisible formatting characters are removed, like in a design name
     val device = dialogName(offer.fromDevice, OFFER_NAME_MAX, noName = "").ifEmpty { null }
     val theirs = dialogName(offer.design.name, OFFER_NAME_MAX, noName = "")
     val mine = dialogName(localName, OFFER_NAME_MAX, noName = "")
-    val sameName = canonicalDesignName(theirs) == canonicalDesignName(mine)
+    // the whole names decide: two names that differ only after the cut are still two names
+    val sameName = canonicalDesignName(dialogName(offer.design.name, Int.MAX_VALUE, noName = "")) ==
+        canonicalDesignName(dialogName(localName, Int.MAX_VALUE, noName = ""))
     val theirsText = theirs.ifEmpty { null } ?: uiText(R.string.common_no_name)
     val mineText = mine.ifEmpty { null } ?: uiText(R.string.common_no_name)
     val title = uiText(R.string.account_offer_title, device ?: uiText(R.string.account_offer_other_device))

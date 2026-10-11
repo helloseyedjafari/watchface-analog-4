@@ -6,8 +6,11 @@ Google sign-in or a release build, and it is not legal advice. Fill in before pu
 **[OWNER: URL of the account deletion page]**, **[OWNER: date]**. Remove this paragraph when you publish.
 
 Code check before publishing: the part of "How long we keep it, and deleting it" that says other signed-in phones are signed out when
-an account is deleted describes the kill-switch design (`.superpowers/sdd/2026-10-09-accounts-sync/kill-switch-spec.md`). It was not in
-the code at e0fd3c7. Check that it is built, and reword that part to what the app really does, before you publish.
+an account is deleted describes the kill switch (`.superpowers/sdd/2026-10-09-accounts-sync/kill-switch-spec.md`), which is built since
+commit c403885 and checked only against the Firebase emulators and fakes. The app's own words for it (the question "Delete your
+account?" and the notice on the signed-out phone) say the same: a sign-out and nothing more, the next time a phone reaches the cloud,
+designs and signing key stay on that phone, and a phone that is offline stays signed in until it reconnects. Try it with a real
+project (checklist G1) before you publish.
 
 Analog Plus is a watch face builder for Wear OS. The app works completely without an account. Signing in is optional. It adds
 two things: your saved designs are kept in the cloud so they follow you to other phones, and the key that signs your watch face
@@ -128,13 +131,13 @@ Changes are published here with a new date. Last updated: **[OWNER: date]**.
 
 Written from the code. Check each line against Firebase's own data disclosures (Authentication, Firestore, App Check) before
 submitting, and again whenever the app starts collecting something new. The text the app shows before signing in (the Account card and the last setup page, `account_signed_out_privacy`) lists: your
-email address, your name and profile picture from your Google account, your designs (the names of designs you delete or rename are
-kept until you delete your account), the encrypted backup of your signing key, the model of your phone and a random device ID. This
-policy says all of that and lists more: the design you are editing with its shrunk and cleaned photo, a short fingerprint of the
-key, the settings and write id of the backup, the App Check attestation and the Firebase installation id. Three small
-differences to settle in the app's line (it is code, not a document): it says "the model of your phone" where the app now sends the
-device name set in Settings (often a person's name) or else the model; it says "profile picture" where only the link is stored;
-and it does not say that the background photo of the design being edited is uploaded. Keep the two texts from contradicting each
+email address, your name and the link to your profile picture from your Google account, your designs (with the background photo of
+the design you are editing; the names of designs you delete or rename are kept until you delete your account), an encrypted backup of
+your signing key if you make one, the name of this phone for your other phones to see (the name set in Settings, otherwise its model)
+and a random device ID. This policy says all of that and lists more, which the short line leaves out on purpose: the shrunk and cleaned
+form of that photo, a short fingerprint of the key, the settings and write id of the backup, the App Check attestation and the
+Firebase installation id. The two texts agree on the three points that differed before (the device name set in Settings or else the
+model, only the link to the profile picture, the background photo of the design being edited). Keep them from contradicting each
 other when either changes.
 
 | Question | Answer |

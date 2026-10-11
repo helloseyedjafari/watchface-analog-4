@@ -277,6 +277,37 @@ class CloudDecisionsTest {
         assertTrue(countdownIsNews(5_000, 0))
     }
 
+    @Test fun aLongWaitIsAnnouncedEveryMinuteAboveAMinuteSoItIsNotReadOutThirtyTimes() {
+        // the longest wait is five minutes: 300 s, 240 s, 180 s, 120 s, then every ten seconds from a minute down
+        assertTrue(countdownIsNews(300_000, 300_000))
+        assertFalse(countdownIsNews(300_000, 290_000))
+        assertFalse(countdownIsNews(300_000, 250_000))
+        assertTrue(countdownIsNews(300_000, 240_000))
+        assertFalse(countdownIsNews(300_000, 230_000))
+        assertTrue(countdownIsNews(300_000, 120_000))
+        assertTrue(countdownIsNews(300_000, 60_000))
+        assertFalse(countdownIsNews(300_000, 55_000))
+        assertTrue(countdownIsNews(300_000, 50_000))
+        val announced = (300 downTo 1).count { countdownIsNews(300_000, it * 1_000L) }
+        assertTrue("announced $announced times in a five minute wait", announced in 8..20)
+    }
+
+    @Test fun aCountdownReadsTheClockOnceSoTheFirstRemainingWaitIsTheWaitItself() {
+        var reads = 0
+        val runningClock = { 1_000L + 7L * reads++ }                  // every reading is a little later than the one before
+        val start = startCountdown(runningClock, 5_000)
+        assertEquals(1, reads)
+        assertEquals(5_000L, remainingWaitMs(start.untilMs, start.nowMs))
+        assertEquals(5, secondsToWait(remainingWaitMs(start.untilMs, start.nowMs)))
+    }
+
+    @Test fun aFirstShowingWithAReadingOfTheClockThatRunsAheadOfTheWaitIsStillTheSameSecond() {
+        // the dialog now reads the clock once for `until` and `now`: the first remaining wait IS the wait, so "5 seconds" is the first value
+        // and stays news; a reading a few ms ahead (the old two readings) made it "6 seconds" for a frame and the real 5 was never first
+        assertTrue(countdownIsNews(firstRemainingMs = 5_000, remainingMs = 5_000))
+        assertFalse("the old defect: a first value of 5 007 ms made the real 5 s not news", countdownIsNews(firstRemainingMs = 5_007, remainingMs = 5_000))
+    }
+
     @Test fun theRemainingWaitCountsDownAndNeverGoesNegative() {
         assertEquals(5_000L, remainingWaitMs(15_000, 10_000))
         assertEquals(0L, remainingWaitMs(10_000, 10_000))

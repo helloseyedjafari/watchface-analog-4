@@ -263,7 +263,7 @@ fun AppShell(
             if (pendingLink != null) {
                 LoadSharedDesignDialog(pendingLink, onLoad = { state.replaceWholeDesign(pendingLink); onPendingLinkResolved() }, onKeep = onPendingLinkResolved)
             } else {
-                AccountOfferHost(localDesignName = state.design.name)
+                AccountOfferHost(localDesignName = { state.design.name })
             }
         }
     }

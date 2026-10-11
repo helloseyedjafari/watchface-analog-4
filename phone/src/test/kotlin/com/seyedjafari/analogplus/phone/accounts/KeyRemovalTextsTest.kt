@@ -57,11 +57,19 @@ class KeyRemovalTextsTest {
         assertEquals(KEY_MISMATCH_TEXT + "\n\n(The watch said: x)", StringsXml.text("send_error_key_mismatch", "x"))
     }
 
-    @Test fun theSendTextWithTheBackupSentenceIsTheSameTextPlusThatSentence() {
+    @Test fun theSendTextWithTheBackupSentenceSaysItBeforeTheStepsThatRemoveTheFace() {
+        val withBackup = StringsXml.text("send_error_key_mismatch_restore_first", "x")
         assertEquals(
-            KEY_MISMATCH_TEXT + "\n\n" + com.seyedjafari.analogplus.phone.KEY_MISMATCH_RESTORE_FIRST + "\n\n(The watch said: x)",
-            StringsXml.text("send_error_key_mismatch_restore_first", "x"),
+            com.seyedjafari.analogplus.phone.KEY_MISMATCH_PROBLEM + "\n\n" + com.seyedjafari.analogplus.phone.KEY_MISMATCH_RESTORE_FIRST + "\n\n" +
+                com.seyedjafari.analogplus.phone.KEY_MISMATCH_WITHOUT_BACKUP + "\n\n(The watch said: x)",
+            withBackup,
         )
+        // without accounts the text is what it was: the problem, the removal, the steps
+        assertEquals(KEY_MISMATCH_TEXT + "\n\n(The watch said: x)", StringsXml.text("send_error_key_mismatch", "x"))
+        // the same advice in the same order in all three places: restore first, then remove
+        assertTrue(withBackup.indexOf("restore that backup on the Account tab first") < withBackup.indexOf("uninstall the Analog Plus watch face"))
+        val card = StringsXml.text(signingKeyExplanation(true))
+        assertTrue(card.indexOf("first try Restore signing key from backup") < card.indexOf("make a new key here only if you have no backup"))
     }
 
     @Test fun inABuildWithAccountsTheBackupIsSaidFirstAndOnlyThere() {
@@ -73,7 +81,9 @@ class KeyRemovalTextsTest {
         assertFalse(signingKeyDialogText().joinToString(" ") { StringsXml.text(it) }.contains("backup", ignoreCase = true))
         assertFalse(StringsXml.text(signingKeyExplanation(false)).contains("backup", ignoreCase = true))
         val explanation = StringsXml.text(signingKeyExplanation(true))
-        assertTrue(explanation.contains("first try Restore signing key from backup"))
+        // a damaged key and a key that no longer matches the watch get the same advice
+        assertTrue(explanation.contains("If the app says the key is damaged, or the watch rejects updates after a reinstall or on a new phone, first try Restore signing key from backup"))
+        assertFalse("no new key for a damaged one before the backup was tried", explanation.contains("is damaged, you can make a new key"))
         assertTrue("a new key only without a backup", explanation.contains("only if you have no backup"))
     }
 

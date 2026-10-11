@@ -1,9 +1,11 @@
 # Delete your Analog Plus account (DRAFT, publish at the URL given to Google Play)
 
 Fill in: **[OWNER: contact email]**. Written from the code; not tried with a real Firebase project or a real Google account.
-Code check before publishing: the paragraph "Your other phones" describes the kill-switch design
-(`.superpowers/sdd/2026-10-09-accounts-sync/kill-switch-spec.md`), which was not in the code at e0fd3c7. Check that it is built,
-and reword that paragraph to what the app really does, before you publish.
+Code check before publishing: the paragraph "Your other phones" describes the kill switch
+(`.superpowers/sdd/2026-10-09-accounts-sync/kill-switch-spec.md`), which is built since commit c403885 and checked only against the
+Firebase emulators and fakes. The question the app asks before deleting says the same in short: other phones are signed out, and
+nothing more, the next time they reach the cloud; their designs and signing keys stay; a phone that is offline stays signed in until
+it reconnects. Try it with a real project (checklist G1) before you publish.
 
 **In the app (fastest).** Open Analog Plus, go to **Account**, tap **Delete account and cloud data**, then **Delete account**
 in the question "Delete your account?". Choose your Google account again when asked. This removes your account and everything

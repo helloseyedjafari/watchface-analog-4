@@ -73,8 +73,9 @@ class SendControllerTest {
         h.key = "bbbbbbbbbbbbbbbb"
         h.refusal = "UpdateWatchFace failed (code 7): bad signature"
         val text = (sendOnce(h) as SendUi.Error).text
-        assertTrue(text, text.startsWith(KEY_MISMATCH_TEXT))
-        assertTrue(text, text.contains(KEY_MISMATCH_RESTORE_FIRST))
+        // the sentence about the backup comes BEFORE the steps that remove the face: a person reads in order
+        assertTrue(text, text.startsWith(KEY_MISMATCH_PROBLEM + "\n\n" + KEY_MISMATCH_RESTORE_FIRST + "\n\n" + KEY_MISMATCH_WITHOUT_BACKUP))
+        assertTrue(text, text.indexOf(KEY_MISMATCH_RESTORE_FIRST) < text.indexOf("uninstall the Analog Plus watch face"))
         assertTrue(text, text.endsWith("(The watch said: UpdateWatchFace failed (code 7): bad signature)"))
     }
 

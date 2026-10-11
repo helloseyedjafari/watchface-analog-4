@@ -66,8 +66,8 @@ class AccountMessagesTest {
         ),
         Row(Notice.KeyUnreadable("EACCES"), NoticeKind.ERROR, unreadableWords, "EACCES"),
         Row(Notice.BackupNotVerified, NoticeKind.ERROR, "The new backup did not pass its check. It was taken back where the cloud could be reached; the backup line above shows what the cloud holds now."),
-        Row(Notice.BackupUnsettled(offline), NoticeKind.ERROR, "The backup did not finish and could not be taken back, so it may already use the new passphrase. $offlineWords Back up again afterwards to be sure."),
-        Row(Notice.BackupUnsettled(RemoteErrorKind.AUTH), NoticeKind.ERROR, "The backup did not finish and could not be taken back, so it may already use the new passphrase. Your sign-in has expired. Sign out and sign in again. Back up again afterwards to be sure."),
+        Row(Notice.BackupUnsettled(offline), NoticeKind.ERROR, "The backup did not finish and could not be taken back, so it may already use the new passphrase. $offlineWords Afterwards, back up or change the passphrase again to be sure."),
+        Row(Notice.BackupUnsettled(RemoteErrorKind.AUTH), NoticeKind.ERROR, "The backup did not finish and could not be taken back, so it may already use the new passphrase. Your sign-in has expired. Sign out and sign in again. Afterwards, back up or change the passphrase again to be sure."),
         Row(Notice.KeyNotSaved("ENOSPC"), NoticeKind.ERROR, "The signing key opened, but there is not enough storage space on this phone to save it. Free some space and restore again. The backup is untouched and the key on this phone is unchanged.", "ENOSPC"),
         Row(Notice.KeyNotMade("ENOSPC"), NoticeKind.ERROR, "This phone has no signing key yet and a new one could not be made, so nothing was backed up. Free some storage space on the phone and try again.", "ENOSPC"),
         Row(Notice.BackupChanged, NoticeKind.ERROR, changedWords),
@@ -108,7 +108,7 @@ class AccountMessagesTest {
         Row(Notice.AccountKept, NoticeKind.INFO, "Your account was kept. Sync is on again and the designs on this phone are uploaded again."),
         Row(Notice.KeepNotSaved, NoticeKind.ERROR, "Your choice could not be saved on this phone, so the deletion is still unfinished. Try again."),
         Row(Notice.KeepNotReached, NoticeKind.ERROR, "Your account could not be kept because the cloud could not be reached. Check your connection and try again; the deletion is still unfinished."),
-        Row(Notice.SignedOutAccountDeleted, NoticeKind.INFO, "This account was deleted from another phone, so you were signed out here. Your designs on this phone are untouched."),
+        Row(Notice.SignedOutAccountDeleted, NoticeKind.INFO, "This account was deleted on another phone, so this phone was signed out. The designs and the signing key on this phone are kept."),
         Row(Notice.ActionFailed("NullPointerException"), NoticeKind.ERROR, "Something went wrong and the action did not finish.", "NullPointerException"),
     )
 

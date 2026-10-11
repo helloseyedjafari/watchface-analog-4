@@ -192,10 +192,14 @@ class AccountTextTest {
         // and the names of deleted or renamed ones, the encrypted key backup, the phone model and a random device ID
         val privacy = en(AccountText.SIGNED_OUT_PRIVACY)
         for (word in listOf(
-            "email address", "name and profile picture from your Google account", "your designs", "names of designs you delete or rename are kept until you delete your account",
-            "encrypted backup of your signing key", "model of your phone", "random device ID",
+            "email address", "name and the link to your profile picture from your Google account", "your designs",
+            "with the background photo of the design you are editing", "names of designs you delete or rename are kept until you delete your account",
+            "encrypted backup of your signing key if you make one", "the name of this phone for your other phones to see (the name set in Settings, otherwise its model)",
+            "random device ID",
         )) assertTrue(word, privacy.contains(word))
-        assertTrue("short enough to read at a glance", privacy.length < 330)
+        // the backup is not something signing in uploads, and only the link to the picture is stored
+        assertFalse(privacy.contains("and profile picture from"))
+        assertTrue("short enough to read at a glance", privacy.length < 560)
         assertFalse("no more 'only'", privacy.contains("Only", ignoreCase = true))
         assertEquals("Details: x", en(uiText(AccountText.DETAIL_LINE, "x")))
     }

@@ -40,19 +40,29 @@ sealed interface SendUi {
 val SendUi.isBusy: Boolean get() = this is SendUi.Building || this is SendUi.Sending
 
 /** Shown when the watch refuses a face and this phone signs with another key than for the face the watch holds. */
-const val KEY_MISMATCH_TEXT =
-    "This phone is signing with a different key than the face on your watch. The watch only accepts updates from the " +
-        "original key. Remove the old Analog Plus face from the watch, then send again. Uninstalling the watch app does not " +
-        "remove it: open Settings on the watch, go to its list of apps and uninstall the Analog Plus watch face (the list " +
-        "may show several entries named Analog Plus; the one to uninstall is the watch face)."
+/** What is wrong, in the words both variants of the error begin with. */
+const val KEY_MISMATCH_PROBLEM =
+    "This phone is signing with a different key than the face on your watch. The watch only accepts updates from the original key."
+
+/** How the old face leaves the watch (the path in force: self-service, see KeyResetCopy). */
+const val KEY_MISMATCH_REMOVE_STEPS =
+    "Uninstalling the watch app does not remove it: open Settings on the watch, go to its list of apps and uninstall the " +
+        "Analog Plus watch face (the list may show several entries named Analog Plus; the one to uninstall is the watch face)."
+
+const val KEY_MISMATCH_TEXT = "$KEY_MISMATCH_PROBLEM Remove the old Analog Plus face from the watch, then send again. $KEY_MISMATCH_REMOVE_STEPS"
 
 /**
- * Added to [KEY_MISMATCH_TEXT] in builds with accounts, where the key of the other phone may be in the cloud backup: restoring
- * it makes this phone sign like the first one, and then nothing has to be removed from the watch.
+ * In builds with accounts, where the key of the other phone may be in the cloud backup, this comes BEFORE the removal steps
+ * (a person reads in order, and restoring the backup is the way that keeps the face on the watch): restoring it makes this
+ * phone sign like the first one, and then nothing has to be removed from the watch. See [KEY_MISMATCH_WITHOUT_BACKUP].
  */
 const val KEY_MISMATCH_RESTORE_FIRST =
     "If you backed up the signing key of the phone that sent the face before, restore that backup on the Account tab first and " +
         "send again: then nothing has to be removed from the watch."
+
+/** The removal steps in a build with accounts, for a person who has no backup. */
+const val KEY_MISMATCH_WITHOUT_BACKUP =
+    "If you have no such backup, remove the old Analog Plus face from the watch, then send again. $KEY_MISMATCH_REMOVE_STEPS"
 
 /**
  * Runs "Send to watch": validate, then (off the main thread) take a fresh version number, build, and hand the face to

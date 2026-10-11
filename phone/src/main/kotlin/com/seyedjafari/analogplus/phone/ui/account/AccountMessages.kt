@@ -4,13 +4,10 @@ import androidx.annotation.StringRes
 import com.seyedjafari.analogplus.phone.R
 import com.seyedjafari.analogplus.phone.accounts.AccountDeleteProblem
 import com.seyedjafari.analogplus.phone.accounts.DeletionResult
-import com.seyedjafari.analogplus.phone.accounts.DiscardResult
 import com.seyedjafari.analogplus.phone.accounts.KeepResult
 import com.seyedjafari.analogplus.phone.accounts.Notice
 import com.seyedjafari.analogplus.phone.accounts.NoticeKind
-import com.seyedjafari.analogplus.phone.accounts.RestorePlan
 import com.seyedjafari.analogplus.phone.accounts.RestoreResult
-import com.seyedjafari.analogplus.phone.accounts.UploadResult
 
 /**
  * What the screen says after an action: our own [text], whether it is good or bad news ([kind]), and the system's own

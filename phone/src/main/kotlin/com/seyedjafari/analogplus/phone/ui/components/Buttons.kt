@@ -2,6 +2,7 @@ package com.seyedjafari.analogplus.phone.ui.components
 
 import com.seyedjafari.analogplus.phone.ui.theme.LightDarkPreview
 import com.seyedjafari.analogplus.phone.ui.theme.PreviewFrame
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +28,9 @@ import androidx.compose.ui.semantics.stateDescription
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import androidx.compose.ui.res.stringResource
 import com.seyedjafari.analogplus.phone.R
+
+/** How much of its colour the border of a disabled outlined button keeps (the M3 value). */
+private const val DISABLED_BORDER_ALPHA = 0.12f
 
 /** Test tag on the progress indicator shown while a [PrimaryButton] is loading. */
 internal const val LOADING_INDICATOR_TAG = "primary_button_loading"
@@ -67,6 +71,9 @@ fun SecondaryButton(
             .then(if (contentDescription != null) Modifier.semantics { this.contentDescription = contentDescription } else Modifier),
         shape = MaterialTheme.shapes.large,
         colors = if (contentColor == Color.Unspecified) ButtonDefaults.outlinedButtonColors() else ButtonDefaults.outlinedButtonColors(contentColor = contentColor),
+        // the border is the button's boundary: in the same colour as the label when one is given (the default outline is 2.7:1 on an error container)
+        border = if (contentColor == Color.Unspecified) ButtonDefaults.outlinedButtonBorder(enabled)
+        else BorderStroke(Spacing.hairline, if (enabled) contentColor else contentColor.copy(alpha = DISABLED_BORDER_ALPHA)),
     ) {
         Text(
             text, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center,

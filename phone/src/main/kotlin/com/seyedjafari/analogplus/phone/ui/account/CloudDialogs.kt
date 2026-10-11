@@ -85,7 +85,8 @@ private fun TextDialog(
  * shorter and the part that scrolls gives way, so the buttons stay reachable at a large font too. (A dialog window left as it
  * is gets panned up for the keyboard, which pushes the buttons under it, or in a short window the dialog off the screen.)
  * A tap outside the dialog is the window's own: [onDismiss]. In an upright window the body scrolls and the buttons stay below it;
- * in a short wide window the whole dialog is one page that scrolls, with a fade at its edges, buttons last. The title is the
+ * in a short wide window the whole dialog is one page that scrolls, buttons last. Wherever it scrolls it fades at its edges
+ * (the hint that there is more; the instructions above a red button must not look like the end). The title is the
  * pane title, which a screen reader says when the dialog opens.
  */
 @OptIn(ExperimentalLayoutApi::class)
@@ -158,12 +159,13 @@ private fun DialogButtons(
 @Composable
 fun SetPassphraseDialog(busy: Boolean, onSubmit: (String) -> Unit, onDismiss: () -> Unit) {
     val state = rememberPassphraseState(confirmTwice = true)
+    val submit = { if (state.valid && !busy) { val typed = state.passphrase; state.clear(); onSubmit(typed) } }
     TextDialog(
         setPassphraseText(), AccountTags.PASSPHRASE_SUBMIT, AccountTags.PASSPHRASE_CANCEL,
-        onConfirm = { val typed = state.passphrase; state.clear(); onSubmit(typed) },
+        onConfirm = submit,
         onCancel = { state.clear(); onDismiss() },
         confirmEnabled = state.valid && !busy,
-    ) { PassphraseFields(state, error = null) }
+    ) { PassphraseFields(state, error = null, onDone = submit) }
 }
 
 /**
@@ -180,7 +182,14 @@ fun EnterPassphraseDialog(
     // when the wait is over; null until the service has said how long it is
     var until by remember(enter.attempt) { mutableStateOf<Long?>(null) }
     var now by remember(enter.attempt) { mutableLongStateOf(clock()) }
-    LaunchedEffect(enter.attempt) { until = clock() + (enter.waitMs ?: restoreWaitMs()) }
+    // one reading of the clock for both: if `until` and `now` came from two readings, the first remaining wait would be a few
+    // milliseconds longer than the wait itself and, rounded up, one second too long (it would show for a frame, and the real first value would not be "first")
+    LaunchedEffect(enter.attempt) {
+        val wait = enter.waitMs ?: restoreWaitMs()
+        val start = startCountdown(clock, wait)
+        now = start.nowMs
+        until = start.untilMs
+    }
     LaunchedEffect(until) {
         val end = until ?: return@LaunchedEffect
         while (true) {
@@ -194,14 +203,16 @@ fun EnterPassphraseDialog(
     // a countdown changes every second: a screen reader hears it when it first shows and then at coarse steps, never every second
     val firstRemaining = remember(until) { remaining }
     val lineIsNews = countdownIsNews(firstRemaining, remaining)
+    val canSubmit = state.valid && !busy && until != null && remaining == 0L
+    val submit = { if (canSubmit) { val typed = state.passphrase; state.clear(); onSubmit(typed) } }
     TextDialog(
         EnterPassphraseText.dialog, AccountTags.PASSPHRASE_SUBMIT, AccountTags.PASSPHRASE_CANCEL,
-        onConfirm = { val typed = state.passphrase; state.clear(); onSubmit(typed) },
+        onConfirm = submit,
         onCancel = { state.clear(); onDismiss() },
-        confirmEnabled = state.valid && !busy && until != null && remaining == 0L,
+        confirmEnabled = canSubmit,
     ) {
         if (enter.afterChange) Text(stringResource(R.string.account_enter_changed), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag(AccountTags.ENTER_CHANGED))
-        PassphraseFields(state, error = line, errorIsNews = lineIsNews)
+        PassphraseFields(state, error = line, errorIsNews = lineIsNews, onDone = submit)
         // while a restore runs, the delete of the backup it is opening must not be asked for: it would queue behind it
         TertiaryButton(stringResource(EnterPassphraseText.FORGOT), { state.clear(); onForgot() }, Modifier.testTag(AccountTags.FORGOT), enabled = !busy)
     }

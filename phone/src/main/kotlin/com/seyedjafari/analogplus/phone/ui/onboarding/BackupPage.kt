@@ -15,7 +15,7 @@ import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
  * The page contract for the optional "sign in and set a recovery passphrase" step. The app supplies the real page
  * (`ui.account.BackupPage`) through `OnboardingHost.backupPage`; `AppModel` sets `OnboardingConfig.accountsAvailable` from the build.
  * [onDone] means "this page is finished or declined": the screen then completes setup. The page draws its own buttons
- * (the screen hides its primary button on this page); Skip, Back and the progress indicator stay around it.
+ * (the screen hides its primary button and its own Skip on this page); Back and the progress indicator stay around it.
  */
 typealias BackupPageSlot = @Composable (onDone: () -> Unit) -> Unit
 

@@ -116,14 +116,15 @@ fun rememberCloudFlow(accounts: AccountsController, ui: AccountsUi): CloudFlow {
  * lives in the controller, so a rotation shows it again, and the answer is the controller's.
  */
 @Composable
-fun AccountOfferHost(localDesignName: String = "", accounts: AccountsController = LocalAccounts.current, gate: OfferGate = LocalOfferGate.current) {
+fun AccountOfferHost(localDesignName: () -> String, accounts: AccountsController = LocalAccounts.current, gate: OfferGate = LocalOfferGate.current) {
     val ui by accounts.ui.collectAsState()
     // a dialog the person is busy with (a passphrase being typed) goes first; the question waits its turn
     if (gate.holding) return
     ui.offer?.let { offer ->
         // the answer is for the offer shown: if a newer one replaced it meanwhile, a tap on the old words changes nothing
         OfferDialog(
-            offer, localDesignName,
+            // read here, where an offer is shown, so editing the design does not recompose the shell for nothing
+            offer, localDesignName(),
             onUse = { accounts.resolveOffer(OfferChoice.USE_REMOTE, offer) },
             onKeep = { accounts.resolveOffer(OfferChoice.KEEP_MINE, offer) },
         )

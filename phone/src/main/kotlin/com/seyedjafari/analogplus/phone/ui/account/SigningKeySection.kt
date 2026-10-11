@@ -24,6 +24,7 @@ import com.seyedjafari.analogplus.phone.ui.theme.ProvideOuterDensity
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import com.seyedjafari.analogplus.facegen.KeyStore
 import com.seyedjafari.analogplus.phone.OnboardingConfig
+import com.seyedjafari.analogplus.phone.ui.onboarding.verticalScrollWithFades
 import com.seyedjafari.analogplus.phone.Tags
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -60,7 +61,8 @@ internal fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier:
             title = { ProvideOuterDensity(outer) { Text(stringResource(R.string.signing_key_dialog_title)) } },
             text = {
                 ProvideOuterDensity(outer) {
-                    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                    // the fade at the edges says there is more: in a build with accounts this body is long, and the steps for the watch are at its end
+                    Column(Modifier.verticalScrollWithFades(rememberScrollState(), AccountTags.DIALOG_SCROLL), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
                         signingKeyDialogText(restoreFirst = OnboardingConfig.accountsAvailable).forEach { Text(uiTextResource(it)) }
                     }
                 }

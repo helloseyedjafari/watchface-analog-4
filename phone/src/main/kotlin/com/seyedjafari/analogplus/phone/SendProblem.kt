@@ -45,7 +45,7 @@ sealed interface SendProblem {
     }
     data class KeyMismatch(val reason: String?, val restoreBackupFirst: Boolean = false) : SendProblem {
         override val english get() =
-            if (restoreBackupFirst) "$KEY_MISMATCH_TEXT\n\n$KEY_MISMATCH_RESTORE_FIRST\n\n(The watch said: ${reason ?: UNKNOWN_REASON})"
+            if (restoreBackupFirst) "$KEY_MISMATCH_PROBLEM\n\n$KEY_MISMATCH_RESTORE_FIRST\n\n$KEY_MISMATCH_WITHOUT_BACKUP\n\n(The watch said: ${reason ?: UNKNOWN_REASON})"
             else "$KEY_MISMATCH_TEXT\n\n(The watch said: ${reason ?: UNKNOWN_REASON})"
     }
     /** [failures] is the joined text of the watch checks that failed (written by the face generator); may be blank. */

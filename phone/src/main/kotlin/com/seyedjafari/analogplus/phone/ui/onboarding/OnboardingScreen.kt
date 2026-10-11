@@ -49,7 +49,7 @@ class OnboardingHost(
 )
 
 /**
- * First-run setup: one page at a time, a progress line, Skip on every page and Back from page 2.
+ * First-run setup: one page at a time, a progress line, Skip on every page but the backup page (which brings its own ways out) and Back from page 2.
  *
  * The controller is the single source of truth for the page (a rotation or a restart after process death shows the stored
  * page); the screen has no page state of its own, and there is no swiping, so the screen and the controller cannot
