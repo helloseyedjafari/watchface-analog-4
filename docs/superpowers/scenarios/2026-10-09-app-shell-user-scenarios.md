@@ -86,7 +86,7 @@ fakes `testSend` and `watchReady`. The fake builder returns a small file; the re
 
 | # | Scenario | Covered by |
 |---|---|---|
-| 40 | Account shows the installed version, "Backup and sync" with "Sign-in is coming", and that designs are saved on the phone. | UI `AccountFlowTest.theAppVersionIsTheInstalledOne`, `.signInIsSaidToBeComingAndTheDesignsAreSaidToStayOnThePhone` |
+| 40 | Account shows the installed version, and "Backup and sync" saying that sign-in is not set up in a build without accounts and that designs are saved on the phone (before the accounts work it said "Sign-in is coming"). | UI `AccountFlowTest.theAppVersionIsTheInstalledOne`, `.withoutAnAccountsControllerTheCardSaysSignInIsNotSetUpAndTheDesignsStayOnThePhone` |
 | 41 | "Reset signing key" asks first and says what it costs; Cancel keeps the key; Reset makes a new key on the next send and says so. (The tests use a key file of their own, never the app's real key.) | UI `AccountFlowTest.theResetQuestionSaysWhatItCostsAndCancelKeepsTheKey`, `ShareTemplatesTest.resetSigningKeyAsksFirstAndThenRemovesTheKey`, `LibraryAccountTest.accountHostsTheSigningKeyReset`, `.signingKeyCardHasOneHeading` |
 
 ## F. Rotation, process death, appearance, accessibility, odd windows

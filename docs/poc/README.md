@@ -62,7 +62,7 @@ check"; the light landscape ones show Check again in view and, at font scale 2, 
 one-time permission explained and a starting template. A fifth page, optional sign-in and backup of the signing key (the accounts work), appears when the build has accounts (a debug build always does; a build without a Firebase project keeps the
 four pages: "Step 1 of 4"). There is no swiping: move with the primary button (Get started /
 Continue), **Back** or **Skip**, and the system Back button goes to the previous page (on the first page of a first run it leaves the
-app; on the first page of a run started from Account's "Run setup again" it counts as Skip and returns to the app at Design). Skip is on every page and never touches the design. Only the visible page is composed, so the pairing check does
+app; on the first page of a run started from Account's "Run setup again" it counts as Skip and returns to the app at Design). Skip never touches the design. The backup page (the fifth) brings its own buttons for leaving it without signing in (and "Done" after a backup); `docs/accounts/real-device-checklist.md` item D2 says what each one records. Only the visible page is composed, so the pairing check does
 not start until you reach the connect page. Closing the app mid-way (or process death) resumes on the same page; rotating
 the phone keeps the page, and in a short wide window (phone held sideways) the animation sits beside the text and
 Back, progress, Skip and the primary button share one row; at large font sizes the page scrolls and the buttons stay.
@@ -159,15 +159,18 @@ emulator against the Firebase Emulator Suite, and the key-reset spike on a Wear 
   classes). Firestore rules: `cd firebase && npm test` (starts the Firestore emulator itself; the CI workflow runs it too).
 - **Signing key backup:** Account, **Back up signing key** (choose a passphrase of at least 12 characters; the app shows an
   estimate of its strength; the backup is checked by reading it back and opening it). On a new phone: sign in, **Restore signing
-  key from backup**. The old key, if any, is kept in `signing-key.pem.bak` in the app's storage. Wrong passphrases are slowed down
+  key from backup**. The old key, if any, is kept (unencrypted) in `signing-key.pem.bak` in the app's private storage; the app has no way to put it back, and on a release build you cannot reach the file. Wrong passphrases are slowed down
   on the phone only (the third wait is 5 seconds, then it doubles up to 5 minutes). **Forgotten passphrase:** see
   `docs/poc/key-reset-spike.md` for what happens on the watch; the app's text follows that finding, which was seen on a Wear OS
   emulator only (not on a Galaxy Watch).
 - **Deleting the account:** Account, **Delete account and cloud data** asks for the Google account again, then deletes the cloud
   data and the account; designs and the key on the phone stay. A deletion that is cut off is remembered: the card offers
   **Finish deleting** or **Keep my account** and sync stays paused until then.
-- Not synced on purpose: the face version counter (it belongs to the install on the watch). Photos are shrunk to at most 512 px on the
-  longest side in the cloud copy. At most 200 saved designs sync.
+- Not synced on purpose: the face version counter (it belongs to the install on the watch). Saved designs carry no photo; only the
+  design being edited is uploaded with its photo, shrunk to at most 512 px on the longest side. At most 200 saved designs sync.
+- A deleted or renamed saved design leaves a small record (its old name, no content) in the cloud until the account is deleted; the
+  owner accepted this. An interrupted design write that is still queued can land later and replace a newer edit from another phone
+  (accepted, see the accounts spec, Known limits).
 
 ## Checklist for the real-device test
 

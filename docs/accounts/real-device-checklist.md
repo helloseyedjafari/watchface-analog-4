@@ -9,10 +9,10 @@ emulator (`docs/poc/key-reset-spike.md`). Tick a line only after you did it and 
 Needs `phone/google-services.json` from the owner's Firebase project (`docs/accounts/owner-prerequisites.md`, items 1-5) and a
 build installed on a real phone with Google Play services and a Google account on it. With the file present a debug build uses
 YOUR project unless the app's `files/use-firebase-emulator` marker exists (it must not, for this checklist). A debug build
-needs its App Check debug token registered (item 6 of the prerequisites) once enforcement is on. Run each Android group on
+needs its App Check debug token registered (item 6 of the prerequisites) once enforcement is on, and the token is new after every reinstall. Run each Android group on
 both Android 13 or lower and Android 14 or newer if you have both phones; note the version beside each result.
 
-Texts below are the English texts of the app (`phone/src/main/res/values/strings.xml`).
+Texts below are the English texts of the app (`phone/src/main/res/values/strings.xml`). If a text in the app differs from a quote here, the app's `strings.xml` is right and the quote is out of date.
 
 ## A. Sign in, sync, backup, restore
 
@@ -21,7 +21,8 @@ Texts below are the English texts of the app (`phone/src/main/res/values/strings
   sheet; Android 13 and lower: a Play services sheet).
 - [ ] **NOT RUN** A2. Save a design in Library. Within a few seconds the Firebase console, Firestore, `users/<uid>/designs` shows
   a document with that design's name and `deleted: false`. Delete the design in the app: the document stays with `deleted: true`
-  and an empty `design`.
+  and an empty `design`, and still holds the name (accepted: it goes only when the account is deleted, see C1). A saved design
+  has **no photo** in the console even if the design you were editing had one.
 - [ ] **NOT RUN** A3. Account, **Back up signing key**, choose a passphrase twice, **Back up**. While it works the card says
   "Backing up and checking the backup...". Then the pill reads "Signing key backed up (key <16 hex>)". The console shows
   `users/<uid>/backup/signingKey` with `sealed`, `kdf: pbkdf2-hmac-sha256`, `iterations: 600000`, `salt`, `iv`, `version`,
@@ -33,8 +34,9 @@ Texts below are the English texts of the app (`phone/src/main/res/values/strings
   trying again." Then type the right one: "Signing key restored (key ...)" with the **same fingerprint as in A3**. Send to watch
   from this phone: the watch accepts the update in place (no key-mismatch message, the version rises).
 - [ ] **NOT RUN** A6. Edit the design you are editing on phone 2, then open the app on phone 1. The saved designs update. The
-  edited design asks "Use the design from <phone model>?" with **Use theirs** and **Keep mine**, once per difference. **Keep
-  mine** is the filled (default) button; a tap outside the dialog or the system Back button also means Keep mine. The question
+  edited design asks whether to use the design from the other phone (the title names that phone by its model), with **Use theirs**
+  and **Keep mine**, once per difference. Read the question: does it say which design is on this phone and which one the other
+  phone saved, and that **Use theirs** replaces the one here? **Keep mine** is the filled (default) button; a tap outside the dialog or the system Back button also means Keep mine. The question
   appears on any tab (Design, Library, Send, Account), not only on Design.
 - [ ] **NOT RUN** A7. Phone 1 in airplane mode: edit a saved design and delete another. The pill shows "Offline, will retry".
   Switch airplane mode off: the pill goes to "Synced ..." and phone 2 sees both changes.
@@ -76,8 +78,12 @@ Texts below are the English texts of the app (`phone/src/main/res/values/strings
 - [ ] **NOT RUN** D1. A fresh install (or Account, **Run setup again**) on a build with `google-services.json` shows five
   pages ("Step 5 of 5" on the last). Page 5 is optional: **Sign in with Google**, then **Back up my signing key** (passphrase
   twice), then **Done**. On a second phone the same page offers **Restore my signing key**.
-- [ ] **NOT RUN** D2. On page 5: **Back** returns to page 4; **Skip for now** ends setup without signing in and records it as
-  skipped; rotating the phone and killing the app keep the page; a build without `google-services.json` keeps four pages.
+- [ ] **NOT RUN** D2. On page 5: **Back** returns to page 4; rotating the phone and killing the app keep the page; a build
+  without `google-services.json` keeps four pages. Ways out of the page, and what each one does (write down which buttons you
+  see on each step; the page's own buttons and the screen's own **Skip** are different buttons and may not all be shown):
+  the page's own button before signing in ("Not now") and after signing in ("Skip for now") ends setup as **completed**, and
+  **Done** after a backup does too; the screen's own **Skip**, if it is shown on this page, ends setup as **skipped**. Either
+  way the app opens on Design with the design untouched, and Account, **Run setup again** starts the flow again.
 - [ ] **NOT RUN** D3. (From the onboarding plan, earlier skipped) On the owner's paired phone and watch: Account, **Run setup
   again**, page 2 "Connect your watch": both rows "OK" within a few seconds; the animation switches to the tick. Note how long
   the check took. Turn Bluetooth off on the phone and come back: the rows change (Found becomes Not found or Could not check);
@@ -116,11 +122,62 @@ Texts below are the English texts of the app (`phone/src/main/res/values/strings
   after registering the token it syncs again.
 - [ ] **NOT RUN** F3. A sideloaded release build that Play does not know (the signing SHA-256 is not registered) is refused.
 
+## G. Found by the final review (not tried anywhere)
+
+- [ ] **NOT RUN** G1. **Another phone still signed in during a deletion.** Sign in on two phones. Delete the account on phone 1.
+  Within the hour open the app on phone 2 and edit. Look in the console: is a `users/<uid>/state/current` document back? The
+  deletion page and the policy warn about this; the code may or may not stop it.
+- [ ] **NOT RUN** G2. **Many photo designs on a slow link.** With about 20 saved designs and a design with a photo on a slow
+  connection (a poor mobile signal): open the app. Does the first sync show "Offline, will retry" although the connection works?
+  Then **Delete account and cloud data** with the same data: does it end with the message that your cloud data is deleted but
+  Google wants you to confirm again, so you need **Finish deleting**? Note how long each took.
+- [ ] **NOT RUN** G3. **Traffic.** Edit a design with a photo for one minute (move a slider with pauses). Then read the Usage tab
+  for Firestore: how many reads and how much data out? This feeds owner-prerequisites item 12.
+- [ ] **NOT RUN** G4. **A design name over 100 characters.** Save a saved design under a very long name. What does the sync pill
+  say, and does it ever say it is synced? Note whether the app tells you which design is the problem.
+- [ ] **NOT RUN** G5. **Two phones, same name, different content.** On two phones that never synced, save a design called
+  "Night" with different colours, then sign both in. Both versions must survive; the copy's name should tell you which device it is
+  from (read it and write it down). Check the other phone sees the same names.
+- [ ] **NOT RUN** G6. **Editing during the first sync.** On phone 2, open the app and move a slider at once, while phone 1 has saved a
+  newer design being edited. Does phone 2 still ask the question from A6, and does it not overwrite phone 1's design before you answer?
+- [ ] **NOT RUN** G7. **A new phone at the end of setup.** On a new phone with an account that has data, go through setup, choose a
+  template on page 4, and sign in on page 5. The question from A6 may appear straight after signing in; note when, how it reads,
+  and that **Keep mine** is the default.
+- [ ] **NOT RUN** G8. **Reset signing key, then the backup line.** Signed in with a backup of this phone's key, use **Reset signing
+  key** in the Signing key card. The backup line must stop saying that this phone's key is backed up.
+- [ ] **NOT RUN** G9. **Wrong passphrases and the clock.** Make three wrong tries (the wait is 5 seconds). Then set the phone's clock
+  back by a day and try again: the wait must end within 5 minutes, not last until the old time comes round again. Set the clock
+  back to automatic.
+- [ ] **NOT RUN** G10. **A passphrase with accents or other non-ASCII characters.** Back up on phone 1 with such a passphrase
+  (for example "Café über 2026 river"), restore on phone 2 (ideally another Android version). The restore must succeed.
+- [ ] **NOT RUN** G11. **Almost no free storage.** On a phone that has no signing key yet, fill the storage and tap **Back up
+  signing key** and choose a passphrase. The app must not crash; it should say the key could not be saved or backed up.
+- [ ] **NOT RUN** G12. **A backup cut off by the connection.** Turn airplane mode on while "Backing up and checking the backup..."
+  is shown. Read the message that follows. Then look at the backup line and the console: which passphrase opens what is stored?
+  The message must not tell you that nothing changed if the console shows a new backup.
+- [ ] **NOT RUN** G13. **Replacing a key by restore.** On a phone that already has a different key, restore the backup and confirm
+  the replacement. Read the confirmation: does it make clear that the replaced key cannot be put back from the app? After it, the
+  Send to watch result depends on which key the face on the watch was signed with.
+- [ ] **NOT RUN** G14. **Send after a new phone, before restoring.** On a new phone without a key, with a backup in the cloud and a
+  face already on the watch, press **Send to watch** before restoring. Read the error. Does it point to **Restore signing key from
+  backup**, or only to uninstalling the face? Also read the Signing key card and its reset question.
+- [ ] **NOT RUN** G15. **Screen reader and large text.**
+  - With TalkBack on, make three wrong passphrase tries: is the waiting time read out once, and not again every second?
+  - At font size 2 upright, open the reset question (**I forgot the passphrase**): can you scroll to the full text, and is there a
+    sign that more text is below?
+  - In dark mode, is **Keep my account** on the "Deleting your account was not finished" card easy to read?
+- [ ] **NOT RUN** G16. **A phone with the wrong clock.** Set the clock of phone 2 two hours ahead (manually). Edit a saved design on
+  phone 1, then a different change to the same design on phone 2, then the reverse order. Which edit wins each time? Write it down;
+  the planner compares phone clocks for edits it cannot order otherwise. Set the clock back to automatic.
+
 ## Known limits (accepted by the owner, not failures)
 
 - **A backup write has no time limit.** While "Backing up and checking the backup..." is shown on a flaky connection, **Sign
   out** waits for the write to end. Firestore itself gives up after its own five attempts. The owner accepted this. Before launch
   consider making sign-out stop waiting and having the next sign-in check and undo a backup that was never proven. This is not run
   and not scheduled.
-- A deleted or renamed saved design leaves a small record (name, deleted flag, time) in the cloud until the account is deleted.
+- A deleted or renamed saved design leaves a small record (old name, deleted flag, time) in the cloud until the account is deleted.
+  The owner accepted this and the privacy policy says it.
+- An interrupted design write can land later and replace a newer edit from another phone (accepted; accounts spec, Known limits).
+- Restoring a backup over a different key leaves a copy of the replaced key on the phone that the app cannot put back.
 - The face version counter is not synced (it belongs to the install on the watch). The cloud holds designs, the design being edited and the key backup only.

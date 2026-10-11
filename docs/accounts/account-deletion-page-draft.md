@@ -17,8 +17,17 @@ Plus account". We delete the account and its data within **[OWNER: number of day
 done. **[OWNER: you do this by hand in the Firebase console: delete the user under Authentication, then the `users/<uid>` data under
 Firestore, including the `designs`, `state` and `backup` collections. Deleting the user alone does not delete the Firestore data.]**
 
-**What is deleted.** Your account (email and account id), every saved design, the small records of designs you deleted, the
-design you were editing (with the model name of your phone and the random installation id), and the signing-key backup.
+**What is deleted.** Your account (email, account id, your Google name and the link to your profile picture), every saved
+design, the small records of designs you deleted or renamed, the design you were editing (with the model name of your phone and
+the random installation id), and the signing-key backup.
+
+**Until you delete the account.** When you delete or rename a saved design, a record of the old name stays in the cloud, with a
+"deleted" flag and the time and no design content. Your other devices need it to learn that the design is gone, so we do not
+remove it earlier. Deleting the account removes it.
+
+**Sign out other phones first.** If another phone is still signed in to the same account, sign it out before you delete. A phone
+that is still signed in can keep a valid sign-in for up to an hour after the deletion and may upload the design it shows during
+that time. If that happens, write to **[OWNER: contact email]** and we remove it.
 
 **What stays.** Nothing about you stays in our cloud after deletion. Google may keep backup copies of its databases for a
 limited time, on its own schedule. Designs you shared with other people as links or QR codes are theirs.

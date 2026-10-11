@@ -5,8 +5,9 @@ Firebase Emulator Suite on your computer, and a release build without `phone/goo
 off. Do these in order; each item says what to hand back to the code.
 
 - [ ] **1. Create the Firebase project.** console.firebase.google.com, Add project, name it "Analog Plus". Turn Google Analytics
-  **off** (the app collects nothing else, and the Data Safety form stays short). Stay on the free **Spark** plan: the design
-  needs neither Cloud Storage nor Cloud Functions, so no billing account is required. Note the **project id**.
+  **off** (the app collects nothing else, and the Data Safety form stays short). Start on the free **Spark** plan: the design
+  needs neither Cloud Storage nor Cloud Functions, so no billing account is needed to build and test. Whether to stay on Spark for
+  launch is item 12. Note the **project id**.
 - [ ] **2. Register the Android app.** Project settings, Your apps, Add app, Android. Package name `com.seyedjafari.analogplus`.
   Add the **SHA-1 and the SHA-256** of every key the app will be signed with (Google sign-in refuses an unknown key; App Check
   with Play Integrity needs the SHA-256 of the app-signing key):
@@ -31,7 +32,9 @@ off. Do these in order; each item says what to hand back to the code.
   **app-signing SHA-256** from item 2 must be registered in Project settings).
   Register a **debug token** for your own debug builds: run a debug build once with the project's `google-services.json`, find the
   log line "Enter this debug secret into the allow list in the Firebase Console" (`adb logcat | grep -i appcheck`), and add the
-  token under App Check, Apps, Manage debug tokens. Watch App Check's request metrics for a few days, **then** switch Firestore
+  token under App Check, Apps, Manage debug tokens. The debug token is **new for every installation of the debug app**: after a reinstall or
+  Clear data you register a new one (or fix a secret with the `firebaseAppCheckDebugSecret` setting, see the Firebase App Check
+  debug-provider documentation). Watch App Check's request metrics for a few days, **then** switch Firestore
   to *Enforced*. Enforcing earlier locks out your own test builds.
 - [ ] **7. Privacy policy at a public URL.** Host the text of `docs/accounts/privacy-policy-draft.md` on any public page. First
   fill in every `[OWNER: ...]` in it (your name or company, contact email, the Firestore location from item 5, the URL of the
@@ -51,13 +54,27 @@ off. Do these in order; each item says what to hand back to the code.
   yourself, so decide how many days you promise.
 - [ ] **11. Usage watch.** The Spark plan has **no budget alerts**. After launch, look at the Usage tab for Firestore and
   Authentication now and then (quotas change, read them there). For email alerts, upgrade to **Blaze** (pay as you go, still
-  keeps the free allowance) and set a budget alert. This design uses a handful of small documents per user.
-- [ ] **12. Check the texts against the real project.** Once items 1-6 are done, read `docs/accounts/privacy-policy-draft.md`
+  keeps the free allowance) and set a budget alert. The number of documents per user is small, but a design with a photo is large (item 12).
+- [ ] **12. Choose Spark or Blaze before launch.** The plan avoided a billing account, but the traffic of a photo design may use up
+  the free quotas faster than the document count suggests. **This is an estimate from reading the code at commit 8a550b0, not a
+  measurement, and Firebase's allowances change: read the current ones in the console.** The estimate:
+  - Every time editing pauses (about 1 second after the last change), the app uploads the design being edited and reads it back.
+    With a photo that is about 400 kB each way, plus about 400 kB to every other phone of the same account that has the app open.
+    That is roughly 0.8 MB or more of data out of Firestore per pause, and the app also re-reads every saved design (and the
+    records of deleted ones) each time.
+  - If Spark allows about 10 GiB of data out per month for the whole project and 50 000 document reads a day (check this), that is
+    roughly 13 000 pauses a month for all users together. An editing session of about 100 pauses is about 80 MB, so about 130 such
+    sessions would use the month's allowance.
+  - As understood from Firebase's rules, an exhausted Spark quota stops Firestore until it resets (the day for reads, the month for
+    data out), and every user sees "Cloud limit reached".
+  - On **Blaze** the same traffic costs cents at this size, with a budget alert (item 11), but it needs a billing account. Choose
+    one, or ask for the engine to upload the design being edited less often (that is code work, not a setting).
+- [ ] **13. Check the texts against the real project.** Once items 1-6 are done, read `docs/accounts/privacy-policy-draft.md`
   once against the Firebase console (the location, what an Authentication user record shows, whether App Check is enforced) and
   fix the draft where it disagrees. Nothing in these drafts has been checked against a real project.
-- [ ] **13. Run the real-device checklist.** `docs/accounts/real-device-checklist.md` is NOT RUN. It needs items 1-5 done and a
+- [ ] **14. Run the real-device checklist.** `docs/accounts/real-device-checklist.md` is NOT RUN. It needs items 1-5 done and a
   phone; the Galaxy Watch part (E2) settles the key-reset spike, which was seen on an emulator only.
-- [ ] **14. Tell the agent** (one message): the project id, the Firestore location, whether `google-services.json` may be
+- [ ] **15. Tell the agent** (one message): the project id, the Firestore location, whether `google-services.json` may be
   committed, and the two URLs.
 
 Until item 4 is done: `./gradlew :phone:assembleDebug` gives a debug app that signs in through the **Auth emulator**

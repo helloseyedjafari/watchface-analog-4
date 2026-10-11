@@ -132,6 +132,19 @@ Email/password and other providers, sharing designs between users or a public ga
 builder spec), syncing the version counter, web builder, end-to-end encryption of designs (only the key is
 encrypted; designs are not secret).
 
+## Known limits (accepted by the owner)
+
+- **A late-landing design write.** If the connection drops during a design write, the write stays queued in memory and is sent
+  when the phone is online again, before any sync pass runs. If another phone edited the same design meanwhile, the queued older
+  edit is stamped later by the server and replaces the newer one everywhere. The planner never gets to compare them. The window
+  is narrow (the link must drop during a write and another phone must edit the same design in that time). Accepted as built;
+  the alternative is to write designs through a transaction that checks the cloud's `updatedAt`.
+- **Tombstones stay.** A deleted or renamed saved design leaves a document (old name, `deleted: true`, empty design) in the cloud
+  until the account is deleted. Other phones need it to learn about the deletion. The privacy policy and the deletion page say so.
+- **A backup write has no time limit.** While a backup is being written on a poor connection, sign-out waits for it (Firestore
+  gives up after its own five attempts).
+- **Nothing here was run against a real Firebase project, a real Google sign-in, App Check or a real device.**
+
 ## Open items
 
 - Reset path after a forgotten passphrase: verify on an emulator (plan task).
