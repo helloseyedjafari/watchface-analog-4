@@ -50,9 +50,11 @@ import kotlinx.coroutines.withTimeoutOrNull
  * the running one, so a call that never returned would leave "busy" on screen and block sign-out and every later action.
  * Therefore every suspending call is bounded and reports [RemoteErrorKind.OFFLINE] when the cloud does not answer in time:
  * reads of one document and read-backs after [readTimeoutMs], the list of designs and each page of the wipe per page; writes and each batch of the wipe after [writeTimeoutMs] (design and current
- * writes plus 20 ms per kilobyte of payload, the sync engine's own rule, which also bounds them from above). The wipe is a
- * bounded number of such steps: it reads [wipePageSize] documents at a time and deletes them, so the bound is per page
- * and not per account (a user with many photo designs would otherwise never finish one 20-second read of all of them).
+ * writes plus 20 ms per kilobyte of payload, the sync engine's own rule, which also bounds them from above). The list and
+ * the wipe are read a page at a time, so the bound is per page and not per account: the time allowed grows with the number
+ * of documents (an account keeps its deleted designs as tombstones, so it can hold far more documents than the 200 live
+ * designs). What a page weighs: a saved design never carries a photo, so it is a few kilobytes of JSON
+ * ([TYPICAL_DESIGN_BYTES]); only `state/current` can hold one, up to the rules' cap of 950 kB ([MAX_DESIGN_BYTES]).
  * The cache is memory-only (see
  * [FirebaseProvider]), so a write issued while offline waits in memory and its `await()` would never finish; the journal
  * keeps the change and the engine pushes it again. The abandoned write stays queued in the SDK and is sent when the
@@ -86,29 +88,33 @@ class FirestoreRemoteStore(
     private val writeTimeoutMs: Long = 15_000,
     private val readTimeoutMs: Long = 20_000,
     /**
-     * Documents per read and per delete batch of the wipe. A design with a photo is up to about 950 kB (the rules' cap), so a page of
-     * 3 is at most about 2.85 MB: that arrives within [wipeReadTimeoutMs] on a 1 Mbit/s link (about 23 s) with room to spare.
+     * Documents per read and per delete batch of the wipe. A saved design is a few kB (no photo), so a page of 50 is about
+     * 250 kB: 2 s at 1 Mbit/s against [wipeReadTimeoutMs], and a delete batch of 50 is far below the SDK's 500 writes.
+     * (The rules would accept 950 kB per document; the numbers are not sized for another writer that fills them.)
      */
     private val wipePageSize: Long = DEFAULT_WIPE_PAGE_SIZE,
     /**
      * Pages tried per collection before the wipe gives up (retryable: the next call continues with what is left).
-     * 400 pages of 3 are 1200 documents, several times the 200 designs the app syncs (plus the few other documents).
+     * 400 pages of 50 are 20 000 documents, a hundred times the 200 designs the app syncs, and well above the tombstones a
+     * long-lived account can pile up.
      */
     private val maxWipePages: Int = DEFAULT_MAX_WIPE_PAGES,
-    /** The bound of one wipe page read; larger than [readTimeoutMs] because a page can carry photos (see [wipePageSize]). */
+    /**
+     * The bound of one wipe page read. A page of designs is about 250 kB; the one `state/current` document can be 950 kB
+     * (7.6 s at 1 Mbit/s); 45 s leaves room for latency on a bad link.
+     */
     private val wipeReadTimeoutMs: Long = DEFAULT_WIPE_READ_TIMEOUT_MS,
     /** The bound of one wipe batch commit. */
     private val wipeCommitTimeoutMs: Long = writeTimeoutMs,
     /**
-     * Designs per read of [fetchDesigns]. The whole collection in one read does not fit a fixed bound for a user with many
-     * photo designs on a slow link (20 designs of 400 kB are 8 MB: 32-64 s at 1-2 Mbit/s), so it is read in pages, each
-     * with its own bound ([fetchPageTimeoutMs]). 5 designs are at most 4.75 MB (the rules' cap per design), 38 s at
-     * 1 Mbit/s, which fits 60 s with room for latency; 200 designs are 40 round trips.
+     * Designs per read of [fetchDesigns], each page with its own bound ([fetchPageTimeoutMs]), so that the time allowed grows
+     * with the number of documents instead of one read of all of them having to fit a fixed bound. A saved design is a few
+     * kB (no photo), so a page of 50 is about 250 kB: 2 s at 1 Mbit/s against 30 s. 200 designs are 4 round trips (a small
+     * page size would make every pass wait for dozens). There is no limit on the number of pages: the collection is finite,
+     * the cursor only moves forward, and the sync engine's own bound for the whole read ends a store that never stops.
      */
     private val fetchPageSize: Long = DEFAULT_FETCH_PAGE_SIZE,
     private val fetchPageTimeoutMs: Long = DEFAULT_FETCH_PAGE_TIMEOUT_MS,
-    /** Pages read by [fetchDesigns] before it gives up (1000 designs at the default). */
-    private val maxFetchPages: Int = DEFAULT_MAX_FETCH_PAGES,
 ) : RemoteStore {
     private fun user(uid: String) = db.collection("users").document(uid)
     private fun designs(uid: String) = user(uid).collection("designs")
@@ -126,7 +132,6 @@ class FirestoreRemoteStore(
     override suspend fun fetchDesigns(uid: String): List<RemoteDesign> = mapErrors {
         val all = ArrayList<RemoteDesign>()
         var after: DocumentSnapshot? = null
-        var pages = 0
         while (true) {
             val query = designs(uid).limit(fetchPageSize).let { q -> after?.let { q.startAfter(it) } ?: q }
             val snapshot = bounded(fetchPageTimeoutMs) { query.get(Source.SERVER).await() }
@@ -136,8 +141,7 @@ class FirestoreRemoteStore(
                 docs.mapNotNull(::toDesign) to docs.lastOrNull()
             }
             all += page.first
-            if (snapshot.size() < fetchPageSize) break
-            if (++pages >= maxFetchPages) throw RemoteException(RemoteErrorKind.OTHER, "The cloud holds more than $maxFetchPages pages of designs.")
+            if (snapshot.size() < fetchPageSize) break   // a page that is exactly full is followed by an empty one: no limit, no off-by-one
             after = page.second
         }
         all
@@ -276,10 +280,11 @@ class FirestoreRemoteStore(
      * unsettled writes above is proven by `FirebaseEmulatorTest` against the emulator (a queued batch delete plus a wipe in
      * small pages, and writes queued while offline).
      *
-     * **Numbers.** A page read must arrive within [wipeReadTimeoutMs] (45 s). The worst page is [wipePageSize] designs of
-     * 950 kB (2.85 MB), about 23 s on a 1 Mbit/s link and 11 s on 2 Mbit/s, so it fits with room for latency; the typical
-     * photo design (400 kB) is half of that. The page count limit was raised as the pages shrank. A very slow link (under
-     * 0.5 Mbit/s) with several photo designs per page can still time out, and the deletion then reports OFFLINE.
+     * **Numbers.** A page read must arrive within [wipeReadTimeoutMs] (45 s). A page is [wipePageSize] saved designs of a
+     * few kB (about 250 kB, 2 s on a 1 Mbit/s link); the `state` collection holds the one document that can carry a photo,
+     * up to 950 kB (7.6 s at 1 Mbit/s). A link slower than about 0.2 Mbit/s can still time out, and the deletion then reports
+     * OFFLINE and continues at the next call. (Another writer that fills documents to the rules' 950 kB cap would make pages
+     * of 47 MB; this app writes none, and the numbers are not sized for them.)
      */
     override suspend fun deleteAllUserData(uid: String) = mapErrors {
         bounded(writeTimeoutMs) { db.waitForPendingWrites().await() }
@@ -382,13 +387,15 @@ class FirestoreRemoteStore(
     }
 
     companion object {
-        /** See the constructor: a page of this many designs of at most [MAX_DESIGN_BYTES] must fit the page read bound at 1 Mbit/s. */
-        const val DEFAULT_WIPE_PAGE_SIZE = 3L
+        /** See the constructor: a page of this many designs of [TYPICAL_DESIGN_BYTES] fits the page read bound at 1 Mbit/s many times over. */
+        const val DEFAULT_WIPE_PAGE_SIZE = 50L
         const val DEFAULT_MAX_WIPE_PAGES = 400
         const val DEFAULT_WIPE_READ_TIMEOUT_MS = 45_000L
-        const val DEFAULT_FETCH_PAGE_SIZE = 5L
-        const val DEFAULT_FETCH_PAGE_TIMEOUT_MS = 60_000L
-        const val DEFAULT_MAX_FETCH_PAGES = 200
+        const val DEFAULT_FETCH_PAGE_SIZE = 50L
+        const val DEFAULT_FETCH_PAGE_TIMEOUT_MS = 30_000L
+
+        /** What a saved design weighs: a few kB of JSON (it never carries a photo). A round figure for sizing, not a limit. */
+        const val TYPICAL_DESIGN_BYTES = 5_000L
 
         /** The most a design document can hold (the rules cap the design text at 950 000 characters). */
         const val MAX_DESIGN_BYTES = 950_000L

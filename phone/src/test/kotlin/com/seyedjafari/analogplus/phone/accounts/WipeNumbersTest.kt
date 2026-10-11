@@ -5,28 +5,37 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The wipe's page size and bounds are chosen together (see `FirestoreRemoteStore.deleteAllUserData`): the worst page has to
- * arrive within its read bound on a slow link, and the page count has to cover more than the app lets a user store.
+ * The page sizes and bounds of the design list and of the wipe are chosen together (see `FirestoreRemoteStore`). A saved
+ * design never carries a photo (`Store.saveNamed` strips it), so a design document is a few kilobytes of JSON; the only
+ * document with a photo is `state/current`, one of at most 950 kB. The rules' 950 kB cap per design document is a limit
+ * against other writers; this app does not produce such documents, and the numbers are not sized for them.
  */
 class WipeNumbersTest {
-    private val pageSize = FirestoreRemoteStore.DEFAULT_WIPE_PAGE_SIZE
-    private val worstPageBytes = pageSize * FirestoreRemoteStore.MAX_DESIGN_BYTES
+    private fun secondsAtOneMegabit(bytes: Long) = bytes * 8.0 / 1_000_000
 
-    @Test fun theWorstPageArrivesWithinTheReadBoundOnAOneMegabitLinkWithRoomToSpare() {
-        val secondsAtOneMbit = worstPageBytes * 8.0 / 1_000_000
-        val boundSeconds = FirestoreRemoteStore.DEFAULT_WIPE_READ_TIMEOUT_MS / 1000.0
-        assertTrue("worst page $secondsAtOneMbit s against a bound of $boundSeconds s", secondsAtOneMbit * 1.5 <= boundSeconds)
+    @Test fun aTypicalPageOfDesignsArrivesWithinTheListBoundOnAOneMegabitLinkWithRoomToSpare() {
+        val page = FirestoreRemoteStore.DEFAULT_FETCH_PAGE_SIZE * FirestoreRemoteStore.TYPICAL_DESIGN_BYTES
+        val bound = FirestoreRemoteStore.DEFAULT_FETCH_PAGE_TIMEOUT_MS / 1000.0
+        assertTrue("page $page bytes: ${secondsAtOneMegabit(page)} s against $bound s", secondsAtOneMegabit(page) * 10 <= bound)
     }
 
-    @Test fun theWorstFetchPageAlsoArrivesWithinItsBoundOnAOneMegabitLink() {
-        val worst = FirestoreRemoteStore.DEFAULT_FETCH_PAGE_SIZE * FirestoreRemoteStore.MAX_DESIGN_BYTES
-        val secondsAtOneMbit = worst * 8.0 / 1_000_000
-        val boundSeconds = FirestoreRemoteStore.DEFAULT_FETCH_PAGE_TIMEOUT_MS / 1000.0
-        assertTrue("worst fetch page $secondsAtOneMbit s against a bound of $boundSeconds s", secondsAtOneMbit * 1.5 <= boundSeconds)
-        assertTrue(FirestoreRemoteStore.DEFAULT_FETCH_PAGE_SIZE * FirestoreRemoteStore.DEFAULT_MAX_FETCH_PAGES >= 5 * MAX_SYNCED_DESIGNS)
+    @Test fun aTypicalWipePageAndTheCurrentDesignArriveWithinTheWipeReadBoundWithRoomToSpare() {
+        val bound = FirestoreRemoteStore.DEFAULT_WIPE_READ_TIMEOUT_MS / 1000.0
+        val page = FirestoreRemoteStore.DEFAULT_WIPE_PAGE_SIZE * FirestoreRemoteStore.TYPICAL_DESIGN_BYTES
+        assertTrue("typical wipe page ${secondsAtOneMegabit(page)} s against $bound s", secondsAtOneMegabit(page) * 10 <= bound)
+        // the `state` collection holds the one document that can carry a photo, up to the rules' cap
+        val current = FirestoreRemoteStore.MAX_DESIGN_BYTES
+        assertTrue("current design ${secondsAtOneMegabit(current)} s against $bound s", secondsAtOneMegabit(current) * 1.5 <= bound)
     }
 
-    @Test fun thePageLimitCoversWellMoreThanTheDesignsTheAppSyncs() {
-        assertTrue(pageSize * FirestoreRemoteStore.DEFAULT_MAX_WIPE_PAGES >= 5 * MAX_SYNCED_DESIGNS)
+    @Test fun aPageIsNotTinyWhenTheAppSyncsTwoHundredDesigns() {
+        // 200 designs must not take dozens of round trips: at most a handful of pages
+        assertTrue(MAX_SYNCED_DESIGNS <= 4 * FirestoreRemoteStore.DEFAULT_FETCH_PAGE_SIZE)
+        assertTrue(MAX_SYNCED_DESIGNS <= 4 * FirestoreRemoteStore.DEFAULT_WIPE_PAGE_SIZE)
+    }
+
+    @Test fun thePageLimitOfTheWipeCoversWellMoreThanTheDocumentsAnAccountCanHold() {
+        // live designs are capped at MAX_SYNCED_DESIGNS; tombstones are not (a deleted name stays), so the margin is large
+        assertTrue(FirestoreRemoteStore.DEFAULT_WIPE_PAGE_SIZE * FirestoreRemoteStore.DEFAULT_MAX_WIPE_PAGES >= 50 * MAX_SYNCED_DESIGNS)
     }
 }

@@ -94,8 +94,8 @@ class SyncEngine(
     private val callTimeoutMs: Long = 20_000,
     /**
      * Bound of the whole fetch of the design list. The store reads it in pages, each with its own bound, so this is only a
-     * safety net for a store that never answers: a fixed 20 s for ALL the designs would fail every pass of a user with many
-     * photo designs on a slow link.
+     * safety net for a store that never answers (and the only limit on how many pages it may read): a fixed 20 s for ALL
+     * the documents would fail every pass of an account that has kept many deleted designs as tombstones on a slow link.
      */
     private val fetchTimeoutMs: Long = 600_000,
     private val writeTimeoutMsPerKb: Long = 20,

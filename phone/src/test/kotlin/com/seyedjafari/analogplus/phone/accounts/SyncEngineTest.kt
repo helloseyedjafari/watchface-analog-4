@@ -1576,8 +1576,8 @@ class SyncEngineTest {
 
     /**
      * The store reads the design list in pages, each with its own bound; the engine's bound for the whole fetch is only a
-     * safety net. A fixed 20 s for all the designs would make every pass of a user with many photo designs on a slow link
-     * end Offline.
+     * safety net. A fixed 20 s for all the documents would make every pass of an account with many tombstones on a slow
+     * link end Offline.
      */
     @Test fun aFetchThatTakesLongerThanASingleCallBoundStillSucceeds() = runTest {
         val remote = FakeRemoteStore()

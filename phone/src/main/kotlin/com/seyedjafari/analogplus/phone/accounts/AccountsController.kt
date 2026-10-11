@@ -302,7 +302,7 @@ class AccountsController(
 
     /**
      * Re-reads the backup only (no sync pass first, unlike [refresh]), for the "Check again" button of the setup page: on a
-     * slow link with photo designs a whole pass can take long, and the button must answer about the backup.
+     * slow link a whole pass can take long, and the button must answer about the backup.
      */
     fun checkBackup() { scope.launch { refreshBackup() } }
 

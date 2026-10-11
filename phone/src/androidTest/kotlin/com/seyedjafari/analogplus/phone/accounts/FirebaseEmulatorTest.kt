@@ -397,29 +397,27 @@ class FirebaseEmulatorTest {
 
     // ---- the design list is read in pages -----------------------------------------------------------------------
 
-    @Test fun fetchDesignsReadsEveryDesignOncePageByPage() = inTest {
+    @Test fun fetchDesignsReadsEveryDesignOncePageByPageWithNoLimitOnTheirNumber() = inTest {
         val uid = signInAs(unique("fetch-pages"))
         val ids = (0 until 8).map { designId("F$it") }
         ids.forEachIndexed { i, id -> remote.putDesign(uid, id, "F$i", "{}", DesignState.LIVE, DESIGN_SCHEMA) }
-        val paged = FirestoreRemoteStore(db, writeTimeoutMs = 10_000, fetchPageSize = 3, maxFetchPages = 5)
-        val got = paged.fetchDesigns(uid).map { it.id }
-        assertEquals("every design exactly once", ids.sorted(), got.sorted())
-        // three pages are needed (3 + 3 + 2); allowing two must fail rather than return a partial list
-        val short = FirestoreRemoteStore(db, writeTimeoutMs = 10_000, fetchPageSize = 3, maxFetchPages = 2)
-        try {
-            short.fetchDesigns(uid)
-            fail("three pages were needed, two were allowed")
-        } catch (e: RemoteException) {
-            assertEquals(RemoteErrorKind.OTHER, e.kind)
+        // 8 documents: pages of 3 (3 + 3 + 2) and pages of 2 (4 full pages and then an empty one) both return each exactly once
+        for (size in listOf(3L, 2L, 4L, 8L, 100L)) {
+            val paged = FirestoreRemoteStore(db, writeTimeoutMs = 10_000, fetchPageSize = size)
+            assertEquals("page size $size: every design exactly once", ids.sorted(), paged.fetchDesigns(uid).map { it.id }.sorted())
         }
-        // an exact multiple of the page size ends with an empty page, not a loop
-        val exact = FirestoreRemoteStore(db, writeTimeoutMs = 10_000, fetchPageSize = 4, maxFetchPages = 5)
-        assertEquals(8, exact.fetchDesigns(uid).size)
+        // no cap: far more pages than any earlier limit would have allowed still end with the whole list, also when the
+        // number of documents is an exact multiple of the page size (the last full page is followed by an empty one)
+        val many = signInAs(unique("fetch-many"))
+        val manyIds = (0 until 30).map { designId("M$it") }
+        manyIds.forEachIndexed { i, id -> remote.putDesign(many, id, "M$i", "{}", DesignState.LIVE, DESIGN_SCHEMA) }
+        assertEquals(30, FirestoreRemoteStore(db, writeTimeoutMs = 10_000, fetchPageSize = 2).fetchDesigns(many).size)
+        assertEquals(30, FirestoreRemoteStore(db, writeTimeoutMs = 10_000, fetchPageSize = 30).fetchDesigns(many).size)
     }
 
     /**
-     * The list a pass acts on is read inside the engine's pass; a fixed bound for the whole list would fail every pass of a
-     * user with many photo designs on a slow link. Each page has its own bound.
+     * The list a pass acts on is read inside the engine's pass; each page has its own bound, so the time allowed grows with
+     * the number of documents (an account that keeps its deleted designs as tombstones has more than the 200 live ones).
      */
     @Test fun fetchDesignsGivesUpPerPageWithOffline() = inTest {
         val uid = signInAs(unique("fetch-bound"))
