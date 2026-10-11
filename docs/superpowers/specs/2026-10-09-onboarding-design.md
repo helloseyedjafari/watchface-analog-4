@@ -15,7 +15,7 @@ onboarding never blocks an existing user and never shows twice unless asked.
 
 ## Flow
 
-Five pages in a paged flow with a progress indicator ("Step N of M"), Skip on every page, Back works. There is no swipe:
+Five pages in a paged flow with a progress indicator ("Step N of M"), Skip on every page except the backup page (which brings its own Not now / Skip for now / Done), Back works. There is no swipe:
 the user moves with Back, Skip and the primary button only (and the system Back button), and pages change with a
 shared-axis slide (a plain change when animations are off). System Back goes one page back; on the first page a first run leaves the app, while a run restarted from Account's "Run setup again" counts Back as Skip and returns to the app (the controller keeps how the run started, `OnboardingOrigin`, in memory only: after process death a run is a first run). Only the visible page is composed, so the pairing check
 starts when the connect page is reached and a neighbouring page never plays its animation. A build without accounts (no Firebase
@@ -39,12 +39,12 @@ project) has four pages (the fifth, backup, is hidden); the backup page ships wi
 4. **Pick a starting template.** Grid of Classic, Midnight, Neon, Minimal (live-rendered previews). Choosing one sets
    the current design (the same confirm-before-replace rule applies if the user already has edits).
 5. **Backup and sync (optional).** Shown only when accounts ship. "Sign in with Google" or "Not now"; after sign-in,
-   set the recovery passphrase (spec 3). Skippable; always reachable later from Account.
+   set the recovery passphrase (spec 3). Optional: the page brings its own "Not now" (before signing in), "Skip for now" and "Done" buttons, which complete setup; the screen's own Skip is not drawn on it. Always reachable later from Account.
 
 Finish goes to Design with the chosen template loaded. If the watch was found, a one-time tip points to Send: it is
 shown once after Finish **or Skip**, with **Open Send** and **Got it**, and ends when either is used or when the Send destination is
 opened by any other route. In a short wide window (phone landscape) the animation sits beside the text and Back,
-progress, Skip and the primary button share one row; every page scrolls instead of clipping, also at font scale 2.
+progress, Skip (where the page has one) and the primary button share one row; every page scrolls instead of clipping, also at font scale 2.
 Account has a **Run setup again** card that restarts the flow from the first page after Completed or Skipped.
 
 ## State
@@ -91,7 +91,7 @@ Account has a **Run setup again** card that restarts the flow from the first pag
 - JVM: `OnboardingState` transitions and persistence (resume page, update-from-POC becomes `SKIPPED`); the mapping of
   `WatchStatus` to row texts and advice. The mapping of node/capability results to `WatchStatus` is tested by the app
   shell plan (`WatchStatusTest`).
-- Instrumented: full pass through all pages, Skip on each page, Back, rotation and process-death resume, template
+- Instrumented: full pass through all pages, Skip on each page that has one, Back, rotation and process-death resume, template
   choice sets the design, "no watch" path, reduced-motion path shows static frames.
 - Asset test: all four raw files parse as Lottie compositions and stay under the size cap.
 - Real devices: the pairing page is to be verified on the owner's paired phone and watch (the Data Layer has never run on

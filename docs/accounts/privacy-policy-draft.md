@@ -85,9 +85,9 @@ off, the app remembers it and offers **Finish deleting** or **Keep my account**;
 
 Without the app: see **[OWNER: URL of the account deletion page]**, or write to **[OWNER: contact email]**.
 
-If another phone is still signed in to the same account, sign it out first. A phone that is still signed in can keep a valid
-sign-in for up to an hour after the account is deleted and may upload the design it shows during that time. Write to us and we
-remove it.
+If another phone is still signed in to the same account, sign it out first. That phone keeps a valid sign-in for up to an hour
+after the account is deleted, and the app on it cannot tell that the account is gone. An edit made on it in that time is still
+uploaded and stays in the cloud although the account is deleted. The app does not stop this. Write to us and we remove it.
 
 Signing out only stops syncing. Your cloud data stays until you delete it. Google may keep backup copies of its databases for
 a limited time after deletion, on its own schedule.
@@ -110,10 +110,12 @@ Changes are published here with a new date. Last updated: **[OWNER: date]**.
 ## Appendix: Google Play Data safety form (answers for the signed-in features)
 
 Written from the code. Check each line against Firebase's own data disclosures (Authentication, Firestore, App Check) before
-submitting, and again whenever the app starts collecting something new. Note for the owner: the text the app shows before
-signing in (the Account card) is shorter than this policy. It names the email address, the designs, the encrypted key backup and
-the phone model with a random device ID, but not the Google name and picture or the kept records of deleted designs. Decide
-whether to make it say the same.
+submitting, and again whenever the app starts collecting something new. The text the app shows before signing in (the Account card) says: "The cloud stores your email address, your name and profile
+picture from your Google account, your designs (the names of designs you delete or rename are kept until you delete your account),
+the encrypted backup of your signing key, the model of your phone and a random device ID. You can delete all of it at any
+time." This policy says all of that. It also lists more: the design you are editing with its shrunk photo, a short fingerprint of
+the key, the settings and write id of the backup, the App Check attestation and the Firebase installation id. Keep the two
+texts from contradicting each other when either changes.
 
 | Question | Answer |
 |---|---|

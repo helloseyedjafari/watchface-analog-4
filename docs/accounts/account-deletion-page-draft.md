@@ -25,9 +25,10 @@ the random installation id), and the signing-key backup.
 "deleted" flag and the time and no design content. Your other devices need it to learn that the design is gone, so we do not
 remove it earlier. Deleting the account removes it.
 
-**Sign out other phones first.** If another phone is still signed in to the same account, sign it out before you delete. A phone
-that is still signed in can keep a valid sign-in for up to an hour after the deletion and may upload the design it shows during
-that time. If that happens, write to **[OWNER: contact email]** and we remove it.
+**Sign out other phones first.** If another phone is still signed in to the same account, sign it out before you delete. That phone
+keeps a valid sign-in for up to an hour after the deletion, and the app on it cannot tell that the account is gone. If you edit a
+design on that phone in that time, the edit is still uploaded to the cloud, and it stays there although the account is deleted.
+The app does not stop this. If it happens, write to **[OWNER: contact email]** and we remove it.
 
 **What stays.** Nothing about you stays in our cloud after deletion. Google may keep backup copies of its databases for a
 limited time, on its own schedule. Designs you shared with other people as links or QR codes are theirs.

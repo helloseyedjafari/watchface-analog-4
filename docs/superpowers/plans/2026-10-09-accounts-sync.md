@@ -2731,6 +2731,8 @@ git commit -m "feat(phone): remote document model, per-design conflict resolutio
 
 ### Task 8: `CloudSync` and the sync engine
 
+> Later change (final review): the kept-both copy is named "<name> (<device name>)", or "<name> (copy)" when the phone has no name, not "<name> (this phone)" as the code and tests below say; the design being edited is uploaded after 10 seconds of quiet or when the app is left (not after every edit burst); a pass about the design being edited alone no longer reads the saved designs. The text below is the plan as first written.
+
 **Files:**
 - Create: `accounts/CloudSync.kt`, `accounts/SyncEngine.kt`
 - Test: `phone/src/test/kotlin/.../accounts/SyncEngineTest.kt`

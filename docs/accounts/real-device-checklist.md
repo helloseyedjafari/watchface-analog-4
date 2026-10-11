@@ -33,7 +33,7 @@ Texts below are the English texts of the app (`phone/src/main/res/values/strings
   backup. Check it and try again." The third wrong try shows "That passphrase did not open the backup. Wait 5 seconds before
   trying again." Then type the right one: "Signing key restored (key ...)" with the **same fingerprint as in A3**. Send to watch
   from this phone: the watch accepts the update in place (no key-mismatch message, the version rises).
-- [ ] **NOT RUN** A6. Edit the design you are editing on phone 2, then open the app on phone 1. The saved designs update. The
+- [ ] **NOT RUN** A6. Edit the design you are editing on phone 2, wait about 15 seconds without touching it (or leave the app, which uploads at once), then open the app on phone 1. The saved designs update. The
   edited design asks whether to use the design from the other phone (the title names that phone by its model), with **Use theirs**
   and **Keep mine**, once per difference. Read the question: does it say which design is on this phone and which one the other
   phone saved, and that **Use theirs** replaces the one here? **Keep mine** is the filled (default) button; a tap outside the dialog or the system Back button also means Keep mine. The question
@@ -125,19 +125,23 @@ Texts below are the English texts of the app (`phone/src/main/res/values/strings
 ## G. Found by the final review (not tried anywhere)
 
 - [ ] **NOT RUN** G1. **Another phone still signed in during a deletion.** Sign in on two phones. Delete the account on phone 1.
-  Within the hour open the app on phone 2 and edit. Look in the console: is a `users/<uid>/state/current` document back? The
-  deletion page and the policy warn about this; the code may or may not stop it.
+  Within the hour open the app on phone 2 and do not edit: nothing should come back in the console (`users/<uid>/state/current`).
+  Then edit and wait 15 seconds: is a `users/<uid>/state/current` document back? The
+  deletion page and the policy say to sign other phones out first, because the app cannot stop an edit made on a phone that is still
+  signed in (its sign-in stays valid for up to an hour). Note what you see; an edit made there after the deletion is expected to be
+  uploaded.
 - [ ] **NOT RUN** G2. **Many photo designs on a slow link.** With about 20 saved designs and a design with a photo on a slow
   connection (a poor mobile signal): open the app. Does the first sync show "Offline, will retry" although the connection works?
   Then **Delete account and cloud data** with the same data: does it end with the message that your cloud data is deleted but
   Google wants you to confirm again, so you need **Finish deleting**? Note how long each took.
-- [ ] **NOT RUN** G3. **Traffic.** Edit a design with a photo for one minute (move a slider with pauses). Then read the Usage tab
-  for Firestore: how many reads and how much data out? This feeds owner-prerequisites item 12.
+- [ ] **NOT RUN** G3. **Traffic.** Edit a design with a photo for one minute (move a slider with pauses of a few seconds), then leave the app. Then read the Usage tab
+  for Firestore: how many reads and how much data out? The design being edited should be uploaded once after 10 seconds of quiet or
+  when you leave, not after every pause. This feeds owner-prerequisites item 12.
 - [ ] **NOT RUN** G4. **A design name over 100 characters.** Save a saved design under a very long name. What does the sync pill
   say, and does it ever say it is synced? Note whether the app tells you which design is the problem.
 - [ ] **NOT RUN** G5. **Two phones, same name, different content.** On two phones that never synced, save a design called
-  "Night" with different colours, then sign both in. Both versions must survive; the copy's name should tell you which device it is
-  from (read it and write it down). Check the other phone sees the same names.
+  "Night" with different colours, then sign both in. Both versions must survive; the copy is named after a device (like "Night (Pixel 8)"; "Night (copy)" if the phone has no name). Write down the name and which
+  phone it names. Check the other phone sees the same names.
 - [ ] **NOT RUN** G6. **Editing during the first sync.** On phone 2, open the app and move a slider at once, while phone 1 has saved a
   newer design being edited. Does phone 2 still ask the question from A6, and does it not overwrite phone 1's design before you answer?
 - [ ] **NOT RUN** G7. **A new phone at the end of setup.** On a new phone with an account that has data, go through setup, choose a

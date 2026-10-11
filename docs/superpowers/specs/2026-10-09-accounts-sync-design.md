@@ -141,8 +141,10 @@ encrypted; designs are not secret).
   the alternative is to write designs through a transaction that checks the cloud's `updatedAt`.
 - **Tombstones stay.** A deleted or renamed saved design leaves a document (old name, `deleted: true`, empty design) in the cloud
   until the account is deleted. Other phones need it to learn about the deletion. The privacy policy and the deletion page say so.
+- **Timing of uploads.** A saved-design change is uploaded about a second after it, the design being edited after 10 seconds of quiet or when the app is left. So another phone sees an edit of the design being edited some seconds late.
 - **A backup write has no time limit.** While a backup is being written on a poor connection, sign-out waits for it (Firestore
   gives up after its own five attempts).
+- **Deleting the account while another phone is signed in.** The other phone keeps a valid sign-in for up to an hour. The code does not tell an edit made there after the deletion from normal sync, so that edit is still uploaded and its data stays in the cloud until someone removes it. The deletion page and the policy tell people to sign other phones out first. This is not fixed.
 - **Nothing here was run against a real Firebase project, a real Google sign-in, App Check or a real device.**
 
 ## Open items

@@ -56,19 +56,24 @@ off. Do these in order; each item says what to hand back to the code.
   Authentication now and then (quotas change, read them there). For email alerts, upgrade to **Blaze** (pay as you go, still
   keeps the free allowance) and set a budget alert. The number of documents per user is small, but a design with a photo is large (item 12).
 - [ ] **12. Choose Spark or Blaze before launch.** The plan avoided a billing account, but the traffic of a photo design may use up
-  the free quotas faster than the document count suggests. **This is an estimate from reading the code at commit 8a550b0, not a
+  the free quotas faster than the document count suggests. **This is an estimate from reading the code as it was at commit 8a550b0 (before the final review fixes), not a
   measurement, and Firebase's allowances change: read the current ones in the console.** The estimate:
-  - Every time editing pauses (about 1 second after the last change), the app uploads the design being edited and reads it back.
+  - In that code, every time editing paused (about 1 second after the last change), the app uploaded the design being edited and read it back.
     With a photo that is about 400 kB each way, plus about 400 kB to every other phone of the same account that has the app open.
     That is roughly 0.8 MB or more of data out of Firestore per pause, and the app also re-reads every saved design (and the
     records of deleted ones) each time.
+  - **Since the fixes** the design being edited is uploaded after 10 seconds of quiet or when you leave the app, and a pass about that
+    design alone no longer reads the saved designs. A slider drag is now one upload instead of dozens. The upload is still read back
+    (about the same size again) and still reaches other phones that have the app open. So the traffic **should be much lower, but
+    this has not been re-measured**; the numbers below are the old ones and are an upper bound only until someone measures (checklist
+    item G3).
   - If Spark allows about 10 GiB of data out per month for the whole project and 50 000 document reads a day (check this), that is
     roughly 13 000 pauses a month for all users together. An editing session of about 100 pauses is about 80 MB, so about 130 such
     sessions would use the month's allowance.
   - As understood from Firebase's rules, an exhausted Spark quota stops Firestore until it resets (the day for reads, the month for
     data out), and every user sees "Cloud limit reached".
   - On **Blaze** the same traffic costs cents at this size, with a budget alert (item 11), but it needs a billing account. Choose
-    one, or ask for the engine to upload the design being edited less often (that is code work, not a setting).
+    one, or stay on Spark and watch the Usage tab (item 11) after launch.
 - [ ] **13. Check the texts against the real project.** Once items 1-6 are done, read `docs/accounts/privacy-policy-draft.md`
   once against the Firebase console (the location, what an Authentication user record shows, whether App Check is enforced) and
   fix the draft where it disagrees. Nothing in these drafts has been checked against a real project.

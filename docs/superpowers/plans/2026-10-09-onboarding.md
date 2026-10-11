@@ -2758,6 +2758,8 @@ git commit -m "feat(phone): onboarding welcome and permission pages, backup page
 
 ### Task 10: OnboardingScreen (pager, progress, Skip on every page, Back)
 
+> Later change (accounts work): the screen's own Skip is not drawn on the backup page (page 5). That page brings its own "Not now" / "Skip for now" / "Done" buttons, which complete setup. Every other statement below about "Skip on every page" (here, in Task 13's README text and in the spec-coverage list) describes the plan as first written.
+
 **Files:**
 - Create: `ui/onboarding/OnboardingScreen.kt`
 - Modify: `Tags.kt`
