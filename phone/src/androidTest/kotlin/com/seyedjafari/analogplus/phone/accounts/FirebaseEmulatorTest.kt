@@ -347,7 +347,7 @@ class FirebaseEmulatorTest {
     /** A timeout of 1 ms cannot be met by a round trip to the emulator, so each call must give up and say OFFLINE, quickly. */
     @Test fun everyStoreCallGivesUpWithOfflineWhenTheCloudDoesNotAnswerInTime() = inTest {
         val uid = signInAs(unique("bounded"))
-        val impatient = FirestoreRemoteStore(db, writeTimeoutMs = 1, readTimeoutMs = 1, wipeReadTimeoutMs = 1)
+        val impatient = FirestoreRemoteStore(db, writeTimeoutMs = 1, readTimeoutMs = 1, wipeReadTimeoutMs = 1, fetchPageTimeoutMs = 1)
         val calls = listOf<Pair<String, suspend () -> Any?>>(
             "fetchDesigns" to { impatient.fetchDesigns(uid) },
             "getCurrent" to { impatient.getCurrent(uid) },
@@ -366,6 +366,91 @@ class FirebaseEmulatorTest {
             }
             assertTrue("$name took too long to give up", (System.nanoTime() - start) / 1_000_000 < 5_000)
         }
+    }
+
+    /**
+     * The wipe's own bounds. The test above fails at the wipe's very first step (the wait for earlier writes, bounded by the
+     * write timeout), so it cannot tell whether the page read and the batch commit are bounded. Here the wait has its full
+     * time and only one bound is tiny.
+     */
+    @Test fun theWipesPageReadAndBatchCommitAreBoundedOnTheirOwn() = inTest {
+        val uid = signInAs(unique("wipe-bounds"))
+        repeat(2) { remote.putDesign(uid, designId("W$it"), "W$it", "{}", DesignState.LIVE, DESIGN_SCHEMA) }
+        val slowRead = FirestoreRemoteStore(db, writeTimeoutMs = 20_000, wipeReadTimeoutMs = 1)
+        try {
+            slowRead.deleteAllUserData(uid)
+            fail("a page read cannot be answered in 1 ms")
+        } catch (e: RemoteException) {
+            assertEquals("page read", RemoteErrorKind.OFFLINE, e.kind)
+        }
+        assertEquals("nothing was deleted", 2, count("users/$uid/designs"))
+        val slowCommit = FirestoreRemoteStore(db, writeTimeoutMs = 20_000, wipeCommitTimeoutMs = 1)
+        try {
+            slowCommit.deleteAllUserData(uid)
+            fail("a batch commit cannot be acknowledged in 1 ms")
+        } catch (e: RemoteException) {
+            assertEquals("batch commit", RemoteErrorKind.OFFLINE, e.kind)
+        }
+        // the abandoned commit still lands; leave nothing for the next test
+        waitUntil("the abandoned commit to land") { count("users/$uid/designs") < 2 }
+    }
+
+    // ---- the design list is read in pages -----------------------------------------------------------------------
+
+    @Test fun fetchDesignsReadsEveryDesignOncePageByPage() = inTest {
+        val uid = signInAs(unique("fetch-pages"))
+        val ids = (0 until 8).map { designId("F$it") }
+        ids.forEachIndexed { i, id -> remote.putDesign(uid, id, "F$i", "{}", DesignState.LIVE, DESIGN_SCHEMA) }
+        val paged = FirestoreRemoteStore(db, writeTimeoutMs = 10_000, fetchPageSize = 3, maxFetchPages = 5)
+        val got = paged.fetchDesigns(uid).map { it.id }
+        assertEquals("every design exactly once", ids.sorted(), got.sorted())
+        // three pages are needed (3 + 3 + 2); allowing two must fail rather than return a partial list
+        val short = FirestoreRemoteStore(db, writeTimeoutMs = 10_000, fetchPageSize = 3, maxFetchPages = 2)
+        try {
+            short.fetchDesigns(uid)
+            fail("three pages were needed, two were allowed")
+        } catch (e: RemoteException) {
+            assertEquals(RemoteErrorKind.OTHER, e.kind)
+        }
+        // an exact multiple of the page size ends with an empty page, not a loop
+        val exact = FirestoreRemoteStore(db, writeTimeoutMs = 10_000, fetchPageSize = 4, maxFetchPages = 5)
+        assertEquals(8, exact.fetchDesigns(uid).size)
+    }
+
+    /**
+     * The list a pass acts on is read inside the engine's pass; a fixed bound for the whole list would fail every pass of a
+     * user with many photo designs on a slow link. Each page has its own bound.
+     */
+    @Test fun fetchDesignsGivesUpPerPageWithOffline() = inTest {
+        val uid = signInAs(unique("fetch-bound"))
+        remote.putDesign(uid, designId("One"), "One", "{}", DesignState.LIVE, DESIGN_SCHEMA)
+        try {
+            FirestoreRemoteStore(db, fetchPageTimeoutMs = 1).fetchDesigns(uid)
+            fail("a page cannot be read in 1 ms")
+        } catch (e: RemoteException) {
+            assertEquals(RemoteErrorKind.OFFLINE, e.kind)
+        }
+    }
+
+    // ---- the listener never shows a list without our own unsettled write ----------------------------------------
+
+    /**
+     * A local write is shown by the SDK at once, with its server time still unknown (the document then reads as unreadable
+     * and drops out of the list). The listener must wait for the server's confirmation, or a pending tombstone would be
+     * planned as "gone" and a pending live design pushed twice.
+     */
+    @Test fun observeDesignsNeverEmitsAListThatLacksADocumentOfOurOwnPendingWrite() = inTest {
+        val uid = signInAs(unique("observe-pending"))
+        val id = designId("Watched")
+        remote.putDesign(uid, id, "Watched", "{\"v\":0}", DesignState.LIVE, DESIGN_SCHEMA)
+        val seen = java.util.concurrent.CopyOnWriteArrayList<List<String>>()
+        val collector = launch(kotlinx.coroutines.Dispatchers.Default) { remote.observeDesigns(uid).collect { seen += it.map { d -> d.id } } }
+        waitUntil("the first confirmed list") { seen.isNotEmpty() }
+        assertTrue(id in seen.last())
+        repeat(6) { i -> remote.putDesign(uid, id, "Watched", "{\"v\":${i + 1}}", DesignState.LIVE, DESIGN_SCHEMA) }
+        delay(1_500)
+        collector.cancel()
+        assertTrue("a list without the document we are writing: $seen", seen.all { id in it })
     }
 
     private suspend fun waitUntil(what: String, ms: Long = 10_000, condition: () -> Boolean) {
@@ -783,7 +868,7 @@ class FirebaseEmulatorTest {
     @Test fun deleteAllUserDataWithTheDefaultPageSizeClearsMoreThanOnePage() = inTest {
         val uid = signInAs(unique("wipe-120"))
         repeat(120) { remote.putDesign(uid, designId("Many$it"), "Many$it", "{}", DesignState.LIVE, DESIGN_SCHEMA) }
-        assertTrue("more than one default page exists", count("users/$uid/designs") > 50)
+        assertTrue("more than one default wipe page exists", count("users/$uid/designs") > FirestoreRemoteStore.DEFAULT_WIPE_PAGE_SIZE)
         remote.deleteAllUserData(uid)
         assertEquals(0, count("users/$uid/designs"))
     }

@@ -49,7 +49,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  * **Every call ends on its own.** The accounts controller runs its actions in its own scope and signing out waits for
  * the running one, so a call that never returned would leave "busy" on screen and block sign-out and every later action.
  * Therefore every suspending call is bounded and reports [RemoteErrorKind.OFFLINE] when the cloud does not answer in time:
- * reads and read-backs after [readTimeoutMs]; writes and each batch of the wipe after [writeTimeoutMs] (design and current
+ * reads of one document and read-backs after [readTimeoutMs], the list of designs and each page of the wipe per page; writes and each batch of the wipe after [writeTimeoutMs] (design and current
  * writes plus 20 ms per kilobyte of payload, the sync engine's own rule, which also bounds them from above). The wipe is a
  * bounded number of such steps: it reads [wipePageSize] documents at a time and deletes them, so the bound is per page
  * and not per account (a user with many photo designs would otherwise never finish one 20-second read of all of them).
@@ -97,19 +97,50 @@ class FirestoreRemoteStore(
     private val maxWipePages: Int = DEFAULT_MAX_WIPE_PAGES,
     /** The bound of one wipe page read; larger than [readTimeoutMs] because a page can carry photos (see [wipePageSize]). */
     private val wipeReadTimeoutMs: Long = DEFAULT_WIPE_READ_TIMEOUT_MS,
+    /** The bound of one wipe batch commit. */
+    private val wipeCommitTimeoutMs: Long = writeTimeoutMs,
+    /**
+     * Designs per read of [fetchDesigns]. The whole collection in one read does not fit a fixed bound for a user with many
+     * photo designs on a slow link (20 designs of 400 kB are 8 MB: 32-64 s at 1-2 Mbit/s), so it is read in pages, each
+     * with its own bound ([fetchPageTimeoutMs]). 5 designs are at most 4.75 MB (the rules' cap per design), 38 s at
+     * 1 Mbit/s, which fits 60 s with room for latency; 200 designs are 40 round trips.
+     */
+    private val fetchPageSize: Long = DEFAULT_FETCH_PAGE_SIZE,
+    private val fetchPageTimeoutMs: Long = DEFAULT_FETCH_PAGE_TIMEOUT_MS,
+    /** Pages read by [fetchDesigns] before it gives up (1000 designs at the default). */
+    private val maxFetchPages: Int = DEFAULT_MAX_FETCH_PAGES,
 ) : RemoteStore {
     private fun user(uid: String) = db.collection("users").document(uid)
     private fun designs(uid: String) = user(uid).collection("designs")
     private fun currentDoc(uid: String) = user(uid).collection("state").document("current")
     private fun backupDoc(uid: String) = user(uid).collection("backup").document("signingKey")
 
+    /**
+     * Reads every design from the server, [fetchPageSize] at a time in key order (each page after the last document of the
+     * one before), each page with its own bound [fetchPageTimeoutMs]; so the time allowed grows with the amount of data.
+     * The pages are read one after the other, not as one snapshot: a design written by another phone between two pages can
+     * be missed or seen twice, which is harmless (the engine plans again from the listener's lists, and from the next
+     * pass). A page with a document that has a write of this client still on its way fails with OFFLINE (see the class
+     * comment).
+     */
     override suspend fun fetchDesigns(uid: String): List<RemoteDesign> = mapErrors {
-        val snapshot = bounded(readTimeoutMs) { designs(uid).get(Source.SERVER).await() }
-        withContext(Dispatchers.Default) {
-            val docs = snapshot.documents
-            if (docs.any { it.metadata.hasPendingWrites() }) throw unsettled()
-            docs.mapNotNull(::toDesign)
+        val all = ArrayList<RemoteDesign>()
+        var after: DocumentSnapshot? = null
+        var pages = 0
+        while (true) {
+            val query = designs(uid).limit(fetchPageSize).let { q -> after?.let { q.startAfter(it) } ?: q }
+            val snapshot = bounded(fetchPageTimeoutMs) { query.get(Source.SERVER).await() }
+            val page = withContext(Dispatchers.Default) {
+                val docs = snapshot.documents
+                if (docs.any { it.metadata.hasPendingWrites() }) throw unsettled()
+                docs.mapNotNull(::toDesign) to docs.lastOrNull()
+            }
+            all += page.first
+            if (snapshot.size() < fetchPageSize) break
+            if (++pages >= maxFetchPages) throw RemoteException(RemoteErrorKind.OTHER, "The cloud holds more than $maxFetchPages pages of designs.")
+            after = page.second
         }
+        all
     }
 
     /**
@@ -261,7 +292,7 @@ class FirestoreRemoteStore(
                 if (++pages > maxWipePages) throw RemoteException(RemoteErrorKind.OTHER, "The cloud still holds documents after $maxWipePages pages were deleted.")
                 val batch = db.batch()
                 refs.forEach { batch.delete(it) }
-                bounded(writeTimeoutMs) { batch.commit().await() }
+                bounded(wipeCommitTimeoutMs) { batch.commit().await() }
             }
         }
     }
@@ -355,6 +386,9 @@ class FirestoreRemoteStore(
         const val DEFAULT_WIPE_PAGE_SIZE = 3L
         const val DEFAULT_MAX_WIPE_PAGES = 400
         const val DEFAULT_WIPE_READ_TIMEOUT_MS = 45_000L
+        const val DEFAULT_FETCH_PAGE_SIZE = 5L
+        const val DEFAULT_FETCH_PAGE_TIMEOUT_MS = 60_000L
+        const val DEFAULT_MAX_FETCH_PAGES = 200
 
         /** The most a design document can hold (the rules cap the design text at 950 000 characters). */
         const val MAX_DESIGN_BYTES = 950_000L

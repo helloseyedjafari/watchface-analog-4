@@ -103,6 +103,19 @@ describe('designs', () => {
     await assertSucceeds(setDoc(ref, design({ name: 'é'.repeat(100) })));
     await assertFails(setDoc(ref, design({ name: 'é'.repeat(101) })));
   });
+  it('counts the name in UTF-16 units, as the app does: 50 emoji pass, 51 do not', async () => {
+    // an emoji is one code point but two UTF-16 units; the rules' size() counts units (the app's MAX_DESIGN_NAME_CHARS
+    // does too, SyncEngine.nameTooLong): 100 emoji, which a code-point count would allow, are refused
+    const ref = doc(alice(), `users/alice/designs/${ID}`);
+    await assertSucceeds(setDoc(ref, design({ name: '😀'.repeat(50) })));
+    await assertFails(setDoc(ref, design({ name: '😀'.repeat(51) })));
+    await assertFails(setDoc(ref, design({ name: '😀'.repeat(100) })));
+  });
+  it('accepts schema 1000 and rejects 1001', async () => {
+    const ref = doc(alice(), `users/alice/designs/${ID}`);
+    await assertSucceeds(setDoc(ref, design({ schema: 1000 })));
+    await assertFails(setDoc(ref, design({ schema: 1001 })));
+  });
   it('rejects a design id that is not 32 lowercase hex characters', async () => {
     await assertFails(setDoc(doc(alice(), 'users/alice/designs/not-an-id'), design()));
     await assertFails(setDoc(doc(alice(), `users/alice/designs/${ID.toUpperCase()}`), design()));
@@ -115,6 +128,15 @@ describe('current design', () => {
     await assertSucceeds(setDoc(ref, current()));
     await assertSucceeds(getDoc(ref));
     await assertFails(setDoc(doc(alice(), 'users/alice/state/other'), current()));
+  });
+  it('accepts the longest device id (64) and device label (80)', async () => {
+    const ref = doc(alice(), 'users/alice/state/current');
+    await assertSucceeds(setDoc(ref, current({ deviceId: 'd'.repeat(64), deviceLabel: 'l'.repeat(80) })));
+    await assertSucceeds(setDoc(ref, current({ deviceLabel: '' })));
+  });
+  it('lets the owner delete the current design (the account wipe needs it)', async () => {
+    await seedAlice();
+    await assertSucceeds(deleteDoc(doc(alice(), 'users/alice/state/current')));
   });
   it('rejects bad fields and other users', async () => {
     await assertFails(setDoc(doc(alice(), 'users/alice/state/current'), current({ deviceId: '' })));

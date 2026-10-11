@@ -53,16 +53,22 @@ fun copyNameSuffix(deviceLabel: String, pattern: (String) -> String, fallbackWor
     return pattern(label.ifEmpty { fallbackWord })
 }
 
-/** Firestore rules cap a design name at this many characters. */
+/**
+ * Firestore rules cap a design name at this many characters, counted in UTF-16 units (Kotlin's `String.length`): that is
+ * what the rules' `size()` counts, checked against the emulator (`firebase/tests/rules.test.js`: 50 emoji, which are two
+ * units each, are accepted and 51 are refused). A name of 51 to 100 emoji therefore does not fit, although it is 100 or
+ * fewer code points.
+ */
 const val MAX_DESIGN_NAME_CHARS = 100
 
 /**
- * [input] cut to [MAX_DESIGN_NAME_CHARS] characters (code points, as the rules count), for the field a design is named in:
- * a longer name is never accepted by the cloud, so the field does not take it in the first place.
+ * [input] cut to [MAX_DESIGN_NAME_CHARS] UTF-16 units (never in the middle of a surrogate pair), for the field a design is
+ * named in: a longer name is never accepted by the cloud, so the field does not take it in the first place.
  */
 fun limitDesignName(input: String): String {
-    if (input.codePointCount(0, input.length) <= MAX_DESIGN_NAME_CHARS) return input
-    return input.substring(0, input.offsetByCodePoints(0, MAX_DESIGN_NAME_CHARS))
+    if (input.length <= MAX_DESIGN_NAME_CHARS) return input
+    val cut = if (input[MAX_DESIGN_NAME_CHARS - 1].isHighSurrogate()) MAX_DESIGN_NAME_CHARS - 1 else MAX_DESIGN_NAME_CHARS
+    return input.substring(0, cut)
 }
 
 /**

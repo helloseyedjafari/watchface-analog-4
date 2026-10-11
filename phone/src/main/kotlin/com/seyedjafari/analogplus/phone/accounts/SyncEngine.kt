@@ -92,6 +92,12 @@ class SyncEngine(
     private val retryMs: Long = 30_000,
     private val maxRetryMs: Long = 300_000,
     private val callTimeoutMs: Long = 20_000,
+    /**
+     * Bound of the whole fetch of the design list. The store reads it in pages, each with its own bound, so this is only a
+     * safety net for a store that never answers: a fixed 20 s for ALL the designs would fail every pass of a user with many
+     * photo designs on a slow link.
+     */
+    private val fetchTimeoutMs: Long = 600_000,
     private val writeTimeoutMsPerKb: Long = 20,
     private val random: () -> Double = { Math.random() },
 ) : CloudSync, StoreObserver {
@@ -443,7 +449,7 @@ class SyncEngine(
     private suspend fun fullPass(id: String): Problem? = passLock.withLock {
         fetchSeq.incrementAndGet()
         designsPassOk = false
-        reconcile(id, call { remote.fetchDesigns(id) })
+        reconcile(id, call(fetchTimeoutMs) { remote.fetchDesigns(id) })
     }
 
     /**
@@ -608,8 +614,8 @@ class SyncEngine(
         if (planned == null) journal.markAppliedIfAbsent(id, name, state, remoteAtMs)
         else journal.markApplied(id, name, state, remoteAtMs, planned.modifiedAtMs)
 
-    /** The rules cap a design name at [MAX_DESIGN_NAME_CHARS] characters; asking would only get the whole write refused. */
-    private fun nameTooLong(name: String) = name.codePointCount(0, name.length) > MAX_DESIGN_NAME_CHARS
+    /** The rules cap a design name at [MAX_DESIGN_NAME_CHARS] UTF-16 units; asking would only get the whole write refused. */
+    private fun nameTooLong(name: String) = name.length > MAX_DESIGN_NAME_CHARS
 
     /**
      * A cloud document is this app's only if its id is the hash of its name ([designId]). Another writer's document would be

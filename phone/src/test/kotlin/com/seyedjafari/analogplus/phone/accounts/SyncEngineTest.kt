@@ -1062,14 +1062,18 @@ class SyncEngineTest {
         assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
     }
 
-    @Test fun theLimitCountsCharactersNotUtf16Units() = runTest {
+    /** The rules count UTF-16 units (checked against the emulator in rules.test.js): 50 emoji fit, 51 do not. */
+    @Test fun theLimitCountsUtf16UnitsLikeTheRules() = runTest {
         val remote = FakeRemoteStore()
-        val a = phone(remote, "a")
-        val emojis = "\uD83D\uDE00".repeat(100)                      // 100 characters, 200 UTF-16 units
-        a.store.saveNamed(emojis, night)
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky)
+        val fits = "\uD83D\uDE00".repeat(50)                         // 50 characters, 100 UTF-16 units
+        val tooLong = "\uD83D\uDE00".repeat(51)                      // 51 characters, 102 units
+        a.store.saveNamed(fits, night); a.store.saveNamed(tooLong, day)
         a.engine.start("u1"); runCurrent()
-        assertEquals(1, remote.designsOf("u1").size)
-        assertTrue(a.engine.status.value is SyncStatus.Idle)
+        assertEquals(listOf(fits), remote.designsOf("u1").values.map { it.name })
+        assertFalse("the long name is not even tried", tooLong in flaky.attemptedNames)
+        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
     }
 
     @Test fun aDocumentTheCloudRefusesIsSkippedAndTheFirstReasonIsKept() = runTest {
@@ -1570,6 +1574,27 @@ class SyncEngineTest {
     // ---- final review fix round F1: the current design and the cloud's copy -----------------------------------------------
 
     /** A-1: the first pass must not write the editor's design over a newer one from another phone before the question. */
+    /**
+     * The store reads the design list in pages, each with its own bound; the engine's bound for the whole fetch is only a
+     * safety net. A fixed 20 s for all the designs would make every pass of a user with many photo designs on a slow link
+     * end Offline.
+     */
+    @Test fun aFetchThatTakesLongerThanASingleCallBoundStillSucceeds() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        remote.seedDesign("u1", RemoteDesign(designId("Night"), "Night", DesignJson.toJson(night), 1_000_000, DesignState.LIVE, DESIGN_SCHEMA))
+        val a = phone(remote, "a", engineRemote = flaky)
+        val gate = CompletableDeferred<Unit>()
+        flaky.fetchGate = gate
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(60_000); runCurrent()                      // three times the 20 s of a single call
+        assertEquals("still waiting, not Offline", SyncStatus.Syncing, a.engine.status.value)
+        gate.complete(Unit); runCurrent()
+        advanceTimeBy(2_000); runCurrent()
+        assertEquals(listOf("Night"), a.names())
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+    }
+
     @Test fun anEditDuringTheFirstFetchIsNotPushedOverANewerDesignFromAnotherPhone() = runTest {
         val remote = FakeRemoteStore()
         val flaky = FlakyRemote(remote)

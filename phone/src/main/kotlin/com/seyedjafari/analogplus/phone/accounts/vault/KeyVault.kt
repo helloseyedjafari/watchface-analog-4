@@ -148,7 +148,11 @@ class KeyVault internal constructor(
         private const val TAG_BITS = 128
         private const val TAG_BYTES = TAG_BITS / 8
         private const val KEY_BITS = 256
-        private const val MAX_CIPHERTEXT_BYTES = 16 * 1024
+        /**
+         * The largest sealed key. The rules cap the base64 text of `sealed` at 16 384 characters, which is exactly 12 288
+         * bytes, so a backup that opens here can always be uploaded (`KeyVaultRulesLimitTest` compares the two).
+         */
+        const val MAX_CIPHERTEXT_BYTES = 12 * 1024
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
     }
 }

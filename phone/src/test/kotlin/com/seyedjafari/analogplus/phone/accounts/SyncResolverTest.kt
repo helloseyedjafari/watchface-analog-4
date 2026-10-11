@@ -225,14 +225,19 @@ class SyncResolverTest {
         assertEquals(" (a" + "\uD83D\uDE00".repeat(14) + ")", suffix)
     }
 
-    @Test fun theNameFieldStopsAtTheLimitTheCloudAcceptsCountingCharactersNotUnits() {
+    /** The rules count UTF-16 units (see MAX_DESIGN_NAME_CHARS); an emoji is two of them. */
+    @Test fun theNameFieldStopsAtTheLimitTheCloudAcceptsCountingUtf16Units() {
         assertEquals("Night", limitDesignName("Night"))
         assertEquals("x".repeat(MAX_DESIGN_NAME_CHARS), limitDesignName("x".repeat(250)))
         val emoji = "\uD83D\uDE00".repeat(MAX_DESIGN_NAME_CHARS + 20)       // two UTF-16 units per character
         val cut = limitDesignName(emoji)
-        assertEquals(MAX_DESIGN_NAME_CHARS, cut.codePointCount(0, cut.length))
+        assertEquals("50 emoji are 100 units", MAX_DESIGN_NAME_CHARS / 2, cut.codePointCount(0, cut.length))
+        assertEquals(MAX_DESIGN_NAME_CHARS, cut.length)
         assertEquals("a name of exactly the limit is kept whole", cut, limitDesignName(cut))
-        assertEquals("a" + "\uD83D\uDE00".repeat(MAX_DESIGN_NAME_CHARS - 1), limitDesignName("a" + emoji))
+        // the cut would fall between the two halves of a character: the whole character goes
+        val odd = limitDesignName("a" + emoji)
+        assertEquals("a" + "\uD83D\uDE00".repeat((MAX_DESIGN_NAME_CHARS - 1) / 2), odd)
+        assertTrue(odd.length <= MAX_DESIGN_NAME_CHARS && !odd.last().isHighSurrogate())
     }
 
     @Test fun uniqueNameNeverExceedsTheFirestoreNameLimit() {
