@@ -94,7 +94,14 @@ class AccountLayoutTest(private val window: WindowDp, private val fontScale: Flo
         // pictures) would show a font scale nobody tested
         assertEquals(fontScale, rule.onNodeWithText("Back up your signing key").fontScaleOfText())
         rule.onNodeWithTag(AccountTags.PASSPHRASE).performTextInput(f.passphrase)
-        rule.onNodeWithTag(AccountTags.PASSPHRASE_CONFIRM).performScrollTo().assertIsDisplayed().performTextInput(f.passphrase)
+        rule.onNodeWithTag(AccountTags.PASSPHRASE_CONFIRM).performScrollTo()
+        rule.waitForIdle()                       // the scroll has settled (the page fades its edges on an offscreen layer)
+        runCatching { rule.onNodeWithTag(AccountTags.PASSPHRASE_CONFIRM).assertIsDisplayed() }.onFailure {
+            val c = rule.onNodeWithTag(AccountTags.PASSPHRASE_CONFIRM).fetchSemanticsNode().boundsInWindow
+            val page = rule.onNodeWithTag(AccountTags.DIALOG_SCROLL).fetchSemanticsNode().boundsInWindow
+            throw AssertionError("confirm $c page $page: ${it.message}")
+        }
+        rule.onNodeWithTag(AccountTags.PASSPHRASE_CONFIRM).performTextInput(f.passphrase)
         reach(AccountTags.PASSPHRASE_SUBMIT)
         rule.onNodeWithTag(AccountTags.PASSPHRASE_SUBMIT).assertIsEnabled()
         reach(AccountTags.PASSPHRASE_CANCEL)
@@ -117,6 +124,22 @@ class AccountLayoutTest(private val window: WindowDp, private val fontScale: Flo
         assertEquals(fontScale, rule.onNodeWithText("Delete the old backup?").fontScaleOfText())
         reach(AccountTags.RESET_CONFIRM)
         reach(AccountTags.RESET_CANCEL)
+    }
+
+    @Test fun aLongUprightDialogShowsThatItGoesOnSoTheRedButtonIsNotTakenForTheEndOfTheInstructions() {
+        val f = AccountUiFixture(FakeKeySource(null)).also { fixture = it }
+        f.otherPhoneBacksUp(FakeKeySource.samplePem("A"))
+        f.show(rule, window, fontScale)
+        waitForText("A backup exists; this phone has no key yet")
+        rule.onNodeWithTag(AccountTags.RESTORE).performScrollTo().performClick()
+        waitForTag(AccountTags.FORGOT)
+        rule.onNodeWithTag(AccountTags.FORGOT).performScrollTo().performClick()
+        waitForTag(AccountTags.RESET_CONFIRM)
+        rule.onNodeWithText("Start over without the passphrase?").assertExists()
+        // at font scale 2 in an upright window the four paragraphs do not fit above the buttons: the fade at the edge says so
+        if (window == PHONE_PORTRAIT && fontScale == 2f) {
+            assertEquals(ScrollHint.MORE_BELOW, rule.onNodeWithTag(AccountTags.DIALOG_SCROLL).fetchSemanticsNode().config[ScrollHintKey])
+        }
     }
 
     companion object {
@@ -201,7 +224,7 @@ class AccountLandscapeDialogTest {
                 }
             }
             rule.waitUntil(10_000) { rule.onAllNodes(hasTestTag(AccountTags.DIALOG_SCROLL)).fetchSemanticsNodes().isNotEmpty() }
-            assertEquals("the dialog is drawn at the font scale of the place that shows it", 2f, rule.onNodeWithText("Start over without the passphrase?").fontScaleOfText())
+            assertEquals("the dialog is drawn at the font scale of the place that shows it", 2f, rule.onNodeWithText("Delete the backup you cannot open?").fontScaleOfText())
             assertEquals(ScrollHint.MORE_BELOW, rule.onNodeWithTag(AccountTags.DIALOG_SCROLL).fetchSemanticsNode().config[ScrollHintKey])
             rule.onNodeWithTag(AccountTags.RESET_CONFIRM).performScrollTo().assertIsDisplayed()
             rule.onNodeWithTag(AccountTags.RESET_CANCEL).assertIsDisplayed()

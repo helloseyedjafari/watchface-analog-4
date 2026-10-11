@@ -63,15 +63,17 @@ class AccountOfferTest {
 
     private val offer = CurrentOffer("Pixel 8", DesignSettings(name = "Night"), 5)
 
-    @Test fun anOfferThatArrivesOnTheDesignTabIsAskedAtOnceAndKeepMineIsTheFilledButton() {
+    @Test fun anOfferThatArrivesOnTheDesignTabIsAskedAtOnceAndKeepMineIsTheEndSideButton() {
         val f = fixture()
         val store = newTestStore()
-        f.show(rule, scrolls = false) { AppShell(EditorState(DesignSettings()), store, testSend(store), watchReady, null) {} }
+        f.show(rule, scrolls = false) { AppShell(EditorState(DesignSettings(name = "Ocean")), store, testSend(store), watchReady, null) {} }
         rule.onNodeWithTag(Destination.DESIGN.tag).assertIsDisplayed()
         f.sync.setOffer(offer)
         waitForTag(AccountTags.OFFER_KEEP)
         rule.onNodeWithText("Use the design from Pixel 8?").assertExists()
-        rule.onNodeWithText("Another device saved a different version of the design you are editing (\"Night\").", substring = true).assertExists()
+        // both designs are named, and what "Use theirs" costs is said
+        rule.onNodeWithText("Pixel 8 saved \"Night\". This phone is editing \"Ocean\".", substring = true).assertExists()
+        rule.onNodeWithText("Use theirs replaces \"Ocean\" here, and no copy of it is kept unless you saved it in My designs.", substring = true).assertExists()
         // "Keep mine" changes nothing here and is the main button; "Use theirs" replaces the design being edited and is the quiet one
         val keep = rule.onNodeWithTag(AccountTags.OFFER_KEEP).fetchSemanticsNode().boundsInRoot
         val use = rule.onNodeWithTag(AccountTags.OFFER_USE).fetchSemanticsNode().boundsInRoot
@@ -86,6 +88,15 @@ class AccountOfferTest {
         rule.onNodeWithTag(AccountTags.OFFER_KEEP).performClick()
         assertEquals(listOf(OfferChoice.KEEP_MINE), f.sync.choices)
         waitUntilGone(AccountTags.OFFER_KEEP)
+    }
+
+    @Test fun whenTheNamesReallyMatchItIsADifferentVersionOfTheDesignBeingEdited() {
+        val f = fixture()
+        val store = newTestStore()
+        f.show(rule, scrolls = false) { AppShell(EditorState(DesignSettings(name = "Night")), store, testSend(store), watchReady, null) {} }
+        f.sync.setOffer(offer)
+        waitForTag(AccountTags.OFFER_KEEP)
+        rule.onNodeWithText("Pixel 8 saved a different version of the design you are editing (\"Night\").", substring = true).assertExists()
     }
 
     @Test fun useTheirsAnswersUseRemote() {
@@ -142,7 +153,7 @@ class AccountOfferTest {
         waitForTag(AccountTags.OFFER_KEEP)                                             // its turn
     }
 
-    @Test fun aTapOnTheWordsOfAnOfferThatWasReplacedAnswersNothing() {
+    @Test fun aControllerAnswerForAnOfferThatWasReplacedByANewerOneIsDropped() {
         val f = fixture()
         val store = newTestStore()
         f.show(rule, scrolls = false) { AppShell(EditorState(DesignSettings()), store, testSend(store), watchReady, null) {} }

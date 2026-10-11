@@ -83,7 +83,8 @@ class OnboardingBackupSlotTest {
         rule.onNodeWithTag(Tags.ONBOARDING_NEXT).assertDoesNotExist()
         rule.onNodeWithTag(AccountTags.PAGE_SIGN_IN).assertIsDisplayed()
         rule.onNodeWithTag(AccountTags.PAGE_SKIP).assertTextEquals("Not now")
-        rule.onNodeWithTag(Tags.ONBOARDING_SKIP).assertExists()
+        // one way out per meaning, all on the page: the screen's own "Skip" is not drawn here
+        rule.onNodeWithTag(Tags.ONBOARDING_SKIP).assertDoesNotExist()
         rule.onNodeWithTag(Tags.ONBOARDING_BACK).assertExists()
     }
 
@@ -112,14 +113,16 @@ class OnboardingBackupSlotTest {
         assertEndsOnDesign(f, OnboardingState.Completed)
     }
 
-    @Test fun theScreensOwnSkipOnTheBackupPageRecordsSkippedAndNeverTouchesTheDesign() {
+    @Test fun theScreensOwnSkipIsNotDrawnOnTheBackupPageButTheControllerStillKnowsSkipped() {
         val f = backupFixture()
         val before = f.state.design
         f.showWithAccounts()
-        rule.onNodeWithTag(Tags.ONBOARDING_SKIP).performClick(); rule.waitForIdle()
-        assertEndsOnDesign(f, OnboardingState.Skipped)
+        rule.onNodeWithTag(Tags.ONBOARDING_SKIP).assertDoesNotExist()
         assertEquals(before, f.state.design)
         assertEquals(0, accounts!!.accounts.signInCalls)
+        // the controller keeps skip() (system Back on the first page of a restarted run uses it)
+        f.controller.skip(); rule.waitForIdle()
+        assertEndsOnDesign(f, OnboardingState.Skipped)
     }
 
     @Test fun backGoesToTheTemplatePage() {
@@ -182,7 +185,7 @@ class OnboardingBackupSlotTest {
         rule.onNodeWithTag(AccountTags.PAGE_SIGN_IN).performScrollTo().assertIsDisplayed()
         rule.onNodeWithTag(AccountTags.PAGE_SKIP).performScrollTo().assertIsDisplayed()
         val bounds = rule.onNodeWithTag(SHELL_WINDOW_TAG).fetchSemanticsNode().boundsInRoot
-        for (tag in listOf(Tags.ONBOARDING_SKIP, Tags.ONBOARDING_BACK)) {
+        for (tag in listOf(Tags.ONBOARDING_BACK)) {
             rule.onNodeWithTag(tag).assertIsDisplayed()
             val b = rule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
             assertTrue("$tag inside the window $window: $b in $bounds", b.top >= bounds.top - 0.5f && b.bottom <= bounds.bottom + 0.5f && b.right <= bounds.right + 0.5f)

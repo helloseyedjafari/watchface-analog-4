@@ -232,7 +232,6 @@ class BackupPageTest {
         signIn()
         waitForTag(AccountTags.PAGE_RESTORE)
         waitForText("A backup exists; this phone has no key yet")
-        rule.onNodeWithText("This account already has a backup of a signing key.").assertDoesNotExist()
         rule.onNodeWithTag(AccountTags.PAGE_RESTORE).assertTextEquals("Restore my signing key").assertIsEnabled()
         gone(AccountTags.PAGE_BACK_UP)
         gone(AccountTags.PAGE_DONE)
@@ -257,7 +256,7 @@ class BackupPageTest {
         f.showPage()
         signIn()
         waitForTag(AccountTags.PAGE_RESTORE)
-        waitForText("The backup holds another key than this phone ($fpA)")
+        waitForText("The backup holds another key than this phone (backup key $fpA)")
         gone(AccountTags.REPLACE_BACKUP)                                         // replacing the backup is the Account screen's
         click(AccountTags.PAGE_RESTORE)
         waitForTag(AccountTags.REPLACE_CONFIRM)

@@ -34,6 +34,20 @@ class KeyStoreInstallTest {
         assertThrows(SigningKeyException::class.java) { store.installPem(pem) }
     }
 
+    @Test fun aDamagedKeyErrorNamesTheResetButtonAndCarriesTheRestoreHintOnlyWhenTheAppSetsOne() {
+        File(context.filesDir, name).writeText("not a key")
+        val plain = assertThrows(SigningKeyException::class.java) { store.pem() }.message!!
+        assertTrue(plain, plain.contains("Use Reset signing key (Account tab) only if you accept that."))
+        assertFalse(plain, plain.contains("restore"))
+        KeyStore.restoreFirstHint = "If you backed up your signing key, restore it first."
+        try {
+            val hinted = assertThrows(SigningKeyException::class.java) { store.pem() }.message!!
+            assertTrue(hinted, hinted.contains("damaged (it does not contain a complete certificate and private key). If you backed up your signing key, restore it first. A new key"))
+        } finally {
+            KeyStore.restoreFirstHint = null
+        }
+    }
+
     @Test fun installsAKeyOnAPhoneWithoutOne() {
         assertFalse(store.hasKey())
         store.installPem(pemA)

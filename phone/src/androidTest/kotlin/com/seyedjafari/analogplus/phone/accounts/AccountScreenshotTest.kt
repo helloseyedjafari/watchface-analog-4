@@ -99,6 +99,9 @@ class AccountScreenshotTest(private val variant: Variant) {
 
     private val dialogCard: @Composable () -> Unit = { Card(ui(backedUp(KeyMatch.DIFFERENT))) }
 
+    /** The card behind a dialog that is about a backup of THIS phone's key: it must not contradict the dialog. */
+    private val sameKeyCard: @Composable () -> Unit = { Card(ui(backedUp(KeyMatch.SAME))) }
+
     private val scenes: List<Scene> = listOf(
         Scene("card-not-configured") { Card(ui(BackupStatus.SignedOut, AccountState.SignedOut, SyncStatus.Off, availability = AccountsAvailability.NOT_CONFIGURED)) },
         Scene("card-signed-out") { Card(ui(BackupStatus.SignedOut, AccountState.SignedOut, SyncStatus.Off)) },
@@ -155,13 +158,14 @@ class AccountScreenshotTest(private val variant: Variant) {
             ConfirmDialog(CloudDialog.Confirm(ConfirmKind.REPLACE_BACKUP, replaceBackupText(cloudFp, phoneFp), CloudDialog.None), {}, {})
         },
         Scene("dlg-reask-gone") { dialogCard(); ConfirmDialog(CloudDialog.Confirm(ConfirmKind.REPLACE_BACKUP, reAskGoneText(), CloudDialog.None, destructive = false), {}, {}) },
-        Scene("dlg-reask-same") { dialogCard(); ConfirmDialog(CloudDialog.Confirm(ConfirmKind.REPLACE_BACKUP, reAskSameText(cloudFp), CloudDialog.None), {}, {}) },
-        Scene("dlg-forgot-new") { dialogCard(); ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.AlreadyHaveThisKey(cloudFp), "w1"), busy = false, onConfirm = {}, onBack = {}) },
+        Scene("dlg-reask-same") { sameKeyCard(); ConfirmDialog(CloudDialog.Confirm(ConfirmKind.REPLACE_BACKUP, reAskSameText(cloudFp), CloudDialog.None), {}, {}) },
+        Scene("dlg-forgot-new") { sameKeyCard(); ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.AlreadyHaveThisKey(cloudFp), "w1"), busy = false, onConfirm = {}, onBack = {}) },
         Scene("dlg-forgot-replace-backup") { dialogCard(); ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.ReplaceLocal(phoneFp, cloudFp), "w1"), busy = false, onConfirm = {}, onBack = {}) },
         Scene("dlg-forgot-reset") { dialogCard(); ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.InstallNew(cloudFp), "w1"), busy = false, onConfirm = {}, onBack = {}) },
         Scene("dlg-forgot-damaged") { dialogCard(); ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.ReplaceDamaged(cloudFp), "w1"), busy = false, onConfirm = {}, onBack = {}) },
         Scene("dlg-delete") { dialogCard(); DeleteAccountDialog(busy = false, onConfirm = {}, onDismiss = {}) },
-        Scene("dlg-offer") { dialogCard(); OfferDialog(CurrentOffer("Pixel 8", DesignSettings(name = "Night"), now), {}, {}) },
+        Scene("dlg-offer") { dialogCard(); OfferDialog(CurrentOffer("Pixel 8", DesignSettings(name = "Sunset"), now), "Ocean", {}, {}) },
+        Scene("dlg-offer-same-name") { dialogCard(); OfferDialog(CurrentOffer("Pixel 8", DesignSettings(name = "Night"), now), "Night", {}, {}) },
     )
 
     /** The room the status bar and the navigation bar take, in pixels (cut off, so the clock is not in a picture). */

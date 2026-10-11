@@ -204,7 +204,7 @@ class OnboardingFlowTest {
         page(OnboardingPage.BACKUP).assertIsDisplayed()
         progress("Step 5 of 5")
         rule.onNodeWithTag(Tags.ONBOARDING_NEXT).assertDoesNotExist()                 // the slot brings its own buttons
-        rule.onNodeWithTag(Tags.ONBOARDING_SKIP).assertExists()
+        rule.onNodeWithTag(Tags.ONBOARDING_SKIP).assertDoesNotExist()                  // the slot brings its own ways out
         rule.onNodeWithTag(Tags.ONBOARDING_BACK).assertExists()
         rule.onNodeWithTag("slot_done").performClick(); rule.waitForIdle()
         assertEndsOnDesign(f)
@@ -226,14 +226,13 @@ class OnboardingFlowTest {
         assertEndsOnDesign(f)
     }
 
-    @Test fun skipOnTheBackupPageLeavesSetupSkippedAndTheDesignAlone() {
+    @Test fun theBackupPageDrawsNoSkipOfTheScreensOwnAndLeavesSetupAndTheDesignAlone() {
         val f = ShellFixture(accounts = true, startAt = OnboardingState.InProgress(OnboardingPage.BACKUP))
         val before = f.state.design
         f.show(rule)
-        rule.onNodeWithTag(Tags.ONBOARDING_SKIP).performClick(); rule.waitForIdle()
-        assertEquals(OnboardingState.Skipped, f.controller.state.value)
+        rule.onNodeWithTag(Tags.ONBOARDING_SKIP).assertDoesNotExist()
+        assertEquals(OnboardingState.InProgress(OnboardingPage.BACKUP), f.controller.state.value)
         assertEquals(before, f.state.design)
-        rule.onNodeWithTag(Destination.DESIGN.tag).assertIsSelected()
     }
 
     // --- big text ---

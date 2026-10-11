@@ -82,7 +82,7 @@ class AccountSectionTest {
     @Test fun signedOutExplainsTheBenefitAndWhatIsStoredAndOffersSignIn() {
         fixture(account = AccountState.SignedOut).show(rule)
         rule.onNodeWithText("Everything works without signing in.", substring = true).assertExists()
-        rule.onNodeWithText("The cloud stores your email address, your designs, an encrypted copy of your signing key if you back it up", substring = true).assertExists()
+        rule.onNodeWithText("The cloud stores your email address, your name and profile picture from your Google account, your designs", substring = true).assertExists()
         rule.onNodeWithTag(AccountTags.SIGN_IN).assertIsEnabled().assertTextEquals("Sign in with Google")
         gone(AccountTags.EMAIL)
     }
@@ -231,7 +231,7 @@ class AccountSectionTest {
         val f = fixture(FakeKeySource(pemB))
         f.otherPhoneBacksUp(pemA)
         f.show(rule)
-        waitForText("The backup holds another key than this phone ($fpA)")
+        waitForText("The backup holds another key than this phone (backup key $fpA)")
         click(AccountTags.REPLACE_BACKUP)
         waitForTag(AccountTags.REPLACE_BACKUP_CONFIRM)
         rule.onNodeWithText("The backup in the cloud holds the key $fpA. This phone has the key $fpB.", substring = true).assertExists()
@@ -294,7 +294,9 @@ class AccountSectionTest {
         waitForTag(AccountTags.PASSPHRASE)
         repeat(3) { wrongTry(f, "wrong guess $it") }
         waitForText("You can try again in")
-        // the countdown is read out when it first shows and not again at every tick
+        // the countdown is read out when it first shows (a moment later, in the same whole second, it still is); never at every tick
+        f.clock.addAndGet(40)
+        rule.waitForIdle()
         assertEquals(LiveRegionMode.Polite, rule.onNodeWithTag(AccountTags.PASSPHRASE_ERROR).fetchSemanticsNode().config[SemanticsProperties.LiveRegion])
         f.clock.addAndGet(2_000)
         waitForText("You can try again in 3 seconds")
@@ -329,7 +331,7 @@ class AccountSectionTest {
         val f = fixture(FakeKeySource(pemB))
         f.otherPhoneBacksUp(pemA)
         f.show(rule)
-        waitForText("The backup holds another key than this phone ($fpA)")
+        waitForText("The backup holds another key than this phone (backup key $fpA)")
         click(AccountTags.RESTORE)
         waitForTag(AccountTags.REPLACE_CONFIRM)
         rule.onNodeWithText("Replace the signing key on this phone?").assertExists()
@@ -414,15 +416,18 @@ class AccountSectionTest {
         click(AccountTags.REPLACE_CONFIRM)
         waitForTag(AccountTags.FORGOT)
         click(AccountTags.FORGOT)
-        waitForText("Deleting the backup does not do that for you.")
+        waitForText("Deleting the backup does not do that for you: delete it here first, then use Reset signing key.")
         rule.onNodeWithText("use Reset signing key in the Signing key card", substring = true).assertExists()
+        // its own heading and button: nothing here "starts over" or makes a key
+        rule.onNodeWithText("Delete the backup you cannot open?").assertExists()
+        rule.onNodeWithTag(AccountTags.RESET_CONFIRM).assertTextEquals("Delete backup")
     }
 
     @Test fun forgettingWhileThePhoneHoldsAnotherKeyOffersToDeleteTheOldBackupAndThenBackUp() {
         val f = fixture(FakeKeySource(pemB))
         f.otherPhoneBacksUp(pemA)
         f.show(rule)
-        waitForText("The backup holds another key than this phone ($fpA)")
+        waitForText("The backup holds another key than this phone (backup key $fpA)")
         click(AccountTags.RESTORE)
         click(AccountTags.REPLACE_CONFIRM)
         waitForTag(AccountTags.FORGOT)

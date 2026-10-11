@@ -254,7 +254,8 @@ class OnboardingScreenTest {
         rule.onNodeWithTag(Tags.ONBOARDING_PROGRESS).assertTextEquals("Step 5 of 5")
         next().assertDoesNotExist()
         rule.onNodeWithTag(Tags.ONBOARDING_BACK).assertExists()
-        rule.onNodeWithTag(Tags.ONBOARDING_SKIP).assertExists()
+        // the page brings its own ways out: the screen's "Skip" is not drawn beside them
+        rule.onNodeWithTag(Tags.ONBOARDING_SKIP).assertDoesNotExist()
         rule.onNodeWithText("slot done").performClick(); rule.waitForIdle()
         assertEquals(OnboardingState.Completed, f.controller.state.value)
     }
@@ -265,12 +266,15 @@ class OnboardingScreenTest {
         next().assertTextEquals("Continue")
     }
 
-    @Test fun skipOnTheBackupPage() {
+    @Test fun theBackupPageHasNoScreenSkipAndEveryOtherPageStillHasOne() {
         val f = show(ShellFixture(accounts = true, startAt = OnboardingState.InProgress(OnboardingPage.BACKUP)))
         page(OnboardingPage.BACKUP).assertExists()
+        rule.onNodeWithTag(Tags.ONBOARDING_SKIP).assertDoesNotExist()
         val before = f.state.design
-        rule.onNodeWithTag(Tags.ONBOARDING_SKIP).performClick(); rule.waitForIdle()
-        assertEquals(OnboardingState.Skipped, f.controller.state.value)
+        // Back is still there, and going back brings the screen's Skip back with the template page
+        rule.onNodeWithTag(Tags.ONBOARDING_BACK).performClick(); rule.waitForIdle()
+        page(OnboardingPage.TEMPLATE).assertExists()
+        rule.onNodeWithTag(Tags.ONBOARDING_SKIP).assertExists()
         assertEquals(before, f.state.design)
     }
 
