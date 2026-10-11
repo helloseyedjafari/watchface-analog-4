@@ -237,8 +237,13 @@ class FirestoreRemoteStore(
      * them, and the wipe would report success. After the wait the only unsettled writes are the ones this call makes, and
      * each of them is awaited before the next read. That is the whole reliance now: nothing is read while a write of ours
      * is unsettled. A write by ANOTHER client or phone after the wipe's read is not covered; account deletion stops this
-     * phone's sync first, and the other phone's sync stops finding its account. `FirebaseEmulatorTest` proves it against
-     * the emulator (a queued batch delete plus a wipe in small pages, and writes queued while offline).
+     * phone's sync first. The other phone's sync does NOT stop finding its account: its ID token stays valid for up to an hour
+     * after the account is gone, and Firestore checks the token, not whether the user still exists, so its writes are
+     * accepted. The engine does not seed a current design into a cloud it had seen one in (`SyncEngine.seedCurrent`), and a
+     * design that the other phone had synced and not touched is not written back, but an edit it makes in that window is
+     * uploaded as any edit is and would be orphaned: the person should sign out on the other phones first. The wait for
+     * unsettled writes above is proven by `FirebaseEmulatorTest` against the emulator (a queued batch delete plus a wipe in
+     * small pages, and writes queued while offline).
      *
      * **Numbers.** A page read must arrive within [wipeReadTimeoutMs] (45 s). The worst page is [wipePageSize] designs of
      * 950 kB (2.85 MB), about 23 s on a 1 Mbit/s link and 11 s on 2 Mbit/s, so it fits with room for latency; the typical

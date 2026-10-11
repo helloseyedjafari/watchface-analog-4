@@ -91,7 +91,8 @@ interface CloudSync {
      * Tells the sync whether the app is in front of the user. In the background the listeners and the retries stop (the
      * spec listens only in the foreground; a phone must not wake itself every few minutes); edits still get their
      * debounced pass. Back in the foreground the listeners restart and one pass runs. Starts as `true`.
-     * Wiring (Task 12): `true` in the activity's `onStart`, `false` in `onStop`.
+     * The activity reports `true` in `onStart` and `false` in `onStop`, except for a stop caused by a configuration change
+     * (rotation, dark mode): the person never left, so sync is not told (see `reportStopped` in `MainActivity.kt`).
      */
     fun setForeground(foreground: Boolean)
 

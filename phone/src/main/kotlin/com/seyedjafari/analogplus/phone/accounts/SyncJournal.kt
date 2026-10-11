@@ -35,8 +35,10 @@ enum class BindResult { SAME_ACCOUNT, NEW_ACCOUNT }
  * How long a deletion that the cloud has confirmed stays in the journal. After that [SyncJournal.reconcileWithStore]
  * forgets it, which keeps the journal bounded. This is safe for [planSync]: with no local entry, a cloud tombstone needs
  * no action and a cloud copy that comes back to life is applied, exactly as with the entry. It is not done at once
- * because the entry's base (the cloud time of the deletion) is what makes a later re-save of the same name win over that
- * deletion even when this phone's clock is behind the server's.
+ * because of what the entry still decides: if the design was also revived on another phone, a re-save of the same name
+ * here goes through last-write-wins against that revival (the entry has a base); without the entry it has no history and
+ * the two live copies are kept both ways. (Against a cloud that still holds the tombstone a re-save wins either way: with
+ * no history, a live design against a deletion is pushed.)
  */
 const val TOMBSTONE_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
 
@@ -330,8 +332,9 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
         const val KEY = "sync_journal_v1"
 
         /**
-         * One lock for every journal in the process (like `Store.LOCK`): a second `AppModel` (a second `MainActivity` instance)
-         * builds a second journal over the same preferences, and two read-modify-writes must not interleave.
+         * One lock for every journal in the process (like `Store.LOCK`): a new `AppModel` (after the process kept running
+         * without its activity) builds a second journal over the same preferences while an old one's `onStop` flush may still
+         * be writing, and two read-modify-writes must not interleave.
          */
         val LOCK = Any()
     }

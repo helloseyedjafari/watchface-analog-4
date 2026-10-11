@@ -411,8 +411,11 @@ class AccountsController(
 
     /**
      * "Keep my account", offered while [AccountsUi.deletion] is [DeletionState.PENDING]: ends the pending deletion without
-     * deleting anything more. This phone's journal forgets that anything was synced, so the wiped designs are uploaded
-     * again (see [AccountDeletion.keep]); sync starts again and the backup status is re-read (the wipe may have taken the
+     * deleting anything more. This phone's journal marks every live design and the design being edited as not yet given to
+     * the cloud, and keeps the binding, the bases, the edit times and the deletions (see [AccountDeletion.keep] and
+     * [SyncJournal.markLiveUnsent]): the planner's normal rules then decide per design, so what the wipe took is uploaded
+     * again, a design that survived and was changed elsewhere is settled by last write, a deletion stays a deletion and
+     * nothing turns into a kept-both copy. Sync starts again and the backup status is re-read (the wipe may have taken the
      * backup document).
      */
     suspend fun keepAccount(): KeepResult {
