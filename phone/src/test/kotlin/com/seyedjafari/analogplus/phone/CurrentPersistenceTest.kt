@@ -62,6 +62,17 @@ class CurrentPersistenceTest {
         override fun putStringChecked(key: String, value: String): Boolean { putString(key, value); return !refuseWrites }
     }
 
+    @Test fun aDesignWhosePhotoCouldNotBeWrittenIsWrittenAgainByTheNextPersistEvenIfNothingChanged() {
+        val dir = File(tmp.root, "later")
+        val s = Store(kv, File(dir, "background.jpg"))         // the folder is missing: the photo write fails
+        val persistence = CurrentPersistence(s, null)
+        persistence.persist(withPhoto)
+        assertNull(s.readPhotoFile())
+        dir.mkdirs()
+        persistence.persist(withPhoto)                         // the flush from onStop, with nothing edited since
+        assertArrayEquals(photo, s.readPhotoFile())
+    }
+
     /** The installed app before this launch: [design] was the design being edited when it was last closed. */
     private fun leftBehind(design: DesignSettings) {
         val old = Store(kv, photoFile)

@@ -201,6 +201,20 @@ class StoreTest {
         assertEquals(500_001, s.nextVersionCode())
     }
 
+    @Test fun aPhotoThatCouldNotBeWrittenMakesTheSaveNotDurableAndTheNextSaveWritesIt() {
+        val dir = File(tmp.root, "not-yet")
+        val file = File(dir, "background.jpg")                // the folder is missing: the photo write fails like on a full disk
+        val s = store(file = file)
+        val photo = ByteArray(300) { (it % 100).toByte() }
+        val d = DesignSettings(background = BackgroundDesign(BackgroundKind.PHOTO, photoJpeg = photo))
+        val first = s.saveCurrent(d)
+        assertTrue(first.complete)
+        assertFalse("the design is saved but its photo is not", first.durable)
+        dir.mkdirs()
+        assertTrue(s.saveCurrent(d).durable)                   // the same design again: the photo is tried again
+        assertArrayEquals(photo, file.readBytes())
+    }
+
     @Test fun sentKeyFingerprintIsNullUntilSavedAndSurvivesANewStore() {
         val kv = FakeKeyValueStore()
         assertNull(store(kv).lastSentKeyFingerprint())

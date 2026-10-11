@@ -117,7 +117,8 @@ class Store(
 
     /**
      * What a [saveCurrent] did. [complete] is false when the design was saved without its photo only because the stored photo
-     * has not been loaded yet. [durable] is false when the preferences could not write it (a full disk).
+     * has not been loaded yet. [durable] is false when the preferences or the photo file could not be written (a full disk):
+     * the caller must then save again (the flush from onStop does), and the photo is retried by that save.
      */
     data class CurrentSave(val complete: Boolean, val durable: Boolean)
 
@@ -131,12 +132,13 @@ class Store(
     private fun saveCurrentLocked(d: DesignSettings): CurrentSave {
         // While the stored photo is still being read, a design without photo must not delete it.
         val photoStillLoading = photoPending && d.background.photoJpeg == null
+        var photoStored = true
         if (!photoStillLoading) {
             if (d.background.photoJpeg != null) photoPending = false
-            savePhoto(d.background.photoJpeg)
+            photoStored = savePhoto(d.background.photoJpeg)
         }
         val durable = kv.putStringChecked(KEY_CURRENT, DesignJson.toJson(withoutPhoto(d)))
-        return CurrentSave(complete = !photoStillLoading, durable = durable)
+        return CurrentSave(complete = !photoStillLoading, durable = durable && photoStored)
     }
 
     /** True when a current design has been saved before (false on a new install, or when nothing was ever autosaved). */
@@ -177,10 +179,11 @@ class Store(
         photoPending = false
     }
 
-    private fun savePhoto(bytes: ByteArray?) {
+    /** True when the file now holds [bytes] (or the photo was already stored); false when the write failed. */
+    private fun savePhoto(bytes: ByteArray?): Boolean {
         val last = lastPhotoWritten
-        if (bytes === last || (bytes != null && last != null && bytes.contentEquals(last))) return
-        try {
+        if (bytes === last || (bytes != null && last != null && bytes.contentEquals(last))) return true
+        return try {
             if (bytes == null) photoFile.delete() else {
                 // write beside, then rename, so a crash never leaves a half photo
                 val tmp = File(photoFile.parentFile, photoFile.name + ".tmp")
@@ -188,9 +191,11 @@ class Store(
                 if (!tmp.renameTo(photoFile)) { photoFile.delete(); tmp.renameTo(photoFile) }
             }
             lastPhotoWritten = bytes
+            true
         } catch (e: Exception) {
-            // disk full or similar: the design still saves, the photo is lost on restart
+            // disk full or similar: the design still saves, the save is reported as not durable so that it is tried again
             lastPhotoWritten = null
+            false
         }
     }
 
