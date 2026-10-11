@@ -19,7 +19,13 @@ import java.util.Base64
  * update of the installed face, so the key is never replaced silently: the UI must ask the user and then call
  * [KeyStore.resetKey].
  */
-class SigningKeyException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+open class SigningKeyException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+
+/**
+ * A usable key could not be written to this phone's storage (a full disk, a failed write), as opposed to a key that is
+ * refused for what it is. Nothing was changed. The cure is to free space and try again; deleting a backup is not.
+ */
+class KeyNotSavedException(message: String, cause: Throwable? = null) : SigningKeyException(message, cause)
 
 /** What [KeyStore] holds right now, as [KeyStore.installPem]'s condition sees it. */
 sealed interface LocalKeyState {
@@ -132,7 +138,7 @@ class KeyStore(context: Context, val fileName: String = DEFAULT_FILE_NAME) {
                 // untouched; before that, both are untouched.
                 backupTmp.delete()
                 appContext.getFileStreamPath("$fileName.tmp").delete()
-                throw SigningKeyException("The restored key could not be saved (${e.message}).", e)
+                throw KeyNotSavedException("The restored key could not be saved (${e.message}).", e)
             }
             return InstallOutcome.INSTALLED
         }

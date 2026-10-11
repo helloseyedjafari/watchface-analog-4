@@ -55,7 +55,7 @@ fun noticeMessage(notice: Notice): AccountMessage = when (notice) {
     is Notice.KeyUnreadable -> bad(R.string.account_msg_key_unreadable, detail = notice.detail)
     Notice.BackupNotVerified -> bad(R.string.account_msg_backup_not_verified)
     is Notice.KeyNotMade -> bad(R.string.account_msg_key_not_made, detail = notice.detail)
-    Notice.BackupUnsettled -> bad(R.string.account_msg_backup_unsettled)
+    is Notice.BackupUnsettled -> bad(R.string.account_msg_backup_unsettled, remoteReason(notice.cause))
     Notice.BackupChanged -> bad(R.string.account_msg_backup_changed)
     is Notice.BackupFailed -> bad(R.string.account_msg_backup_failed, remoteReason(notice.cause), detail = notice.detail)
     is Notice.KeyRestored -> good(R.string.account_msg_key_restored, notice.fingerprint)
@@ -66,6 +66,7 @@ fun noticeMessage(notice: Notice): AccountMessage = when (notice) {
     Notice.LocalKeyChanged -> bad(R.string.account_msg_local_key_changed)
     Notice.BackupKeyMismatch -> bad(R.string.account_msg_key_mismatch)
     is Notice.KeyRejected -> bad(R.string.account_msg_key_rejected, detail = notice.detail)
+    is Notice.KeyNotSaved -> bad(R.string.account_msg_key_not_saved, detail = notice.detail)
     Notice.RestoreNotVerified -> bad(R.string.account_msg_restore_not_verified)
     is Notice.RestoreFailed -> bad(R.string.account_msg_restore_failed, remoteReason(notice.cause), detail = notice.detail)
     is Notice.BackupCheckFailed -> bad(R.string.account_msg_backup_check_failed, remoteReason(notice.cause), detail = notice.detail)
@@ -78,6 +79,8 @@ fun noticeMessage(notice: Notice): AccountMessage = when (notice) {
     is Notice.DeleteAccountFailed -> bad(deleteAccountProblemRes(notice.problem), detail = notice.detail)
     Notice.AccountKept -> good(R.string.account_msg_account_kept)
     Notice.KeepNotSaved -> bad(R.string.account_msg_keep_not_saved)
+    Notice.KeepNotReached -> bad(R.string.account_msg_keep_not_reached)
+    Notice.SignedOutAccountDeleted -> good(R.string.account_msg_signed_out_account_deleted)
     is Notice.ActionFailed -> bad(R.string.account_msg_action_failed, detail = notice.detail)
 }
 
@@ -100,6 +103,7 @@ fun restoreMessage(result: RestoreResult): AccountMessage = when (result) {
     RestoreResult.BackupChanged -> bad(R.string.account_msg_backup_changed)
     RestoreResult.FingerprintMismatch -> bad(R.string.account_msg_key_mismatch)
     is RestoreResult.KeyRejected -> bad(R.string.account_msg_key_rejected, detail = result.message)
+    is RestoreResult.KeyNotSaved -> bad(R.string.account_msg_key_not_saved, detail = result.message)
     RestoreResult.InstallNotVerified -> bad(R.string.account_msg_restore_not_verified)
     is RestoreResult.Failed -> bad(R.string.account_msg_restore_failed, remoteReason(result.kind), detail = result.message)
 }
@@ -125,7 +129,8 @@ enum class RestoreNext {
 
 fun restoreNext(result: RestoreResult): RestoreNext = when (result) {
     is RestoreResult.Restored -> RestoreNext.DONE
-    is RestoreResult.WrongPassphrase, is RestoreResult.Throttled, is RestoreResult.Failed -> RestoreNext.TRY_AGAIN_HERE
+    // a full disk: the passphrase was right and nothing was changed; the person frees space and taps again in the same dialog
+    is RestoreResult.WrongPassphrase, is RestoreResult.Throttled, is RestoreResult.Failed, is RestoreResult.KeyNotSaved -> RestoreNext.TRY_AGAIN_HERE
     RestoreResult.BackupChanged, RestoreResult.LocalKeyChanged -> RestoreNext.PLAN_AGAIN
     RestoreResult.NoBackup, RestoreResult.NotSignedIn, is RestoreResult.Unsupported,
     RestoreResult.FingerprintMismatch, is RestoreResult.KeyRejected, RestoreResult.InstallNotVerified -> RestoreNext.CLOSE
@@ -154,6 +159,7 @@ fun keepMessage(result: KeepResult): AccountMessage = when (result) {
     KeepResult.NOT_PENDING -> good(R.string.account_msg_nothing_pending)
     KeepResult.NOT_SIGNED_IN -> bad(R.string.account_msg_sign_in_first)
     KeepResult.NOT_SAVED -> bad(R.string.account_msg_keep_not_saved)
+    KeepResult.NOT_REACHED -> bad(R.string.account_msg_keep_not_reached)
 }
 
 /** The backup line on screen was out of date (the cloud or this phone changed since it was read): it is read again, nothing was changed. */

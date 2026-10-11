@@ -43,13 +43,14 @@ class AccountDeletionTest {
         assertEquals(1, sync.stops)
     }
 
-    @Test fun theStepsRunInTheOrderReauthStopSyncWipeDeleteAccount() {
+    @Test fun theStepsRunInTheOrderReauthMarkMarkerDeletedStopSyncWipeDeleteAccount() {
         val log = ArrayList<String>()
         class LoggedAccounts : AccountManager by accounts {
             override suspend fun reauthenticate(uid: String): ReauthResult { log += "reauth"; return accounts.reauthenticate(uid) }
             override suspend fun deleteUser(uid: String): DeleteUserResult { log += "deleteUser"; return accounts.deleteUser(uid) }
         }
         class LoggedRemote : RemoteStore by remote {
+            override suspend fun setAccountDeleted(uid: String, deleted: Boolean) { log += "marker=$deleted"; remote.setAccountDeleted(uid, deleted) }
             override suspend fun deleteAllUserData(uid: String) { log += "wipe"; remote.deleteAllUserData(uid) }
         }
         class LoggedSync : CloudSync by sync {
@@ -62,7 +63,9 @@ class AccountDeletionTest {
         val ordered = AccountDeletion(LoggedAccounts(), LoggedRemote(), LoggedSync(), journal, DeletionMarks(LoggedKv()))
         assertEquals(DeletionResult.Done, runBlocking { ordered.delete("u1") })
         // the mark is set after the prompt and before anything is stopped or deleted, and cleared when the account is gone
-        assertEquals(listOf("reauth", "mark", "stop", "wipe", "deleteUser", "unmark"), log)
+        // then the account marker says deleted (the kill switch for the other phones), then this phone's sync stops, then the data
+        // goes (the marker last, inside the wipe), then the Auth user
+        assertEquals(listOf("reauth", "mark", "marker=true", "stop", "wipe", "deleteUser", "unmark"), log)
     }
 
     @Test fun aCancelledReauthDeletesNothingAndLeavesSyncAlone() {
@@ -147,7 +150,7 @@ class AccountDeletionTest {
         remote.failDeleteAll = RemoteException(RemoteErrorKind.OFFLINE, "offline")
         assertTrue(delete() is DeletionResult.DataFailed)
         assertTrue(marks.isPending("u1"))
-        assertTrue(runBlocking { deletion.keep("u1") })
+        assertEquals(AccountDeletion.KeepOutcome.Kept, runBlocking { deletion.keep("u1") })
         val night = journal.entries().getValue(designId("Night"))
         assertEquals(5L, night.baseRemoteAtMs)           // the history stays: nothing becomes a "never synced" copy
         assertEquals(before.getValue(designId("Night")).modifiedAtMs, night.modifiedAtMs)
@@ -167,7 +170,7 @@ class AccountDeletionTest {
         journal.markApplied(designId("Night"), "Night", EntryState.LIVE, 5)
         val before = journal.entries()
         marks.mark("u1")
-        assertTrue(runBlocking { deletion.keep("u1") })
+        assertEquals(AccountDeletion.KeepOutcome.Kept, runBlocking { deletion.keep("u1") })
         assertEquals(before, journal.entries())
         assertEquals("u2", journal.boundUid())
         assertFalse(marks.isPending("u1"))
@@ -185,7 +188,7 @@ class AccountDeletionTest {
         val before = journal.entries()
         val refusing = SyncJournal(RefusingChecked(journalMemory))
         val d = AccountDeletion(accounts, remote, sync, refusing, marks, kotlinx.coroutines.Dispatchers.Unconfined)
-        assertFalse(runBlocking { d.keep("u1") })
+        assertEquals(AccountDeletion.KeepOutcome.NotSaved, runBlocking { d.keep("u1") })
         assertTrue(marks.isPending("u1"))                // the choice can be made again
         assertEquals(before, journal.entries())
     }
@@ -284,7 +287,7 @@ class AccountDeletionTest {
         val stamp = journal.currentStamp()
         val full = DiskFullKv(journalMemory)                 // takes the value in memory, then refuses it, like SharedPreferences
         val d = AccountDeletion(accounts, remote, sync, SyncJournal(full), marks, kotlinx.coroutines.Dispatchers.Unconfined)
-        assertFalse(runBlocking { d.keep("u1") })
+        assertEquals(AccountDeletion.KeepOutcome.NotSaved, runBlocking { d.keep("u1") })
         assertEquals(before, journal.entries())              // nothing was left half done
         assertEquals(stamp, journal.currentStamp())
         assertTrue(marks.isPending("u1"))
@@ -413,5 +416,114 @@ class AccountDeletionTest {
         } finally {
             executor.shutdown()
         }
+    }
+
+    // ---- the account marker (the kill switch of the other phones) -------------------------------------------------------
+
+    @Test fun theMarkerSaysDeletedWhenTheWipeBegins() {
+        var atWipe: AccountMarker? = null
+        val d = deletionWithWipeHook { atWipe = remote.markerOf("u1") }
+        assertEquals(DeletionResult.Done, runBlocking { d.delete("u1") })
+        assertEquals(AccountMarker.DELETED, atWipe)
+        assertEquals("and the wipe removes the marker last", AccountMarker.ABSENT, remote.markerOf("u1"))
+    }
+
+    @Test fun otherPhonesWritesAreRefusedFromTheMomentTheMarkerSaysDeleted() {
+        val strict = FakeRemoteStore(strictMarkers = true)
+        strict.seedMarker("u1", AccountMarker.ACTIVE)
+        var refused: RemoteErrorKind? = null
+        class Watching : RemoteStore by strict {
+            override suspend fun deleteAllUserData(uid: String) {
+                refused = try { strict.putDesign("u1", "x", "n", "{}", DesignState.LIVE, 1); null } catch (e: RemoteException) { e.kind }
+                strict.deleteAllUserData(uid)
+            }
+        }
+        val d = AccountDeletion(accounts, Watching(), sync, journal, marks, kotlinx.coroutines.Dispatchers.Unconfined)
+        assertEquals(DeletionResult.Done, runBlocking { d.delete("u1") })
+        assertEquals(RemoteErrorKind.PERMISSION, refused)
+    }
+
+    @Test fun aMarkerThatCannotBeSetStopsTheDeletionBeforeAnythingIsDeletedButSyncIsOffAndItStaysPending() {
+        remote.failMarkerWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        assertEquals(DeletionResult.DataFailed(RemoteErrorKind.OFFLINE, "offline"), delete())
+        assertEquals(1, remote.designsOf("u1").size)          // nothing was deleted
+        assertNull(remote.deletedAllFor)
+        assertEquals(1, sync.stops)                            // a pending deletion means sync off, whichever step failed
+        assertTrue(marks.isPending("u1"))
+        assertEquals(0, accounts.deleteCalls)
+    }
+
+    @Test fun aWipeThatFailsLeavesTheMarkerSayingDeletedAndFinishingRunsEverythingAgain() {
+        remote.failDeleteAll = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        assertTrue(delete() is DeletionResult.DataFailed)
+        assertEquals(AccountMarker.DELETED, remote.markerOf("u1"))     // the other phones stay refused
+        remote.failDeleteAll = null
+        assertEquals(DeletionResult.Done, runBlocking { deletion.finish("u1") })
+        assertEquals(AccountMarker.ABSENT, remote.markerOf("u1"))
+        assertTrue(remote.designsOf("u1").isEmpty())
+    }
+
+    @Test fun finishingAfterTheWipeWasCompleteButTheAccountRemainedCreatesTheMarkerAgainAndRemovesItAgain() {
+        accounts.nextDelete = DeleteUserResult.Failed("later")
+        assertTrue(delete() is DeletionResult.AccountFailed)
+        assertEquals(AccountMarker.ABSENT, remote.markerOf("u1"))      // the wipe took the marker
+        accounts.nextDelete = DeleteUserResult.Deleted
+        assertEquals(DeletionResult.Done, runBlocking { deletion.finish("u1") })
+        assertEquals(AccountMarker.ABSENT, remote.markerOf("u1"))
+        assertEquals("u1", remote.markerWrites.first().first)          // created live, set deleted, removed: the three steps ran again
+        assertTrue(remote.markerWrites.contains("u1" to AccountMarker.DELETED))
+    }
+
+    @Test fun keepingMakesTheAccountLiveAgainFirst() {
+        remote.failDeleteAll = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        delete()
+        assertEquals(AccountMarker.DELETED, remote.markerOf("u1"))
+        assertEquals(AccountDeletion.KeepOutcome.Kept, runBlocking { deletion.keep("u1") })
+        assertEquals(AccountMarker.ACTIVE, remote.markerOf("u1"))
+        assertFalse(marks.isPending("u1"))
+    }
+
+    @Test fun keepingAfterAWholeWipeCreatesALiveMarker() {
+        accounts.nextDelete = DeleteUserResult.Failed("later")
+        delete()
+        assertEquals(AccountMarker.ABSENT, remote.markerOf("u1"))
+        assertEquals(AccountDeletion.KeepOutcome.Kept, runBlocking { deletion.keep("u1") })
+        assertEquals(AccountMarker.ACTIVE, remote.markerOf("u1"))
+    }
+
+    @Test fun keepingWhenTheCloudCannotBeReachedChangesNothingAndStaysPending() {
+        journal.reconcileWithStore(listOf("Night"))
+        journal.markApplied(designId("Night"), "Night", EntryState.LIVE, 5)
+        remote.failDeleteAll = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        delete()
+        val before = journal.entries()
+        remote.failMarkerWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        assertEquals(AccountDeletion.KeepOutcome.CloudFailed(RemoteErrorKind.OFFLINE, "offline"), runBlocking { deletion.keep("u1") })
+        assertTrue(marks.isPending("u1"))
+        assertEquals(before, journal.entries())                        // no design was marked unsent, the choice can be made again
+        assertEquals(AccountMarker.DELETED, remote.markerOf("u1"))
+    }
+
+    @Test fun cancellingTheCallWhileTheMarkerIsBeingSetStopsSyncAndKeepsTheDeletionPending() = runTest(UnconfinedTestDispatcher()) {
+        class Hanging : RemoteStore by remote {
+            override suspend fun setAccountDeleted(uid: String, deleted: Boolean) = awaitCancellation()
+        }
+        val d = AccountDeletion(accounts, Hanging(), sync, journal, marks, kotlinx.coroutines.Dispatchers.Unconfined)
+        val job = launch { d.delete("u1") }
+        job.cancelAndJoin()
+        assertEquals(1, sync.stops)
+        assertTrue(marks.isPending("u1"))
+        assertNull(remote.deletedAllFor)
+    }
+
+    @Test fun forgettingARemovedAccountResetsOnlyAJournalBoundToIt() {
+        journal.reconcileWithStore(listOf("Night"))
+        journal.markApplied(designId("Night"), "Night", EntryState.LIVE, 5)
+        runBlocking { deletion.forgetRemovedAccount("u2") }
+        assertEquals("u1", journal.boundUid())
+        runBlocking { deletion.forgetRemovedAccount("u1") }
+        assertNull(journal.boundUid())
+        assertNull(journal.entries().getValue(designId("Night")).baseRemoteAtMs)
+        assertEquals(1, journal.entries().size)                         // the designs stay, as unsynced ones
     }
 }

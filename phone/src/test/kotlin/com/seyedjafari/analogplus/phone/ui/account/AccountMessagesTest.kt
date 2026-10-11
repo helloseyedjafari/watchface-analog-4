@@ -66,7 +66,9 @@ class AccountMessagesTest {
         ),
         Row(Notice.KeyUnreadable("EACCES"), NoticeKind.ERROR, unreadableWords, "EACCES"),
         Row(Notice.BackupNotVerified, NoticeKind.ERROR, "The new backup did not pass its check. It was taken back where the cloud could be reached; the backup line above shows what the cloud holds now."),
-        Row(Notice.BackupUnsettled, NoticeKind.ERROR, "The backup did not finish and the connection was lost before it could be taken back, so it may already use the new passphrase. Back up again when you are online to be sure."),
+        Row(Notice.BackupUnsettled(offline), NoticeKind.ERROR, "The backup did not finish and could not be taken back, so it may already use the new passphrase. $offlineWords Back up again afterwards to be sure."),
+        Row(Notice.BackupUnsettled(RemoteErrorKind.AUTH), NoticeKind.ERROR, "The backup did not finish and could not be taken back, so it may already use the new passphrase. Your sign-in has expired. Sign out and sign in again. Back up again afterwards to be sure."),
+        Row(Notice.KeyNotSaved("ENOSPC"), NoticeKind.ERROR, "The signing key opened, but there is not enough storage space on this phone to save it. Free some space and restore again. The backup is untouched and the key on this phone is unchanged.", "ENOSPC"),
         Row(Notice.KeyNotMade("ENOSPC"), NoticeKind.ERROR, "This phone has no signing key yet and a new one could not be made, so nothing was backed up. Free some storage space on the phone and try again.", "ENOSPC"),
         Row(Notice.BackupChanged, NoticeKind.ERROR, changedWords),
         Row(Notice.BackupFailed(offline, "unavailable"), NoticeKind.ERROR, "The backup was not saved. $offlineWords", "unavailable"),
@@ -105,6 +107,8 @@ class AccountMessagesTest {
         ),
         Row(Notice.AccountKept, NoticeKind.INFO, "Your account was kept. Sync is on again and the designs on this phone are uploaded again."),
         Row(Notice.KeepNotSaved, NoticeKind.ERROR, "Your choice could not be saved on this phone, so the deletion is still unfinished. Try again."),
+        Row(Notice.KeepNotReached, NoticeKind.ERROR, "Your account could not be kept because the cloud could not be reached. Check your connection and try again; the deletion is still unfinished."),
+        Row(Notice.SignedOutAccountDeleted, NoticeKind.INFO, "This account was deleted from another phone, so you were signed out here. Your designs on this phone are untouched."),
         Row(Notice.ActionFailed("NullPointerException"), NoticeKind.ERROR, "Something went wrong and the action did not finish.", "NullPointerException"),
     )
 
@@ -166,6 +170,7 @@ class AccountMessagesTest {
         ),
         Row(RestoreResult.FingerprintMismatch, NoticeKind.ERROR, mismatchWords),
         Row(RestoreResult.KeyRejected("bad pem"), NoticeKind.ERROR, rejectedWords, "bad pem"),
+        Row(RestoreResult.KeyNotSaved("ENOSPC"), NoticeKind.ERROR, "The signing key opened, but there is not enough storage space on this phone to save it. Free some space and restore again. The backup is untouched and the key on this phone is unchanged.", "ENOSPC"),
         Row(
             RestoreResult.InstallNotVerified, NoticeKind.ERROR,
             notVerifiedWords,
@@ -189,6 +194,7 @@ class AccountMessagesTest {
         RestoreResult.Unsupported("v2") to RestoreNext.CLOSE,
         RestoreResult.FingerprintMismatch to RestoreNext.CLOSE,
         RestoreResult.KeyRejected("x") to RestoreNext.CLOSE,
+        RestoreResult.KeyNotSaved("ENOSPC") to RestoreNext.TRY_AGAIN_HERE,
         RestoreResult.InstallNotVerified to RestoreNext.CLOSE,
     )
 
@@ -275,6 +281,7 @@ class AccountMessagesTest {
         assertEquals("Sign in first.", en(keepMessage(KeepResult.NOT_SIGNED_IN)))
         assertEquals("Your choice could not be saved on this phone, so the deletion is still unfinished. Try again.", en(keepMessage(KeepResult.NOT_SAVED)))
         assertEquals(noticeMessage(Notice.KeepNotSaved), keepMessage(KeepResult.NOT_SAVED))
+        assertEquals(noticeMessage(Notice.KeepNotReached), keepMessage(KeepResult.NOT_REACHED))
         assertEquals(KeepResult.entries.size, KeepResult.entries.map { en(keepMessage(it)) }.toSet().size)
         assertEquals(noticeMessage(Notice.AccountKept), keepMessage(KeepResult.KEPT))
     }

@@ -1,6 +1,8 @@
 package com.seyedjafari.analogplus.phone.accounts
 
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -10,6 +12,12 @@ class FakeCloudSync : CloudSync {
     private val _offer = MutableStateFlow<CurrentOffer?>(null)
     override val status: StateFlow<SyncStatus> = _status.asStateFlow()
     override val currentOffer: StateFlow<CurrentOffer?> = _offer.asStateFlow()
+
+    private val _removed = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    override val accountRemoved: SharedFlow<String> = _removed
+
+    /** The engine found out that [uid]'s account was deleted by another phone. */
+    fun accountWasRemoved(uid: String) { _removed.tryEmit(uid) }
 
     val started = ArrayList<String>()
     var stops = 0

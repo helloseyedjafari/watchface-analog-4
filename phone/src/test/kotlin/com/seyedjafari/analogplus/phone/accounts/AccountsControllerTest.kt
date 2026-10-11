@@ -1126,7 +1126,7 @@ class AccountsControllerTest {
         reads = 0
         val job = launch { slow.upload(passphrase, BackupExpectation.None) }
         assertEquals("the line is being read", BackupStatus.Checking, slow.ui.value.backup)
-        assertEquals("and the card is still busy", Busy.BACKING_UP, slow.ui.value.busy)
+        assertEquals("and the card is still busy, no longer with the upload's words", Busy.CHECKING_BACKUP, slow.ui.value.busy)
         gate.complete(Unit)
         job.join()
         assertEquals(Busy.NONE, slow.ui.value.busy)
@@ -1162,8 +1162,8 @@ class AccountsControllerTest {
             BackupService(cut, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
             AccountDeletion(accounts, cut, sync, journal, marks, Dispatchers.Unconfined), backgroundScope,
         )
-        assertEquals(UploadResult.Unsettled, c2.upload("another passphrase 99", BackupExpectation.SameKey))
-        assertEquals(Notice.BackupUnsettled, c2.ui.value.notice)
+        assertEquals(UploadResult.Unsettled(RemoteErrorKind.OFFLINE), c2.upload("another passphrase 99", BackupExpectation.SameKey))
+        assertEquals(Notice.BackupUnsettled(RemoteErrorKind.OFFLINE), c2.ui.value.notice)
         assertTrue(c2.ui.value.backup is BackupStatus.BackedUp)
     }
 
@@ -1198,5 +1198,116 @@ class AccountsControllerTest {
         assertEquals(0, sync.syncNowCalls)
         c.refresh()
         assertEquals(1, sync.syncNowCalls)
+    }
+
+    // ---- another phone deleted the account (the kill switch) ------------------------------------------------------------
+
+    @Test fun anAccountThatAnotherPhoneDeletedSignsThisPhoneOutForgetsItsBindingAndTellsTheTypedNotice() = runTest(UnconfinedTestDispatcher()) {
+        journal.bindTo("u1")
+        journal.reconcileWithStore(listOf("Night"))
+        journal.markApplied(designId("Night"), "Night", EntryState.LIVE, 5)
+        val c = controller()
+        c.signIn()
+        sync.accountWasRemoved("u1")
+        assertEquals(AccountState.SignedOut, c.ui.value.account)
+        assertEquals(Notice.SignedOutAccountDeleted, c.ui.value.notice)
+        assertEquals(null, journal.boundUid())                          // the binding is forgotten ...
+        assertEquals(1, journal.entries().size)                         // ... the designs are not
+        assertEquals(DeletionState.NONE, c.ui.value.deletion)
+        // the notice belongs to no account: it is still there after the sign-out and a later sign-in of another account
+        accounts.force(AccountState.SignedIn("u2", null))
+        assertEquals(Notice.SignedOutAccountDeleted, c.ui.value.notice)
+    }
+
+    @Test fun aRemovalOfAnotherAccountOrWhileSignedOutChangesNothing() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        sync.accountWasRemoved("u1")                                    // nobody is signed in
+        assertNull(c.ui.value.notice)
+        c.signIn()
+        sync.accountWasRemoved("u9")                                    // not the account of this phone
+        assertEquals(AccountState.SignedIn("u1", "me@example.com"), c.ui.value.account)
+        assertNull(c.ui.value.notice)
+    }
+
+    @Test fun thePhoneThatIsDeletingTheAccountIsNotSignedOutByItsOwnMarker() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        val gate = CompletableDeferred<Unit>().also { remote.wipeGate = it }
+        val job = launch { c.deleteAccount() }
+        assertEquals(Busy.DELETING, c.ui.value.busy)
+        sync.accountWasRemoved("u1")                                    // its own engine saw the marker the deletion set
+        assertEquals(AccountState.SignedIn("u1", "me@example.com"), c.ui.value.account)
+        assertNull(c.ui.value.notice)
+        gate.complete(Unit)
+        job.join()
+        assertEquals(Notice.AccountDeleted, c.ui.value.notice)          // the deletion's own notice, not the other one
+    }
+
+    @Test fun aPendingDeletionOfThisPhoneIsNotAnAccountDeletedElsewhere() = runTest(UnconfinedTestDispatcher()) {
+        marks.mark("u1")
+        val c = controller()
+        c.signIn()
+        sync.accountWasRemoved("u1")
+        assertEquals(AccountState.SignedIn("u1", "me@example.com"), c.ui.value.account)
+        assertEquals(DeletionState.PENDING, c.ui.value.deletion)
+        assertNull(c.ui.value.notice)
+    }
+
+    @Test fun keepingWhenTheCloudCannotBeReachedIsNotReachedAndStaysPendingWithSyncOff() = runTest(UnconfinedTestDispatcher()) {
+        marks.mark("u1")
+        val c = controller()
+        c.signIn()
+        inner.failMarkerWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        assertEquals(KeepResult.NOT_REACHED, c.keepAccount())
+        assertEquals(Notice.KeepNotReached, c.ui.value.notice)
+        assertEquals(DeletionState.PENDING, c.ui.value.deletion)
+        assertTrue(sync.started.isEmpty())
+        assertTrue(marks.isPending("u1"))
+        assertEquals(Busy.NONE, c.ui.value.busy)
+    }
+
+    // ---- stage 3 review B: an old key read must not cover a fresher status (S3B-4) ----------------------------------------
+
+    @Test fun aSlowKeyReadThatWasOverTakenByAFresherCheckIsDropped() {
+        val phoneKey = FakeKeySource(null)
+        val started = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        var armed = false
+        val first = java.util.concurrent.atomic.AtomicBoolean(true)
+        val slowKeys = object : KeySource by phoneKey {
+            override fun state(): com.seyedjafari.analogplus.facegen.LocalKeyState {
+                val seen = phoneKey.state()                                    // what the phone holds when the read begins
+                if (armed && first.compareAndSet(true, false)) { started.countDown(); release.await(10, java.util.concurrent.TimeUnit.SECONDS) }
+                return seen
+            }
+        }
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Default)
+        try {
+            val mgr = FakeAccountManager(AccountState.SignedIn("u1", null))
+            val c = AccountsController(
+                AccountsAvailability.AVAILABLE, mgr, FakeCloudSync(),
+                BackupService(inner, vault, slowKeys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Default),
+                AccountDeletion(mgr, inner, FakeCloudSync(), journal, marks, Dispatchers.Default), scope,
+            )
+            kotlinx.coroutines.runBlocking {
+                // another phone backed up pemA; this phone has no key yet: the line says so
+                BackupService(inner, vault, FakeKeySource(pemA), AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined)
+                    .upload("u1", passphrase, BackupExpectation.None)
+                c.refreshBackup()
+                assertEquals(KeyMatch.NO_LOCAL_KEY, (c.ui.value.backup as BackupStatus.BackedUp).match)
+                armed = true
+                val stale = launch(Dispatchers.Default) { c.refreshKeyMatch() }       // reads "no key" and waits
+                assertTrue(started.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                phoneKey.installPem(pemA)                                              // a restore installs the key ...
+                c.refreshBackup()                                                      // ... and its own check reads the fresh state
+                assertEquals(KeyMatch.SAME, (c.ui.value.backup as BackupStatus.BackedUp).match)
+                release.countDown()                                                    // now the old read answers
+                stale.join()
+                assertEquals("the old answer must not cover the fresher one", KeyMatch.SAME, (c.ui.value.backup as BackupStatus.BackedUp).match)
+            }
+        } finally {
+            release.countDown()
+            scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        }
     }
 }

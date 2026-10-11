@@ -23,6 +23,11 @@ class NoRemoteStore : RemoteStore {
     override suspend fun getBackup(uid: String): RemoteBackup? = fail()
     override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite = fail()
     override suspend fun deleteBackup(uid: String, replacing: BackupPrecondition): BackupRemoval = fail()
+    override suspend fun ensureAccountMarker(uid: String): AccountMarker = fail()
+    override suspend fun getAccountMarker(uid: String): AccountMarker = fail()
+    override suspend fun setAccountDeleted(uid: String, deleted: Boolean) = fail()
+    override fun observeAccountMarker(uid: String): Flow<AccountMarker> = emptyFlow()
+    override suspend fun deleteAccountMarker(uid: String) = fail()
     override suspend fun deleteAllUserData(uid: String) = fail()
 }
 

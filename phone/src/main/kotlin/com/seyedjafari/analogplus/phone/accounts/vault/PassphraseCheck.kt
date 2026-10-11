@@ -23,6 +23,23 @@ enum class PassphraseIssue {
 
     /** Mostly a chunk repeated, such as `abcabcabc` or `zzzzzz`. */
     REPETITION,
+
+    /** A character that is not valid text (half of a surrogate pair, pasted or typed in by a faulty keyboard); it cannot be used. */
+    ILL_FORMED_TEXT,
+}
+
+/** True when [text] holds half of a surrogate pair (a high surrogate not followed by a low one, or a low one on its own). */
+fun hasLoneSurrogate(text: String): Boolean {
+    var i = 0
+    while (i < text.length) {
+        val c = text[i]
+        when {
+            Character.isHighSurrogate(c) -> if (i + 1 < text.length && Character.isLowSurrogate(text[i + 1])) i++ else return true
+            Character.isLowSurrogate(c) -> return true
+        }
+        i++
+    }
+    return false
 }
 
 /** The verdict of [assessPassphrase]: how strong it is and, when it is weak for a nameable reason, why. */
@@ -56,6 +73,8 @@ fun checkPassphrase(passphrase: String): PassphraseStrength = assessPassphrase(p
  * The first 256 characters are examined; more characters can only add bits, so cutting there is conservative.
  */
 fun assessPassphrase(passphrase: String): PassphraseAssessment {
+    // never accepted, whatever its length: the key derivation of the phone refuses text that is not well-formed
+    if (hasLoneSurrogate(passphrase)) return PassphraseAssessment(PassphraseStrength.WEAK, PassphraseIssue.ILL_FORMED_TEXT)
     val points = Normalizer.normalize(passphrase, Normalizer.Form.NFKC).codePoints().toArray()
     if (points.size < MIN_PASSPHRASE_LENGTH) return PassphraseAssessment(PassphraseStrength.TOO_SHORT, PassphraseIssue.NONE)
     val head = if (points.size > MAX_EXAMINED) points.copyOf(MAX_EXAMINED) else points

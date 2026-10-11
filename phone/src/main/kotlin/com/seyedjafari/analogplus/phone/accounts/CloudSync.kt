@@ -1,7 +1,9 @@
 package com.seyedjafari.analogplus.phone.accounts
 
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -76,6 +78,13 @@ interface CloudSync {
     val status: StateFlow<SyncStatus>
     val currentOffer: StateFlow<CurrentOffer?>
 
+    /**
+     * Emits the uid of the account whose marker says that another phone deleted it (or wiped it): the sync of this phone for
+     * that account has stopped, and whoever owns the sign-in should sign this phone out. Never emitted for a transient or
+     * offline error: only for what the cloud confirmed. Local designs are not touched.
+     */
+    val accountRemoved: SharedFlow<String>
+
     /** Begins syncing for [uid]: a first full pass, then live updates. Replaces a running sync. */
     fun start(uid: String)
 
@@ -108,6 +117,7 @@ interface CloudSync {
 class NoCloudSync : CloudSync {
     override val status: StateFlow<SyncStatus> = MutableStateFlow<SyncStatus>(SyncStatus.Off).asStateFlow()
     override val currentOffer: StateFlow<CurrentOffer?> = MutableStateFlow<CurrentOffer?>(null).asStateFlow()
+    override val accountRemoved: SharedFlow<String> = MutableSharedFlow<String>()
     override fun start(uid: String) {}
     override fun stop() {}
     override suspend fun syncNow() {}

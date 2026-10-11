@@ -91,6 +91,16 @@ class SyncEngineTest {
         /** The full fetch waits here (cancellable) before it answers. */
         var fetchGate: CompletableDeferred<Unit>? = null
 
+        /**
+         * Every pass first looks at the account marker. A pass that fails there (the whole cloud is down) never reaches the fetch;
+         * it counts as a try all the same, so the tests of the backoff keep counting passes.
+         */
+        override suspend fun ensureAccountMarker(uid: String): AccountMarker =
+            try { inner.ensureAccountMarker(uid) } catch (e: RemoteException) { fetchTimes += clockMs(); throw e }
+
+        override suspend fun getAccountMarker(uid: String): AccountMarker =
+            try { inner.getAccountMarker(uid) } catch (e: RemoteException) { fetchTimes += clockMs(); throw e }
+
         override suspend fun fetchDesigns(uid: String): List<RemoteDesign> {
             fetchTimes += clockMs()
             fetchGate?.await()

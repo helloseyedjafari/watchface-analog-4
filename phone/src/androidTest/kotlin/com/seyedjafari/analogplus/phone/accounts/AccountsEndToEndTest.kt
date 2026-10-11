@@ -361,6 +361,7 @@ class AccountsEndToEndTest {
         await("the current design in the cloud") { documentBody("users/$uid/state/current") != null }
         setPassphraseThroughTheDialog(AccountTags.BACK_UP, passphrase)
         waitForText(text(R.string.account_msg_key_backed_up, fingerprint), ms = 60_000)
+        waitForText(text(R.string.account_backup_same, fingerprint))   // the notice comes first; the line is read again right after it
         backupLine().assertTextContains(text(R.string.account_backup_same, fingerprint), substring = true)
         assertEquals(fingerprint, cloudBackupFingerprint(uid))
         waitUntilSynced(phone1)
@@ -398,6 +399,7 @@ class AccountsEndToEndTest {
         waitForText(text(R.string.account_msg_key_restored, fingerprint))
         assertEquals(pem, phone2.keys.pem())
         assertEquals(fingerprint, keyFingerprint(phone2.keys.pem()))
+        waitForText(text(R.string.account_backup_same, fingerprint))   // the notice comes first; the line is read again right after it
         backupLine().assertTextContains(text(R.string.account_backup_same, fingerprint), substring = true)
 
         // phone 2 saves another design; phone 1 (in the background, nothing listening) gets it with Sync now
@@ -572,5 +574,98 @@ class AccountsEndToEndTest {
         assertEquals("this phone keeps its design", editingOnPhone2, phone2.current.get())
         await("this phone's design in the cloud") { documentBody("users/$uid/state/current")?.contains(editingOnPhone2.accent) == true }
         assertNull(phone2.ui.offer)
+    }
+
+    // ---- the kill switch: another phone signed in to the account is signed out when it is deleted ---------------------------------
+
+    /**
+     * A second phone of the same account: a real [SyncEngine] on the real Firestore layer (the emulator, with the rules), but a
+     * [FakeAccountManager] for the sign-in. The two phones of these tests share one process-wide `FirebaseAuth`, so a real sign-out
+     * on this phone would also sign the other one out in the middle of its deletion; the engine, the cloud and the controller are
+     * the real ones, which is what the kill switch is about.
+     */
+    private inner class SecondPhone(uid: String) {
+        val store = Store(MemoryKeyValueStore(), File(context.cacheDir, "e2e-b-$tag.jpg"))
+        val kv = MemoryKeyValueStore()
+        val journal = SyncJournal(kv)
+        val manager = FakeAccountManager(AccountState.SignedIn(uid, null))
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val current = AtomicReference(DesignSettings())
+        lateinit var controller: AccountsController
+
+        init {
+            onMain {
+                val remote = FirestoreRemoteStore(FirebaseFirestore.getInstance())
+                val engine = SyncEngine(
+                    store, journal, remote, scope, AndroidPhotoDownscaler(),
+                    CurrentApplier { design -> current.set(design) }, { current.get() },
+                    deviceId = "e2e-b-$tag", deviceLabel = "Phone B", copySuffix = " (copy)",
+                )
+                store.addObserver(journal)
+                store.addObserver(engine)
+                controller = AccountsController(
+                    AccountsAvailability.AVAILABLE, manager, engine,
+                    BackupService(remote, KeyVault(), FakeKeySource(null), AttemptLimiter(kv)),
+                    AccountDeletion(manager, remote, engine, journal, DeletionMarks(kv)), scope,
+                )
+            }
+        }
+
+        fun names() = store.savedDesigns().map { it.name }.sorted()
+        fun stop() { scope.coroutineContext[Job]?.cancel(); File(context.cacheDir, "e2e-b-$tag.jpg").delete() }
+    }
+
+    @Test fun deletingTheAccountOnOnePhoneSignsTheOtherPhoneOutAndLeavesItsDesignsAndTheCloudEmpty() {
+        val phone1 = Phone(1)
+        show(phone1)
+        val uid = signInThroughTheCard(phone1)
+        phone1.store.saveNamed("Night", night)
+        await("the design in the cloud") { designsInCloud(uid) == 1 }
+        await("the account marker to be live") { documentBody("users/$uid/meta/account")?.contains("\"booleanValue\": false") == true }
+        waitUntilSynced(phone1)
+
+        // the other phone signs in to the same account: it takes the design from the cloud and adds one of its own
+        val phoneB = SecondPhone(uid)
+        try {
+            await("Night on the other phone") { phoneB.names() == listOf("Night") }
+            await("the other phone to have synced") { phoneB.controller.ui.value.sync is SyncStatus.Idle }
+            phoneB.store.saveNamed("Dawn", dawn)
+            await("the other phone's design in the cloud") { designsInCloud(uid) == 2 }
+            waitUntilSynced(phone1)
+
+            // phone 1 deletes the account: the marker says deleted, the wipe, the Auth user
+            click(AccountTags.DELETE)
+            click(AccountTags.DELETE_CONFIRM)
+            waitForText(text(R.string.account_msg_account_deleted), ms = 60_000)
+            assertNull(FirebaseAuth.getInstance().currentUser)
+
+            // the other phone found out by itself: signed out, told in a typed notice, designs untouched, nothing written back
+            await("the other phone to be signed out") { phoneB.manager.state.value == AccountState.SignedOut }
+            assertEquals(Notice.SignedOutAccountDeleted, phoneB.controller.ui.value.notice)
+            assertEquals(SyncStatus.Off, phoneB.controller.ui.value.sync)
+            assertEquals(listOf("Dawn", "Night"), phoneB.names())
+            assertNull("the binding to the deleted account is forgotten", phoneB.journal.boundUid())
+            assertCloudEmpty(uid)
+        } finally {
+            phoneB.stop()
+        }
+    }
+
+    @Test fun aPhoneWithNoListenerFindsOutAtTheCheckBeforeItsNextPassAndWritesNothing() {
+        val phone1 = Phone(1)
+        show(phone1)
+        val uid = signInThroughTheCard(phone1)
+        phone1.store.saveNamed("Night", night)
+        await("the design in the cloud") { designsInCloud(uid) == 1 }
+        waitUntilSynced(phone1)
+        // another phone sets the marker (the first step of a deletion) behind this phone's back, and this phone has an edit to send
+        val cloud = FirestoreRemoteStore(FirebaseFirestore.getInstance())
+        runBlocking { cloud.setAccountDeleted(uid, true) }
+        onMain { phone1.controller.setForeground(false) }   // no listener tells it: only its own write can find out
+        phone1.store.saveNamed("Dawn", dawn)
+        await("this phone to be signed out by the check before its pass") { phone1.ui.account == AccountState.SignedOut }
+        assertEquals(Notice.SignedOutAccountDeleted, phone1.ui.notice)
+        assertEquals("the new design never reached the cloud", 1, designsInCloud(uid))
+        assertTrue("and it is still on the phone", phone1.store.savedDesigns().any { it.name == "Dawn" })
     }
 }

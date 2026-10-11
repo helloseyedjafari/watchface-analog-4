@@ -2,6 +2,7 @@ package com.seyedjafari.analogplus.phone.accounts
 
 import com.seyedjafari.analogplus.facegen.InstallOutcome
 import com.seyedjafari.analogplus.facegen.LocalKeyState
+import com.seyedjafari.analogplus.facegen.KeyNotSavedException
 import com.seyedjafari.analogplus.facegen.SigningKeyException
 import com.seyedjafari.analogplus.phone.accounts.vault.KeyVault
 import com.seyedjafari.analogplus.phone.accounts.vault.OpenResult
@@ -126,9 +127,10 @@ sealed interface UploadResult {
      * The upload did not finish (the connection broke after it began, or the answer to the write was lost) and taking it
      * back did not reach the cloud either, so the cloud may already hold the new backup, sealed with the NEW passphrase,
      * although the upload was not proven. The UI says so and asks the person to back up again when online. Not the same
-     * as [Failed], which means nothing of this upload is in the cloud.
+     * as [Failed], which means nothing of this upload is in the cloud. [kind] is why the take-back failed: offline, or an
+     * expired sign-in ([RemoteErrorKind.AUTH], which "back up again when online" does not cure), a refusal, and so on.
      */
-    data object Unsettled : UploadResult
+    data class Unsettled(val kind: RemoteErrorKind) : UploadResult
 
     /** [kind] separates offline from an expired sign-in ([RemoteErrorKind.AUTH]) from refused ([RemoteErrorKind.PERMISSION]). */
     data class Failed(val kind: RemoteErrorKind, val message: String) : UploadResult
@@ -185,6 +187,13 @@ sealed interface RestoreResult {
      * key is untouched.
      */
     data class KeyRejected(val message: String) : RestoreResult
+
+    /**
+     * The key was good but could not be written to this phone's storage (a full disk): nothing was changed, the backup is
+     * untouched and the passphrase was right. Free some space and restore again. [message] is the system's text, for a
+     * detail line only. Not [KeyRejected]: that one advises deleting the backup, which would destroy a key that restores fine.
+     */
+    data class KeyNotSaved(val message: String) : RestoreResult
 
     /**
      * The install returned, but the key now on this phone is not the restored one. The user action: open Signing key
@@ -333,7 +342,7 @@ class BackupService(
                 val undone = withContext(NonCancellable) { undo(uid, previous, writeId) }
                 if (undone is Undo.Overtaken) outcome = UploadResult.BackupDiffers(undone.current, phoneNow)
                 // the write may have landed and the take-back did not get through: "failed" would be untrue
-                if (undone is Undo.Unreachable) outcome = UploadResult.Unsettled
+                if (undone is Undo.Unreachable) outcome = UploadResult.Unsettled(undone.kind)
             }
         }
         return outcome
@@ -396,6 +405,8 @@ class BackupService(
         return withContext(cpu) {
             val outcome = try {
                 keys.installPem(pem) { held -> planExpects(plan, held.toKeyOnPhone()) }
+            } catch (e: KeyNotSavedException) {
+                return@withContext RestoreResult.KeyNotSaved(e.message.orEmpty())
             } catch (e: SigningKeyException) {
                 return@withContext RestoreResult.KeyRejected(e.message.orEmpty())
             }
@@ -428,7 +439,7 @@ class BackupService(
         data object Finished : Undo
 
         /** The cloud could not be reached: whether our write is in place is not known (the next status check shows what it holds). */
-        data object Unreachable : Undo
+        data class Unreachable(val kind: RemoteErrorKind) : Undo
 
         /** Another phone wrote since: its backup is left as it is. */
         data class Overtaken(val current: CloudBackup) : Undo
@@ -449,7 +460,7 @@ class BackupService(
             BackupRemoval.Removed -> Undo.Finished
         }
     } catch (e: RemoteException) {
-        Undo.Unreachable
+        Undo.Unreachable(e.kind)
     }
 
     /** The cloud does not hold our write: that is fine if it holds what was there before our call, otherwise someone else wrote. */

@@ -48,6 +48,19 @@ class KeyStoreInstallTest {
         }
     }
 
+    @Test fun aKeyThatCannotBeWrittenBecauseTheStorageFailsIsNotSavedAndSaysSoNotRefused() {
+        // a directory where the temporary file must go: opening it for writing fails with an IOException, as a full disk does
+        File(context.filesDir, "$name.tmp").mkdirs()
+        val ex = assertThrows(KeyNotSavedException::class.java) { store.installPem(pemA) }
+        assertTrue(ex.message, ex.message!!.contains("could not be saved"))
+        assertFalse("nothing was installed", store.hasKey())
+    }
+
+    @Test fun aKeyThatIsRefusedForWhatItIsIsNotTheNotSavedKind() {
+        val ex = assertThrows(SigningKeyException::class.java) { store.installPem("not a key") }
+        assertFalse(ex is KeyNotSavedException)
+    }
+
     @Test fun installsAKeyOnAPhoneWithoutOne() {
         assertFalse(store.hasKey())
         store.installPem(pemA)

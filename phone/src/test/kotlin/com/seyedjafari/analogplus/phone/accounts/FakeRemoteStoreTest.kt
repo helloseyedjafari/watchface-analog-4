@@ -133,4 +133,62 @@ class FakeRemoteStoreTest {
         try { putBackup(store, "a", "w1", BackupPrecondition.NoBackup); fail("expected an exception") } catch (e: RemoteException) { assertEquals(RemoteErrorKind.OFFLINE, e.kind) }
         try { deleteBackup(store, BackupPrecondition.NoBackup); fail("expected an exception") } catch (e: RemoteException) { assertEquals(RemoteErrorKind.OFFLINE, e.kind) }
     }
+
+    // ---- the account marker ---------------------------------------------------------------------------------------------
+
+    private fun refused(block: suspend () -> Unit) {
+        try { runBlocking { block() }; fail("expected a refusal") } catch (e: RemoteException) { assertEquals(RemoteErrorKind.PERMISSION, e.kind) }
+    }
+
+    @Test fun ensureCreatesTheMarkerLiveAndNeverOverwritesAnExistingOne() {
+        val store = FakeRemoteStore()
+        assertEquals(AccountMarker.ABSENT, runBlocking { store.getAccountMarker("u") })
+        assertEquals(AccountMarker.ACTIVE, runBlocking { store.ensureAccountMarker("u") })
+        runBlocking { store.setAccountDeleted("u", true) }
+        assertEquals(AccountMarker.DELETED, runBlocking { store.ensureAccountMarker("u") })
+        assertEquals(AccountMarker.ABSENT, runBlocking { store.getAccountMarker("other") })
+    }
+
+    @Test fun everyWriteIsRefusedWhileTheMarkerSaysDeletedAndWorksAgainWhenKeptButReadsAndDeletesAlwaysWork() {
+        val store = FakeRemoteStore()
+        put(store, "a")
+        runBlocking { store.setAccountDeleted("u", true) }
+        refused { store.putDesign("u", "a", "n", "{}", DesignState.LIVE, 1) }
+        refused { store.createDesign("u", "new", "n", "{}", 1) }
+        refused { store.putCurrent("u", "{}", "d", "Pixel") }
+        refused { store.putBackup("u", sealedWith("fp"), "w", BackupPrecondition.NoBackup) }
+        assertEquals(1, runBlocking { store.fetchDesigns("u") }.size)
+        runBlocking { store.setAccountDeleted("u", false) }
+        put(store, "a")
+    }
+
+    @Test fun aStrictFakeAlsoRefusesWritesWithoutAMarkerButALenientOneDoesNot() {
+        val strict = FakeRemoteStore(strictMarkers = true)
+        refused { strict.putDesign("u", "a", "n", "{}", DesignState.LIVE, 1) }
+        runBlocking { strict.ensureAccountMarker("u") }
+        put(strict, "a")
+        put(FakeRemoteStore(), "a")
+    }
+
+    @Test fun theWipeTakesTheMarkerLastAndTheListenerSeesTheChanges() {
+        val store = FakeRemoteStore()
+        runBlocking { store.ensureAccountMarker("u") }
+        put(store, "a")
+        runBlocking { store.setAccountDeleted("u", true) }
+        runBlocking { store.deleteAllUserData("u") }
+        assertEquals(AccountMarker.ABSENT, runBlocking { store.getAccountMarker("u") })
+        assertEquals(AccountMarker.ABSENT, runBlocking { store.observeAccountMarker("u").first() })
+        runBlocking { store.setAccountDeleted("u", true) }
+        assertEquals(AccountMarker.DELETED, runBlocking { store.observeAccountMarker("u").first() })
+        runBlocking { store.deleteAccountMarker("u") }
+        assertEquals(AccountMarker.ABSENT, store.markerOf("u"))
+    }
+
+    @Test fun aMarkerFailureIsOneShot() {
+        val store = FakeRemoteStore()
+        store.failMarkerWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        try { runBlocking { store.setAccountDeleted("u", true) }; fail("expected") } catch (e: RemoteException) { assertEquals(RemoteErrorKind.OFFLINE, e.kind) }
+        runBlocking { store.setAccountDeleted("u", true) }
+        assertEquals(AccountMarker.DELETED, store.markerOf("u"))
+    }
 }

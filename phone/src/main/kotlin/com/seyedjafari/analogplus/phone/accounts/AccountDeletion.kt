@@ -1,5 +1,6 @@
 package com.seyedjafari.analogplus.phone.accounts
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -56,8 +57,9 @@ sealed interface DeletionResult {
 /**
  * Deletes everything the cloud holds for the user, then the account. Order matters: the Google account is asked for
  * again first (Firebase refuses to delete an account without a recent sign-in, and asking later would leave the data
- * deleted and the account standing), then the deletion is marked as pending ([DeletionMarks]), then sync is stopped so
- * nothing is written back, then the data, then the user. Local designs and the local signing key are never touched.
+ * deleted and the account standing), then the deletion is marked as pending ([DeletionMarks]), then the account marker in
+ * the cloud is set to deleted (the kill switch: every other phone signed in to the account is refused from then on, and
+ * signs itself out), then sync is stopped so nothing is written back, then the data and last the marker, then the user. Local designs and the local signing key are never touched.
  *
  * It acts for [delete]'s `uid` only. The signed-in account is checked before each step that cannot be undone (before
  * the Google prompt, before the mark and the stop of sync, before deleting the Auth user) and the account manager gets
@@ -100,7 +102,21 @@ class AccountDeletion(
         if (!stillSignedIn(uid)) return DeletionResult.NotSignedIn
         // remembered before the first destructive step, so that a cut-off at any later point is found again after a restart
         if (!withContext(NonCancellable + io) { marks.mark(uid) }) return DeletionResult.NotStarted
+        // (a) the account marker says deleted: from now on the rules refuse the writes of every other phone signed in to this
+        // account. Before the sync of this phone stops, so that no phone gets a window in which the cloud still accepts it; the
+        // marker listener of this phone's own engine may see it first, which the controller knows (deletingUid) and ignores.
+        try {
+            remote.setAccountDeleted(uid, true)
+        } catch (e: RemoteException) {
+            sync.stop()   // the deletion is pending and a pending deletion means sync off, whatever step failed
+            return DeletionResult.DataFailed(e.kind, e.message.orEmpty())
+        } catch (e: CancellationException) {
+            sync.stop()
+            throw e
+        }
+        // (b) nothing of this phone may be written back
         sync.stop()
+        // (c) every document, the marker last (reads and deletes are not gated by the marker)
         try {
             remote.deleteAllUserData(uid)
         } catch (e: RemoteException) {
@@ -125,7 +141,20 @@ class AccountDeletion(
     }
 
     /**
-     * "Keep my account": ends a pending deletion of [uid] without deleting anything more. The journal marks every live
+     * What [keep] did. [CloudFailed]: the cloud could not be asked to make the account live again (offline, say): nothing was
+     * changed on this phone, the deletion is still pending, and sync must not start (its first look at the marker would find
+     * `DELETED` and sign this phone out).
+     */
+    sealed interface KeepOutcome {
+        data object Kept : KeepOutcome
+        data object NotSaved : KeepOutcome
+        data class CloudFailed(val kind: RemoteErrorKind, val message: String) : KeepOutcome
+    }
+
+    /**
+     * "Keep my account": ends a pending deletion of [uid] without deleting anything more. The account marker is set live again
+     * FIRST (the rules refuse every write while it says deleted, and the engine signs a phone out of an account whose marker
+     * says so): if the cloud cannot be reached nothing else happens. The journal marks every live
      * design and the design being edited as not yet given to the cloud ([SyncJournal.markLiveUnsent]): the account's
      * binding, the history of each design, its edit time and the deletions stay, so the designs the wipe took are uploaded
      * again by the normal rules and nothing is copied or brought back. Then the mark is cleared. In that order and only
@@ -133,10 +162,25 @@ class AccountDeletion(
      * person can choose again. Returns false when the journal write was refused. Starting sync again is the caller's job
      * (the controller). Runs on [io], cannot be cancelled halfway.
      */
-    suspend fun keep(uid: String): Boolean = withContext(NonCancellable + io) {
-        if (!journal.markLiveUnsent(uid)) return@withContext false
-        marks.clear(uid)
-        true
+    suspend fun keep(uid: String): KeepOutcome {
+        try {
+            remote.setAccountDeleted(uid, false)
+        } catch (e: RemoteException) {
+            return KeepOutcome.CloudFailed(e.kind, e.message.orEmpty())
+        }
+        return withContext(NonCancellable + io) {
+            if (!journal.markLiveUnsent(uid)) return@withContext KeepOutcome.NotSaved
+            marks.clear(uid)
+            KeepOutcome.Kept
+        }
+    }
+
+    /**
+     * Another phone deleted the account [uid] this phone was signed in to: forgets this phone's sync binding to it (the
+     * designs stay and count as unsynced). Not for the account whose deletion this phone is running.
+     */
+    suspend fun forgetRemovedAccount(uid: String) {
+        withContext(NonCancellable + io) { journal.unbindIf(uid) }
     }
 
     private fun stillSignedIn(uid: String) = (accounts.state.value as? AccountState.SignedIn)?.uid == uid

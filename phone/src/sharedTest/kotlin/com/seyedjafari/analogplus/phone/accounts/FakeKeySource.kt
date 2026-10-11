@@ -11,6 +11,9 @@ class FakeKeySource(private var stored: String? = null, private val generated: S
     /** When set, [pem] throws it (a full disk while the key is generated, a native failure). */
     var pemFailure: Exception? = null
 
+    /** When set, [installPem] throws it after the key checks (a full disk while the restored key is written). */
+    var installFailure: RuntimeException? = null
+
     /** The PEMs [isUsable] refuses (text of the right shape that is not a real key). */
     val unusable = HashSet<String>()
     var installs = 0
@@ -38,6 +41,7 @@ class FakeKeySource(private var stored: String? = null, private val generated: S
     override fun installPem(pem: String, onlyIf: (LocalKeyState) -> Boolean): InstallOutcome {
         if (!pem.contains("BEGIN CERTIFICATE") || !pem.contains("BEGIN PRIVATE KEY")) throw SigningKeyException("That is not a complete signing key.")
         if (!onlyIf(state())) return InstallOutcome.CONDITION_NOT_MET
+        installFailure?.let { throw it }
         previousKey = stored
         stored = pem
         damaged = false

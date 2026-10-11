@@ -222,7 +222,10 @@ class CloudDecisionsTest {
     // ---- after a restore --------------------------------------------------------------------------------------------
 
     @Test fun everyRestoreResultHasAFollowUp() {
-        val retry = listOf(RestoreResult.WrongPassphrase(0), RestoreResult.WrongPassphrase(5_000), RestoreResult.Throttled(7_000), RestoreResult.Failed(RemoteErrorKind.OFFLINE, "x"))
+        val retry = listOf(
+            RestoreResult.WrongPassphrase(0), RestoreResult.WrongPassphrase(5_000), RestoreResult.Throttled(7_000), RestoreResult.Failed(RemoteErrorKind.OFFLINE, "x"),
+            RestoreResult.KeyNotSaved("ENOSPC"),
+        )
         for (r in retry) assertTrue("$r", afterRestore(r) is RestoreFollowUp.Retry)
         for (r in listOf(RestoreResult.BackupChanged, RestoreResult.LocalKeyChanged)) assertEquals("$r", RestoreFollowUp.PlanAgain, afterRestore(r))
         val close = listOf(
@@ -324,7 +327,7 @@ class CloudDecisionsTest {
         val assessment = PassphraseAssessment(PassphraseStrength.WEAK, PassphraseIssue.NONE)
         val others = listOf(
             UploadResult.Ok(cloudFp), UploadResult.NotSignedIn, UploadResult.PassphraseRefused(assessment), UploadResult.KeyUnreadable("x"),
-            UploadResult.SelfTestFailed, UploadResult.Failed(RemoteErrorKind.OFFLINE, "x"), UploadResult.Unsettled, UploadResult.KeyNotMade("x"),
+            UploadResult.SelfTestFailed, UploadResult.Failed(RemoteErrorKind.OFFLINE, "x"), UploadResult.Unsettled(RemoteErrorKind.OFFLINE), UploadResult.KeyNotMade("x"),
         )
         for (r in others) assertEquals("$r", CloudDialog.None, afterUpload(r))
         assertSealedCovered(UploadResult::class.java, others + diff(CloudBackup.Absent, KeyOnPhone.None))
@@ -387,6 +390,7 @@ class CloudDecisionsTest {
     @Test fun onlyTheKeepResultsWithoutAControllerNoticeGetANote() {
         assertNull(noteAfterKeep(KeepResult.KEPT))
         assertNull(noteAfterKeep(KeepResult.NOT_SAVED))
+        assertNull(noteAfterKeep(KeepResult.NOT_REACHED))
         assertEquals("There was no unfinished deletion to end.", StringsXml.text(noteAfterKeep(KeepResult.NOT_PENDING)!!.text))
         assertEquals("Sign in first.", StringsXml.text(noteAfterKeep(KeepResult.NOT_SIGNED_IN)!!.text))
     }

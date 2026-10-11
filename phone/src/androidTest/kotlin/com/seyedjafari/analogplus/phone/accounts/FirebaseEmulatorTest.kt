@@ -112,7 +112,14 @@ class FirebaseEmulatorTest {
 
     private fun manager(sub: String, asked: IntArray = IntArray(1)) = newManager(IdTokenSource { asked[0]++; fakeToken(sub) })
 
+    /** Signs in and makes the account live (its marker): the rules refuse every write of a design, the current design or the backup without it. */
     private suspend fun signInAs(sub: String): String {
+        val uid = signInWithoutMarker(sub)
+        remote.ensureAccountMarker(uid)
+        return uid
+    }
+
+    private suspend fun signInWithoutMarker(sub: String): String {
         auth.signOut()
         val m = manager(sub)
         m.signIn()
@@ -957,5 +964,100 @@ class FirebaseEmulatorTest {
         }
         db.enableNetwork().await()
         assertEquals(1, count("users/$uid/designs"))
+    }
+
+    // ---- the account marker (the kill switch of a deleted account) ----------------------------------------------------
+
+    @Test fun theMarkerIsCreatedLiveByEnsureAndEnsureNeverOverwritesAnExistingOne() = inTest {
+        val uid = signInWithoutMarker(unique("marker"))
+        assertEquals(AccountMarker.ABSENT, remote.getAccountMarker(uid))
+        assertEquals(AccountMarker.ACTIVE, remote.ensureAccountMarker(uid))
+        assertEquals(AccountMarker.ACTIVE, remote.getAccountMarker(uid))
+        remote.setAccountDeleted(uid, true)
+        assertEquals(AccountMarker.DELETED, remote.getAccountMarker(uid))
+        assertEquals("a plain start never undoes a deletion", AccountMarker.DELETED, remote.ensureAccountMarker(uid))
+        remote.setAccountDeleted(uid, false)
+        assertEquals(AccountMarker.ACTIVE, remote.getAccountMarker(uid))
+        assertTrue(exists("users/$uid/meta/account"))
+    }
+
+    @Test fun settingTheMarkerOnAnAccountWithoutOneCreatesItFirst() = inTest {
+        val uid = signInWithoutMarker(unique("marker-first"))
+        remote.setAccountDeleted(uid, true)
+        assertEquals(AccountMarker.DELETED, remote.getAccountMarker(uid))
+    }
+
+    @Test fun everyWriteIsRefusedWithoutAMarkerAndWhileItSaysDeletedAndWorksAgainWhenKept() = inTest {
+        val uid = signInWithoutMarker(unique("marker-gate"))
+        suspend fun refused(what: String, block: suspend () -> Unit) {
+            try { block(); fail("$what must be refused") } catch (e: RemoteException) { assertEquals(what, RemoteErrorKind.PERMISSION, e.kind) }
+        }
+        val id = designId("A")
+        refused("a design without a marker") { remote.putDesign(uid, id, "A", "{}", DesignState.LIVE, DESIGN_SCHEMA) }
+        refused("a current design without a marker") { remote.putCurrent(uid, "{}", "d", "Pixel") }
+        remote.ensureAccountMarker(uid)
+        remote.putDesign(uid, id, "A", "{}", DesignState.LIVE, DESIGN_SCHEMA)
+        remote.putCurrent(uid, "{}", "d", "Pixel")
+        val backupId = newId()
+        remote.putBackup(uid, sealed(), backupId, BackupPrecondition.NoBackup)
+        remote.setAccountDeleted(uid, true)
+        refused("a design update") { remote.putDesign(uid, id, "A2", "{}", DesignState.LIVE, DESIGN_SCHEMA) }
+        refused("a new design") { remote.putDesign(uid, designId("B"), "B", "{}", DesignState.LIVE, DESIGN_SCHEMA) }
+        refused("a created design") { remote.createDesign(uid, designId("C"), "C", "{}", DESIGN_SCHEMA) }
+        refused("the current design") { remote.putCurrent(uid, "{}", "d", "Pixel") }
+        refused("a backup") { remote.putBackup(uid, sealed("other"), newId(), BackupPrecondition.Version(backupId)) }   // the precondition holds: the write is tried
+        // reading and deleting are still allowed (the wipe needs them)
+        assertEquals(1, remote.fetchDesigns(uid).size)
+        assertNotNull(remote.getCurrent(uid))
+        remote.setAccountDeleted(uid, false)
+        remote.putDesign(uid, id, "A3", "{}", DesignState.LIVE, DESIGN_SCHEMA)
+        assertEquals("A3", remote.fetchDesigns(uid).single().name)
+    }
+
+    @Test fun theWipeStillWorksWhileTheMarkerSaysDeletedAndTakesTheMarkerLast() = inTest {
+        val uid = signInAs(unique("marker-wipe"))
+        repeat(3) { remote.putDesign(uid, designId("D$it"), "D$it", "{}", DesignState.LIVE, DESIGN_SCHEMA) }
+        remote.putCurrent(uid, "{}", "d", "Pixel")
+        remote.putBackup(uid, sealed(), newId(), BackupPrecondition.NoBackup)
+        remote.setAccountDeleted(uid, true)
+        remote.deleteAllUserData(uid)
+        assertEquals(0, count("users/$uid/designs"))
+        assertEquals(0, count("users/$uid/state"))
+        assertEquals(0, count("users/$uid/backup"))
+        assertEquals(AccountMarker.ABSENT, remote.getAccountMarker(uid))
+        assertEquals(false, exists("users/$uid/meta/account"))
+    }
+
+    @Test fun theMarkerCanBeDeletedOnItsOwn() = inTest {
+        val uid = signInAs(unique("marker-delete"))
+        remote.deleteAccountMarker(uid)
+        assertEquals(AccountMarker.ABSENT, remote.getAccountMarker(uid))
+        remote.deleteAccountMarker(uid)                                 // and again: nothing there is not an error
+    }
+
+    @Test fun theMarkerOfAnotherUserNeverOpensMyGate() = inTest {
+        signInAs(unique("marker-other"))
+        val me = signInWithoutMarker(unique("marker-me"))
+        try {
+            remote.putDesign(me, designId("A"), "A", "{}", DesignState.LIVE, DESIGN_SCHEMA)
+            fail("my account has no marker, whatever the other one has")
+        } catch (e: RemoteException) {
+            assertEquals(RemoteErrorKind.PERMISSION, e.kind)
+        }
+    }
+
+    @Test fun theMarkerListenerReportsAbsentLiveDeletedAndAbsentAgainAsTheServerConfirmsThem() = inTest {
+        val uid = signInWithoutMarker(unique("marker-observe"))
+        val seen = java.util.Collections.synchronizedList(ArrayList<AccountMarker>())
+        val job = launch { remote.observeAccountMarker(uid).collect { seen += it } }
+        waitUntil("the first snapshot") { seen.isNotEmpty() }
+        remote.ensureAccountMarker(uid)
+        waitUntil("live") { seen.contains(AccountMarker.ACTIVE) }
+        remote.setAccountDeleted(uid, true)
+        waitUntil("deleted") { seen.contains(AccountMarker.DELETED) }
+        remote.deleteAccountMarker(uid)
+        waitUntil("gone again") { seen.lastOrNull() == AccountMarker.ABSENT && seen.size >= 4 }
+        job.cancel()
+        assertEquals(listOf(AccountMarker.ABSENT, AccountMarker.ACTIVE, AccountMarker.DELETED, AccountMarker.ABSENT), seen.toList())
     }
 }

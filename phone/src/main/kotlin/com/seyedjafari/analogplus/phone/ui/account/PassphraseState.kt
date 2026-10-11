@@ -83,6 +83,7 @@ fun issueText(issue: PassphraseIssue): UiText? = when (issue) {
     PassphraseIssue.SEQUENCE -> uiText(R.string.account_issue_sequence)
     PassphraseIssue.KEYBOARD_PATTERN -> uiText(R.string.account_issue_keyboard)
     PassphraseIssue.REPETITION -> uiText(R.string.account_issue_repetition)
+    PassphraseIssue.ILL_FORMED_TEXT -> uiText(R.string.account_issue_ill_formed)
 }
 
 /** The estimate and, when there is a nameable reason, the reason after it. */

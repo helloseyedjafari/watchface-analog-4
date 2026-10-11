@@ -135,4 +135,13 @@ class KeyVaultTest {
         assertEquals(s, copy(s, salt = s.salt.copyOf()))
         assertArrayEquals(s.salt, copy(s).salt)
     }
+
+    @Test fun halfOfASurrogatePairIsNeverSealed() {
+        assertThrows(IllegalArgumentException::class.java) { fast.seal("pem", "twelve chars+" + 0xDC00.toChar(), "0123456789abcdef") }
+        assertThrows(IllegalArgumentException::class.java) { fast.seal("pem", "ends with a high one " + 0xD83D.toChar(), "0123456789abcdef") }
+    }
+
+    @Test fun halfOfASurrogatePairDoesNotOpenAndDoesNotThrow() {
+        assertEquals(OpenResult.WrongPassphraseOrDamaged, fast.open(sealed(), "twelve chars+" + 0xDC00.toChar()))
+    }
 }

@@ -3,13 +3,36 @@ package com.seyedjafari.analogplus.phone.accounts
 import com.seyedjafari.analogplus.phone.accounts.vault.SealedKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 /**
  * An in-memory [RemoteStore] with a logical server clock: every write advances [serverNow] by 1 000 ms and stamps it,
  * so tests control ordering without sleeping. [failWith] makes every call throw until cleared.
+ *
+ * It follows the kill-switch rules of `firebase/firestore.rules`: a write of a design, the current design or the backup is
+ * refused with [RemoteErrorKind.PERMISSION] while the account marker says `DELETED`, and, with [strictMarkers], also while
+ * there is no marker (what the real rules do). The default is lenient about a MISSING marker so that the many tests of
+ * other things need not create one; tests of the kill switch use `strictMarkers = true`. Reads and deletes are never gated.
  */
-class FakeRemoteStore(var serverNow: Long = 1_000_000) : RemoteStore {
+class FakeRemoteStore(var serverNow: Long = 1_000_000, val strictMarkers: Boolean = false) : RemoteStore {
+    private val markers = MutableStateFlow<Map<String, AccountMarker>>(emptyMap())
+    /** Every change of a marker, in order: `uid to what it was set to` (a creation is `ACTIVE`). */
+    val markerWrites = ArrayList<Pair<String, AccountMarker>>()
+    /** Fails the next [ensureAccountMarker] or [setAccountDeleted] (and clears itself), like a cloud that does not answer. */
+    var failMarkerWith: RemoteException? = null
+
+    /** Another phone, or the console, sets the marker straight in. */
+    fun seedMarker(uid: String, marker: AccountMarker) { markers.value = if (marker == AccountMarker.ABSENT) markers.value - uid else markers.value + (uid to marker) }
+    fun markerOf(uid: String): AccountMarker = markers.value[uid] ?: AccountMarker.ABSENT
+
+    private fun requireWritable(uid: String) {
+        val m = markerOf(uid)
+        if (m == AccountMarker.DELETED || (m == AccountMarker.ABSENT && strictMarkers)) {
+            throw RemoteException(RemoteErrorKind.PERMISSION, "the rules refuse the write: the account marker is ${m.name}")
+        }
+    }
+
     private val designs = MutableStateFlow<Map<String, Map<String, RemoteDesign>>>(emptyMap())
     private val currents = MutableStateFlow<Map<String, RemoteCurrent>>(emptyMap())
     private val backups = HashMap<String, RemoteBackup>()
@@ -41,6 +64,7 @@ class FakeRemoteStore(var serverNow: Long = 1_000_000) : RemoteStore {
 
     override suspend fun putDesign(uid: String, id: String, name: String, designJson: String, state: DesignState, schema: Int): RemoteDesign {
         check()
+        requireWritable(uid)
         val d = RemoteDesign(id, name, designJson, stamp(), state, schema)
         designWrites += d
         seedDesign(uid, d)
@@ -49,6 +73,7 @@ class FakeRemoteStore(var serverNow: Long = 1_000_000) : RemoteStore {
 
     override suspend fun createDesign(uid: String, id: String, name: String, designJson: String, schema: Int): RemoteDesign? {
         check()
+        requireWritable(uid)
         if (designsOf(uid).containsKey(id)) return null
         return putDesign(uid, id, name, designJson, DesignState.LIVE, schema)
     }
@@ -58,6 +83,7 @@ class FakeRemoteStore(var serverNow: Long = 1_000_000) : RemoteStore {
 
     override suspend fun putCurrent(uid: String, designJson: String, deviceId: String, deviceLabel: String): RemoteCurrent {
         check()
+        requireWritable(uid)
         val c = RemoteCurrent(designJson, stamp(), deviceId, deviceLabel)
         currentWrites += c
         seedCurrent(uid, c)
@@ -68,6 +94,7 @@ class FakeRemoteStore(var serverNow: Long = 1_000_000) : RemoteStore {
 
     override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
         check()
+        requireWritable(uid)
         if (!holds(replacing, backups[uid])) return BackupWrite.Conflict(cloudOf(backups[uid]))
         RemoteBackup(sealed, stamp(), writeId).also { backups[uid] = it; backupWrites += it }
         return BackupWrite.Written
@@ -88,12 +115,39 @@ class FakeRemoteStore(var serverNow: Long = 1_000_000) : RemoteStore {
     private fun cloudOf(held: RemoteBackup?): CloudBackup =
         if (held == null) CloudBackup.Absent else CloudBackup.Present(held.sealed.keyFingerprint, held.writeId)
 
+    override suspend fun ensureAccountMarker(uid: String): AccountMarker {
+        check()
+        failMarkerWith?.let { failMarkerWith = null; throw it }
+        val m = markerOf(uid)
+        if (m != AccountMarker.ABSENT) return m
+        seedMarker(uid, AccountMarker.ACTIVE)
+        markerWrites += uid to AccountMarker.ACTIVE
+        return AccountMarker.ACTIVE
+    }
+
+    override suspend fun getAccountMarker(uid: String): AccountMarker { check(); return markerOf(uid) }
+
+    override suspend fun setAccountDeleted(uid: String, deleted: Boolean) {
+        check()
+        failMarkerWith?.let { failMarkerWith = null; throw it }
+        ensureAccountMarker(uid)
+        val m = if (deleted) AccountMarker.DELETED else AccountMarker.ACTIVE
+        seedMarker(uid, m)
+        markerWrites += uid to m
+    }
+
+    override fun observeAccountMarker(uid: String): Flow<AccountMarker> =
+        markers.map { check(); it[uid] ?: AccountMarker.ABSENT }.distinctUntilChanged()
+
+    override suspend fun deleteAccountMarker(uid: String) { check(); seedMarker(uid, AccountMarker.ABSENT) }
+
     override suspend fun deleteAllUserData(uid: String) {
         failDeleteAll?.let { throw it }
         check()
         designs.value = designs.value - uid
         currents.value = currents.value - uid
         backups.remove(uid)
+        seedMarker(uid, AccountMarker.ABSENT)   // last
         deletedAllFor = uid
     }
 }

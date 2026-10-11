@@ -71,7 +71,7 @@ class KeepAccountResyncTest {
         rig.engine.stop()
         marks.mark("u1")
         remote.deleteAllUserData("u1")
-        assertTrue(rig.deletion.keep("u1"))
+        assertEquals(AccountDeletion.KeepOutcome.Kept, rig.deletion.keep("u1"))
         rig.engine.start("u1"); runCurrent()
         assertEquals(listOf("Night"), rig.cloudNames())
         assertEquals(DesignState.LIVE, remote.designsOf("u1").values.single().state)
@@ -88,7 +88,7 @@ class KeepAccountResyncTest {
         marks.mark("u1")                                  // the wipe failed offline: the cloud still holds both
         rig.store.saveNamed("Night", nightEdited)         // edited while sync was off
         rig.store.deleteNamed("Day")                      // deleted while sync was off
-        assertTrue(rig.deletion.keep("u1"))
+        assertEquals(AccountDeletion.KeepOutcome.Kept, rig.deletion.keep("u1"))
         rig.engine.start("u1"); runCurrent()
         assertEquals(listOf("Night"), rig.names())        // no "Night (Phone)", Day stays deleted
         assertEquals(listOf("Night"), rig.cloudNames())
@@ -107,7 +107,7 @@ class KeepAccountResyncTest {
         val survivor = remote.designsOf("u1").getValue(designId("Night"))
         remote.deleteAllUserData("u1")                    // a wipe that got through a page or two ...
         remote.seedDesign("u1", survivor)                 // ... and left Night
-        assertTrue(rig.deletion.keep("u1"))
+        assertEquals(AccountDeletion.KeepOutcome.Kept, rig.deletion.keep("u1"))
         rig.engine.start("u1"); runCurrent()
         assertEquals(listOf("Day", "Night"), rig.cloudNames())
         assertEquals(listOf("Day", "Night"), rig.names())
@@ -129,7 +129,7 @@ class KeepAccountResyncTest {
         rig.engine.stop()
         // the deletion is cut off and kept
         marks.mark("u1")
-        assertTrue(rig.deletion.keep("u1"))
+        assertEquals(AccountDeletion.KeepOutcome.Kept, rig.deletion.keep("u1"))
         assertEquals("u1", rig.journal.boundUid())                  // the binding stays ...
         assertEquals(seen, rig.journal.currentSeenRemoteAtMs())     // ... and so does what was seen of the cloud's current design
         assertTrue(rig.journal.currentDirty())                      // the design being edited counts as not given to the cloud

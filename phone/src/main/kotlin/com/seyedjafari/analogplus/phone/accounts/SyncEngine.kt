@@ -22,7 +22,10 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.getAndUpdate
@@ -106,6 +109,8 @@ class SyncEngine(
     override val status: StateFlow<SyncStatus> = _status.asStateFlow()
     private val _offer = MutableStateFlow<CurrentOffer?>(null)
     override val currentOffer: StateFlow<CurrentOffer?> = _offer.asStateFlow()
+    private val _accountRemoved = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    override val accountRemoved: SharedFlow<String> = _accountRemoved.asSharedFlow()
 
     private val passLock = Mutex()
     private val currentLock = Mutex()
@@ -129,6 +134,15 @@ class SyncEngine(
 
     /** Listeners that died of an error that is retried. While one is down, passes that succeed do not start the backoff over. */
     private val failingListeners: MutableSet<Watch> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * True once in this session the account marker was seen to be live. From then on a missing marker means the account was
+     * wiped (by the phone that deleted it), whereas before it means a new account whose marker is still to be created.
+     */
+    @Volatile private var markerSeenActive = false
+
+    /** True after the marker was looked at because a write was refused, until the next pass: one look per pass, not one per refusal. */
+    @Volatile private var refusalChecked = false
 
     /** Two genuine states: the app is in front of the user or it is not. */
     @Volatile private var foreground = true
@@ -215,6 +229,8 @@ class SyncEngine(
         this.uid = uid
         currentKnown = false
         currentPushWanted = false
+        markerSeenActive = false
+        refusalChecked = false
         _status.value = SyncStatus.Syncing
         val channel = Channel<Unit>(Channel.CONFLATED)
         trigger = channel
@@ -286,6 +302,8 @@ class SyncEngine(
         currentSync = CurrentSync.IN_SYNC
         seenCurrentAtMs = 0
         restorePending = false
+        markerSeenActive = false
+        refusalChecked = false
         withoutPhoto.clear()
         _offer.value = null
         _status.value = SyncStatus.Off
@@ -310,6 +328,9 @@ class SyncEngine(
         bound?.await()
         if (uid != id) return
         guarded(id) {
+            refusalChecked = false
+            // before anything is written: the account marker exists (a new account gets it here) and does not say deleted
+            if (!markerAllowsPass(id)) return@guarded
             val skipDesigns = currentOnly && canSkipDesigns()
             val designProblem = if (skipDesigns) null else fullPass(id)
             pushCurrentIfNeeded(id)
@@ -441,6 +462,7 @@ class SyncEngine(
         if (uid != id) return
         bound?.await()   // the journal must be bound to this account before a list is planned against it
         if (uid != id) return
+        if (!markerSeenActive) return   // nothing is written for an account whose marker is not known to be live (the marker listener wakes a pass)
         if (signatureOf(list) == lastRemoteSignature) return
         val fetchesThen = fetchSeq.get()
         val writesThen = writeSeq.get()
@@ -490,6 +512,8 @@ class SyncEngine(
                 // or in every later pass. Offline, an expired sign-in and a used-up quota would fail all the others too:
                 // those end the pass.
                 if (e.kind != RemoteErrorKind.PERMISSION && e.kind != RemoteErrorKind.OTHER) throw e
+                // a refusal may be the kill switch of a deleted account: one look at the marker (the loop ends if it says so)
+                if (e.kind == RemoteErrorKind.PERMISSION) refusalMeansRemoval(id)
                 if (firstReason.isEmpty()) firstReason = e.message.orEmpty()
                 Outcome.UNSYNCABLE
             } catch (e: IllegalArgumentException) {
@@ -702,6 +726,7 @@ class SyncEngine(
         val written = try {
             write(json.length) { remote.putCurrent(uid, json, deviceId, deviceLabel) }
         } catch (e: Throwable) {
+            if (e is RemoteException && e.kind == RemoteErrorKind.PERMISSION) refusalMeansRemoval(uid)
             if (this.uid == uid) pendingCurrent.compareAndSet(null, p)   // unless a newer edit arrived, or the session is over
             if (e !is CancellationException) {
                 currentSync = CurrentSync.RETRY_PENDING
@@ -753,6 +778,52 @@ class SyncEngine(
         val id = uid ?: return
         val parent = session ?: return
         scope.launch(parent + io) { if (uid == id) journal.setCurrentSeenRemoteAtMs(atMs) }
+    }
+
+    // ---- the account marker (the kill switch of a deleted account) ----------------------------------------------
+
+    /**
+     * Acts on what the account marker says. [AccountMarker.DELETED], or [AccountMarker.ABSENT] after the marker was seen live
+     * (the account was wiped), means another phone deleted the account: this sync stops and [accountRemoved] tells the owner
+     * of the sign-in. Returns true then. Nothing else ever ends the sync here: not an offline error, not a refusal that the
+     * marker does not explain.
+     */
+    private fun onMarker(id: String, marker: AccountMarker): Boolean {
+        if (uid != id) return false
+        when (marker) {
+            AccountMarker.ACTIVE -> { markerSeenActive = true; return false }
+            AccountMarker.DELETED -> return accountRemoved(id)
+            AccountMarker.ABSENT -> return if (markerSeenActive) accountRemoved(id) else false
+        }
+    }
+
+    private fun accountRemoved(id: String): Boolean {
+        if (uid != id) return false
+        _accountRemoved.tryEmit(id)   // before the stop: the event is buffered whatever happens next
+        stop()
+        return true
+    }
+
+    /**
+     * The check at the start of every pass. The first time in a session it ensures the marker (creating it for a new account,
+     * which needs the network: a pass never writes before the marker exists); after the marker was seen live it only reads it
+     * (it must not create it again for an account that was wiped). A failure of the call (offline) is the pass's failure, with
+     * the usual retry. Returns whether the pass may go on.
+     */
+    private suspend fun markerAllowsPass(id: String): Boolean {
+        val marker = call { if (markerSeenActive) remote.getAccountMarker(id) else remote.ensureAccountMarker(id) }
+        return !onMarker(id, marker)
+    }
+
+    /**
+     * A write was refused (PERMISSION). The rules also refuse writes of a deleted account, so the marker is looked at, once per
+     * pass. An unreadable marker (offline) decides nothing. Returns true when the account turned out to be removed.
+     */
+    private suspend fun refusalMeansRemoval(id: String): Boolean {
+        if (refusalChecked || uid != id) return false
+        refusalChecked = true
+        val marker = try { call { remote.getAccountMarker(id) } } catch (e: RemoteException) { return false }
+        return onMarker(id, marker)
     }
 
     // ---- plumbing -----------------------------------------------------------------------------------------------
@@ -849,7 +920,7 @@ class SyncEngine(
 
     // ---- retry and listeners ------------------------------------------------------------------------------------
 
-    private enum class Watch { DESIGNS, CURRENT }
+    private enum class Watch { DESIGNS, CURRENT, MARKER }
 
     /** Asks for one more pass after the backoff; a retry already waiting is enough. Nothing is retried in the background. */
     private fun scheduleRetry() {
@@ -916,6 +987,14 @@ class SyncEngine(
                 Watch.CURRENT -> remote.observeCurrent(id).collect { rc ->
                     listenerDelivered(which)
                     guarded(id) { onRemoteCurrent(id, rc); seedCurrent(id, rc) }
+                }
+                Watch.MARKER -> remote.observeAccountMarker(id).collect { marker ->
+                    listenerDelivered(which)
+                    val wasLive = markerSeenActive
+                    if (!onMarker(id, marker)) {
+                        refusalChecked = false
+                        if (marker == AccountMarker.ACTIVE && !wasLive) wake(Wake.FULL)   // the lists that waited for it are read now
+                    }
                 }
             }
         } catch (e: CancellationException) {

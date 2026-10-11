@@ -39,7 +39,7 @@ enum class Busy {
 enum class DeletionState { NONE, PENDING }
 
 /** What [AccountsController.keepAccount] did. */
-enum class KeepResult { KEPT, NOT_PENDING, NOT_SIGNED_IN, NOT_SAVED }
+enum class KeepResult { KEPT, NOT_PENDING, NOT_SIGNED_IN, NOT_SAVED, NOT_REACHED }
 
 enum class NoticeKind { INFO, ERROR }
 
@@ -67,7 +67,7 @@ sealed interface Notice {
      * The upload did not finish and its take-back could not reach the cloud: the backup there may already use the NEW
      * passphrase. Back up again when online.
      */
-    data object BackupUnsettled : Notice { override val kind = NoticeKind.ERROR }
+    data class BackupUnsettled(val cause: RemoteErrorKind) : Notice { override val kind = NoticeKind.ERROR }
 
     /** The new backup did not prove itself and was taken back. */
     data object BackupNotVerified : Notice { override val kind = NoticeKind.ERROR }
@@ -94,6 +94,9 @@ sealed interface Notice {
 
     /** The key store refused the restored key. */
     data class KeyRejected(val detail: String) : Notice { override val kind = NoticeKind.ERROR }
+
+    /** The restored key could not be written to this phone's storage (a full disk): free space and restore again; the backup is untouched. */
+    data class KeyNotSaved(val detail: String) : Notice { override val kind = NoticeKind.ERROR }
 
     /** The restore returned but the key on this phone is not the restored one. */
     data object RestoreNotVerified : Notice { override val kind = NoticeKind.ERROR }
@@ -123,6 +126,15 @@ sealed interface Notice {
 
     /** The pending deletion was ended by keeping the account: sync runs again and uploads this phone's designs. */
     data object AccountKept : Notice { override val kind = NoticeKind.INFO }
+
+    /**
+     * Another phone deleted the account this phone was signed in to: this phone's sync stopped and it was signed out. Designs
+     * on this phone stay. The notice belongs to no account (it outlives the sign-out).
+     */
+    data object SignedOutAccountDeleted : Notice { override val kind = NoticeKind.INFO }
+
+    /** "Keep my account" could not reach the cloud to make the account live again; the deletion is still pending. */
+    data object KeepNotReached : Notice { override val kind = NoticeKind.ERROR }
 
     /** "Keep my account" could not be saved on this phone (the preferences refused the write); the deletion is still pending. */
     data object KeepNotSaved : Notice { override val kind = NoticeKind.ERROR }
@@ -210,6 +222,7 @@ class AccountsController(
         scope.launch { accounts.state.collectLatest { onAccountState(it) } }
         scope.launch { sync.status.collect { s -> _ui.update { it.copy(sync = s) } } }
         scope.launch { sync.currentOffer.collect { o -> _ui.update { it.copy(offer = o) } } }
+        scope.launch { sync.accountRemoved.collect { onAccountRemoved(it) } }
     }
 
     private fun uid(): String? = (accounts.state.value as? AccountState.SignedIn)?.uid
@@ -264,6 +277,20 @@ class AccountsController(
         }
     }
 
+    /**
+     * The sync found that another phone deleted the account [who]. This phone is signed out, its binding to the account is
+     * forgotten and the person is told. Not when this phone is the one deleting it (its own engine sees the marker it just
+     * set), nor while a deletion of it is pending here. The designs on the phone are not touched.
+     */
+    private suspend fun onAccountRemoved(who: String) {
+        if (uid() != who) return
+        if (deletingUid == who || deletion.isPending(who)) return
+        deletion.forgetRemovedAccount(who)
+        noticeUid = null   // belongs to no account: the sign-out must not take it away
+        _ui.update { it.copy(notice = Notice.SignedOutAccountDeleted) }
+        actionLock.withLock { if (uid() == who) accounts.signOut() }
+    }
+
     fun signIn() { scope.launch { accounts.signIn() } }
 
     /** Waits for a running cloud action (an upload's rollback cannot run once signed out), then signs out. */
@@ -315,8 +342,10 @@ class AccountsController(
     suspend fun refreshKeyMatch() {
         val uid = uid() ?: return
         val shown = _ui.value.backup as? BackupStatus.BackedUp ?: return
+        val seq = checkSeq
         val match = backup.keyMatch(shown.fingerprint)
-        if (uid() != uid) return
+        // a check that answered while the key was being read (a restore's own, say) is fresher than this answer
+        if (uid() != uid || checkSeq != seq) return
         fun BackupStatus.withMatch(): BackupStatus = if (this is BackupStatus.BackedUp && writeId == shown.writeId) copy(match = match) else this
         lastSettled = lastSettled.withMatch()
         _ui.update { it.copy(backup = it.backup.withMatch()) }
@@ -453,7 +482,11 @@ class AccountsController(
         val uid = uid() ?: return KeepResult.NOT_SIGNED_IN
         return action(uid, Busy.KEEPING_ACCOUNT, KeepResult.NOT_SIGNED_IN) {
             if (!deletion.isPending(uid)) return@action ActionOutcome(KeepResult.NOT_PENDING, null, refresh = false)
-            if (!deletion.keep(uid)) return@action ActionOutcome(KeepResult.NOT_SAVED, Notice.KeepNotSaved, refresh = false)
+            when (val kept = deletion.keep(uid)) {
+                AccountDeletion.KeepOutcome.Kept -> Unit
+                AccountDeletion.KeepOutcome.NotSaved -> return@action ActionOutcome(KeepResult.NOT_SAVED, Notice.KeepNotSaved, refresh = false)
+                is AccountDeletion.KeepOutcome.CloudFailed -> return@action ActionOutcome(KeepResult.NOT_REACHED, Notice.KeepNotReached, refresh = false)
+            }
             if (uid() == uid) {
                 _ui.update { it.copy(deletion = DeletionState.NONE) }
                 syncedUid = uid
@@ -560,7 +593,11 @@ class AccountsController(
                 noticeUid = if (outlives) null else uid
                 _ui.update { it.copy(notice = done.notice) }
             }
-            if (sameAccount && done.refresh) refreshBackup()
+            if (sameAccount && done.refresh) {
+                // still busy (the controls stay off), but no longer with the action's words: it has its result
+                _ui.update { it.copy(busy = Busy.CHECKING_BACKUP) }
+                refreshBackup()
+            }
             done.result
         } finally {
             _ui.update { it.copy(busy = Busy.NONE) }
@@ -574,7 +611,7 @@ class AccountsController(
         is UploadResult.BackupDiffers -> Notice.BackupChanged
         is UploadResult.KeyUnreadable -> Notice.KeyUnreadable(r.message)
         is UploadResult.KeyNotMade -> Notice.KeyNotMade(r.message)
-        UploadResult.Unsettled -> Notice.BackupUnsettled
+        is UploadResult.Unsettled -> Notice.BackupUnsettled(r.kind)
         UploadResult.SelfTestFailed -> Notice.BackupNotVerified
         is UploadResult.Failed -> Notice.BackupFailed(r.kind, r.message)
     }
@@ -590,6 +627,7 @@ class AccountsController(
         RestoreResult.BackupChanged -> Notice.BackupChanged
         RestoreResult.FingerprintMismatch -> Notice.BackupKeyMismatch
         is RestoreResult.KeyRejected -> Notice.KeyRejected(r.message)
+        is RestoreResult.KeyNotSaved -> Notice.KeyNotSaved(r.message)
         RestoreResult.InstallNotVerified -> Notice.RestoreNotVerified
         is RestoreResult.Failed -> Notice.RestoreFailed(r.kind, r.message)
     }

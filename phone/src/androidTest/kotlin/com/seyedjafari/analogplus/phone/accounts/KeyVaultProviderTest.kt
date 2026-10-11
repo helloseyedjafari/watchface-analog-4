@@ -60,6 +60,19 @@ class KeyVaultProviderTest {
         assertThrows(IllegalArgumentException::class.java) { cheap.seal(pem, "", "0123456789abcdef") }
     }
 
+    @Test fun textThatIsNotWellFormedUtf16DoesNotThrowOnThePhoneAndDoesNotOpen() {
+        // the phone's BouncyCastle throws IllegalStateException("invalid UTF-16 codepoint") for half of a surrogate pair, where the JDK
+        // quietly turns it into "?": a passphrase that does not open the backup, not a crash
+        val providerSays = runCatching {
+            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(PBEKeySpec("abc".toCharArray() + 0xDC00.toChar(), ByteArray(16), 1000, 256)).encoded.size
+        }
+        Log.i("KeyVaultProvider", "the provider on a lone low surrogate: $providerSays")
+        for (bad in listOf("twelve chars+" + 0xDC00.toChar(), "ends with a high one " + 0xD83D.toChar())) {
+            assertEquals(OpenResult.WrongPassphraseOrDamaged, KeyVault().open(SealedKey.fromFields(golden), bad))
+            assertThrows(IllegalArgumentException::class.java) { cheap.seal(pem, bad, "0123456789abcdef") }
+        }
+    }
+
     @Test fun theBackupRefusesAnEmptyPassphraseWithATypedResultBeforeAnyKeyWork() {
         val service = BackupService(FakeRemoteStore(), cheap, FakeKeySource(FakeKeySource.samplePem("A")), AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Default)
         assertTrue(runBlocking { service.upload("u1", "", BackupExpectation.None) } is UploadResult.PassphraseRefused)

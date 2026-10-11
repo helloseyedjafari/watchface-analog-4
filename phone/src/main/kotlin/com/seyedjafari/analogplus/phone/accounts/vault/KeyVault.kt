@@ -64,6 +64,7 @@ class KeyVault internal constructor(
     /** CPU-heavy (about a second at the default cost on the Pixel 8 API 33 emulator): call off the main thread. */
     fun seal(pem: String, passphrase: String, keyFingerprint: String): SealedKey {
         require(pem.isNotEmpty()) { "nothing to seal" }
+        require(!hasLoneSurrogate(passphrase)) { "the passphrase is not well-formed text (a lone surrogate)" }
         require(passphrase.isNotEmpty()) { "an empty passphrase protects nothing (and the phone's PBKDF2 provider may refuse it)" }
         val salt = ByteArray(SALT_BYTES).also(random::nextBytes)
         val iv = ByteArray(IV_BYTES).also(random::nextBytes)
@@ -100,7 +101,9 @@ class KeyVault internal constructor(
             deriveKey(passphrase, sealed.salt, sealed.iterations)
         } catch (e: GeneralSecurityException) {
             return OpenResult.WrongPassphraseOrDamaged
-        } catch (e: IllegalArgumentException) {
+        } catch (e: RuntimeException) {
+            // also what the phone's BouncyCastle throws for text that is not well-formed UTF-16 (a lone surrogate, which the
+            // JDK would quietly turn into "?"): that is a passphrase that does not open the backup, not a crash
             return OpenResult.WrongPassphraseOrDamaged
         }
         return try {

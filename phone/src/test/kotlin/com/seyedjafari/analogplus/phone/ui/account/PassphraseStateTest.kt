@@ -118,6 +118,7 @@ class PassphraseStateTest {
             listOf(
                 "It looks like a common password", "It is mostly a run of letters or numbers in order",
                 "It is mostly keys that sit next to each other on a keyboard", "It is mostly a repeated piece",
+                "It contains a character that is not valid text, so it cannot be used. Type it again",
             ),
             issues,
         )

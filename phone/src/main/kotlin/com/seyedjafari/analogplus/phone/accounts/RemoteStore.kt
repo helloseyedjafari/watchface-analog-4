@@ -57,6 +57,22 @@ sealed interface BackupRemoval {
     data class Conflict(val current: CloudBackup) : BackupRemoval
 }
 
+/**
+ * What the account marker `users/{uid}/meta/account` says (the kill switch of a deleted account, see `firebase/firestore.rules`).
+ * The rules let a phone create, change or replace designs, the current design and the backup only while the marker exists
+ * and is [ACTIVE], so an account that is being deleted refuses the writes of every other phone signed in to it.
+ */
+enum class AccountMarker {
+    /** There is no marker: a new account (or one that was wiped). Nothing can be written until a phone creates it. */
+    ABSENT,
+
+    /** The account is live. */
+    ACTIVE,
+
+    /** The account is being deleted: every write is refused (reads and deletes still work, the wipe needs them). */
+    DELETED,
+}
+
 enum class RemoteErrorKind {
     /** No network, no answer in time, or the call was cancelled. Retried; shown as offline. */
     OFFLINE,
@@ -153,7 +169,33 @@ interface RemoteStore {
     /** Deletes the backup if the cloud holds what [replacing] says; same transaction rule as [putBackup]. */
     suspend fun deleteBackup(uid: String, replacing: BackupPrecondition): BackupRemoval
 
-    /** Removes every document of the user (designs, current, backup). Used by account deletion. */
+    /**
+     * Makes sure the account marker exists and returns what it says: creates it live when it is absent (never overwrites an
+     * existing one, `DELETED` included), so a plain start of sync can never undo a deletion. A transaction in the production
+     * store, hence online only. A phone does this before its first write for the account; a pass never writes before it.
+     */
+    suspend fun ensureAccountMarker(uid: String): AccountMarker
+
+    /** Reads the marker from the server, without creating it. */
+    suspend fun getAccountMarker(uid: String): AccountMarker
+
+    /**
+     * Sets the marker: `true` when a deletion starts (from then on the rules refuse every other phone's writes), `false` for
+     * "Keep my account". Creates the marker first when it is absent. Not gated by the marker itself.
+     */
+    suspend fun setAccountDeleted(uid: String, deleted: Boolean)
+
+    /** Emits what the marker says whenever the server's copy changes (confirmed snapshots only, like the other observers). */
+    fun observeAccountMarker(uid: String): Flow<AccountMarker>
+
+    /** Deletes the marker (the last step of the wipe). */
+    suspend fun deleteAccountMarker(uid: String)
+
+    /**
+     * Removes every document of the user (designs, current, backup) and then, last, the account marker. Used by account
+     * deletion. The marker goes last so that, until the wipe is complete, the phones that are still signed in find a marker
+     * saying `DELETED` and not a missing one.
+     */
     suspend fun deleteAllUserData(uid: String)
 }
 

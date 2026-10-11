@@ -423,13 +423,14 @@
     <string name="account_msg_backup_not_verified">The new backup did not pass its check. It was taken back where the cloud could be reached; the backup line above shows what the cloud holds now.</string>
     <string name="account_msg_backup_changed">The backup in the cloud, or the key on this phone, is not what you confirmed. Nothing in the cloud was changed. Look at the backup line above, then start again.</string>
     <string name="account_msg_key_not_made">This phone has no signing key yet and a new one could not be made, so nothing was backed up. Free some storage space on the phone and try again.</string>
-    <string name="account_msg_backup_unsettled">The backup did not finish and the connection was lost before it could be taken back, so it may already use the new passphrase. Back up again when you are online to be sure.</string>
+    <string name="account_msg_backup_unsettled">The backup did not finish and could not be taken back, so it may already use the new passphrase. %1$s Back up again afterwards to be sure.</string>
     <string name="account_msg_backup_failed">The backup was not saved. %1$s</string>
     <string name="account_msg_key_restored">Signing key restored (key %1$s).</string>
     <string name="account_msg_no_backup">There is no backup for this account.</string>
     <string name="account_msg_unsupported">This version of Analog Plus cannot open this backup. If an update is available, install it. Otherwise the backup cannot be used here, and you can delete it with the I forgot the passphrase button.</string>
     <string name="account_msg_local_key_changed">This phone\'s signing key changed meanwhile. Nothing was changed. Start the restore again.</string>
     <string name="account_msg_key_mismatch">The backup opened but holds a different key than it should, so it was not used. You can delete this backup with the I forgot the passphrase button and make a new one.</string>
+    <string name="account_msg_key_not_saved">The signing key opened, but there is not enough storage space on this phone to save it. Free some space and restore again. The backup is untouched and the key on this phone is unchanged.</string>
     <string name="account_msg_key_rejected">This phone refused the key from the backup, so it was not used. The key on this phone is unchanged. If this keeps happening, the backup cannot be restored here and you can delete it with the I forgot the passphrase button.</string>
     <string name="account_msg_restore_not_verified">The restore did not leave the backed-up key on this phone. Look at the backup line above: it says whether this phone has the same key as the backup. Then restore again.</string>
     <string name="account_msg_restore_failed">The restore failed. %1$s</string>
@@ -444,6 +445,8 @@
     <string name="account_msg_delete_account_changed">The cloud data of the account you were deleting is gone, but that account still exists. Sign in to it again to finish deleting it or to keep it.</string>
     <string name="account_msg_delete_account_failed">Your cloud data is deleted but your account could not be deleted. Choose Finish deleting to try again, or keep your account.</string>
     <string name="account_msg_account_kept">Your account was kept. Sync is on again and the designs on this phone are uploaded again.</string>
+    <string name="account_msg_keep_not_reached">Your account could not be kept because the cloud could not be reached. Check your connection and try again; the deletion is still unfinished.</string>
+    <string name="account_msg_signed_out_account_deleted">This account was deleted from another phone, so you were signed out here. Your designs on this phone are untouched.</string>
     <string name="account_msg_keep_not_saved">Your choice could not be saved on this phone, so the deletion is still unfinished. Try again.</string>
     <string name="account_msg_status_stale">The backup line above was out of date, so nothing was changed. It has been read again: look at it, then choose again.</string>
     <string name="account_msg_nothing_pending">There was no unfinished deletion to end.</string>
@@ -462,6 +465,7 @@
     <string name="account_strength_with_issue">%1$s. %2$s</string>
     <string name="account_issue_common">It looks like a common password</string>
     <string name="account_issue_sequence">It is mostly a run of letters or numbers in order</string>
+    <string name="account_issue_ill_formed">It contains a character that is not valid text, so it cannot be used. Type it again</string>
     <string name="account_issue_keyboard">It is mostly keys that sit next to each other on a keyboard</string>
     <string name="account_issue_repetition">It is mostly a repeated piece</string>
 

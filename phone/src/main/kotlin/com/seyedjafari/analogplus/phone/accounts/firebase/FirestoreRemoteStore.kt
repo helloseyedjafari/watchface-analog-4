@@ -8,6 +8,7 @@ import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.Source
 import com.google.firebase.firestore.Transaction
+import com.seyedjafari.analogplus.phone.accounts.AccountMarker
 import com.seyedjafari.analogplus.phone.accounts.BackupPrecondition
 import com.seyedjafari.analogplus.phone.accounts.BackupRemoval
 import com.seyedjafari.analogplus.phone.accounts.BackupWrite
@@ -38,7 +39,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * [RemoteStore] on Cloud Firestore: `users/{uid}/designs/{id}`, `users/{uid}/state/current`, `users/{uid}/backup/signingKey`.
+ * [RemoteStore] on Cloud Firestore: `users/{uid}/designs/{id}`, `users/{uid}/state/current`, `users/{uid}/backup/signingKey` and
+ * the account marker `users/{uid}/meta/account` (the kill switch of a deleted account).
  * Field names and types match `firebase/firestore.rules`, which is tested against the emulator (rules tests and
  * `FirebaseEmulatorTest`). Nothing here has run against a real Firebase project (none exists yet).
  *
@@ -120,6 +122,57 @@ class FirestoreRemoteStore(
     private fun designs(uid: String) = user(uid).collection("designs")
     private fun currentDoc(uid: String) = user(uid).collection("state").document("current")
     private fun backupDoc(uid: String) = user(uid).collection("backup").document("signingKey")
+    private fun markerDoc(uid: String) = user(uid).collection("meta").document("account")
+
+    private fun toMarker(d: DocumentSnapshot): AccountMarker = when {
+        !d.exists() -> AccountMarker.ABSENT
+        d.getBoolean("deleted") == false -> AccountMarker.ACTIVE
+        else -> AccountMarker.DELETED   // `true`, or a marker we cannot read as live: nothing is written on a doubt
+    }
+
+    /**
+     * One transaction: read the marker and create it live only if it is absent (never overwrites an existing one). Online
+     * only, bounded like a design write. See `firebase/firestore.rules` for what the marker gates.
+     */
+    override suspend fun ensureAccountMarker(uid: String): AccountMarker = mapErrors {
+        val ref = markerDoc(uid)
+        val data = mapOf("deleted" to false, "updatedAt" to FieldValue.serverTimestamp(), "schema" to MARKER_SCHEMA)
+        bounded(writeTimeout(0)) {
+            db.runTransaction(Transaction.Function<AccountMarker> { tx ->
+                val held = tx.get(ref)
+                if (held.exists()) toMarker(held) else { tx.set(ref, data); AccountMarker.ACTIVE }
+            }).await()
+        }
+    }
+
+    override suspend fun getAccountMarker(uid: String): AccountMarker = mapErrors {
+        toMarker(bounded(readTimeoutMs) { markerDoc(uid).get(Source.SERVER).await() })
+    }
+
+    /** Creates the marker (live) when it is absent, then writes `deleted`; the rules do not gate the marker by itself. */
+    override suspend fun setAccountDeleted(uid: String, deleted: Boolean) = mapErrors {
+        ensureAccountMarker(uid)
+        val data = mapOf("deleted" to deleted, "updatedAt" to FieldValue.serverTimestamp(), "schema" to MARKER_SCHEMA)
+        bounded(writeTimeout(0)) { markerDoc(uid).set(data).await() }
+        Unit
+    }
+
+    /** Same rule as [observeDesigns]: only what the server confirmed. */
+    override fun observeAccountMarker(uid: String): Flow<AccountMarker> = callbackFlow {
+        val registration = markerDoc(uid).addSnapshotListener(LISTENER_THREAD, MetadataChanges.INCLUDE) { snapshot, error ->
+            when {
+                error != null -> close(wrap(error))
+                snapshot != null && confirmed(snapshot.metadata.isFromCache, snapshot.metadata.hasPendingWrites()) ->
+                    trySend(toMarker(snapshot))
+            }
+        }
+        awaitClose { registration.remove() }
+    }.conflate().distinctUntilChanged()
+
+    override suspend fun deleteAccountMarker(uid: String) = mapErrors {
+        bounded(wipeCommitTimeoutMs) { markerDoc(uid).delete().await() }
+        Unit
+    }
 
     /**
      * Reads every design from the server, [fetchPageSize] at a time in key order (each page after the last document of the
@@ -325,6 +378,9 @@ class FirestoreRemoteStore(
                 bounded(wipeCommitTimeoutMs) { batch.commit().await() }
             }
         }
+        // last: until here the other phones find a marker that says DELETED, not a missing one
+        bounded(wipeCommitTimeoutMs) { markerDoc(uid).delete().await() }
+        Unit
     }
 
     // ---- mapping ------------------------------------------------------------------------------------------------
@@ -426,6 +482,7 @@ class FirestoreRemoteStore(
         const val MAX_DESIGN_BYTES = 950_000L
 
         private const val WRITE_MS_PER_KB = 20L
+        private const val MARKER_SCHEMA = 1L
 
         /** One thread, so that the snapshots of a listener reach the flow in order; a daemon, so it never keeps the process alive. */
         private val LISTENER_THREAD: Executor = Executors.newSingleThreadExecutor { r -> Thread(r, "firestore-listener").apply { isDaemon = true } }

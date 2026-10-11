@@ -200,7 +200,7 @@ fun waitAfter(result: RestoreResult): Long? = when (result) {
     is RestoreResult.Throttled -> result.waitMs
     is RestoreResult.Restored, RestoreResult.NotSignedIn, RestoreResult.NoBackup, is RestoreResult.Unsupported,
     RestoreResult.LocalKeyChanged, RestoreResult.BackupChanged, RestoreResult.FingerprintMismatch,
-    is RestoreResult.KeyRejected, RestoreResult.InstallNotVerified, is RestoreResult.Failed -> null
+    is RestoreResult.KeyRejected, is RestoreResult.KeyNotSaved, RestoreResult.InstallNotVerified, is RestoreResult.Failed -> null
 }
 
 fun afterRestore(result: RestoreResult): RestoreFollowUp = when (restoreNext(result)) {
@@ -255,7 +255,7 @@ fun discardNext(result: DiscardResult): DiscardNext = when (result) {
 fun afterUpload(result: UploadResult): CloudDialog = when (result) {
     is UploadResult.BackupDiffers -> reAsk(result)
     is UploadResult.Ok, UploadResult.NotSignedIn, is UploadResult.PassphraseRefused, is UploadResult.KeyUnreadable,
-    is UploadResult.KeyNotMade, UploadResult.Unsettled, UploadResult.SelfTestFailed, is UploadResult.Failed -> CloudDialog.None
+    is UploadResult.KeyNotMade, is UploadResult.Unsettled, UploadResult.SelfTestFailed, is UploadResult.Failed -> CloudDialog.None
 }
 
 /** The new confirmation after [UploadResult.BackupDiffers]; the passphrase was cleared on submit, so it is asked for again. */
@@ -300,9 +300,9 @@ fun noteAfterDeletion(result: DeletionResult): AccountMessage? = when (result) {
     is DeletionResult.ReauthFailed, is DeletionResult.DataFailed, is DeletionResult.AccountFailed -> null
 }
 
-/** Same for "Keep my account": the controller shows a notice for KEPT and NOT_SAVED only. */
+/** Same for "Keep my account": the controller shows a notice for KEPT, NOT_SAVED and NOT_REACHED only. */
 fun noteAfterKeep(result: KeepResult): AccountMessage? = when (result) {
-    KeepResult.KEPT, KeepResult.NOT_SAVED -> null
+    KeepResult.KEPT, KeepResult.NOT_SAVED, KeepResult.NOT_REACHED -> null
     KeepResult.NOT_PENDING, KeepResult.NOT_SIGNED_IN -> keepMessage(result)
 }
 
