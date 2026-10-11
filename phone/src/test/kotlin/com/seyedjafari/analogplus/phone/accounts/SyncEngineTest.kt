@@ -1573,7 +1573,6 @@ class SyncEngineTest {
 
     // ---- final review fix round F1: the current design and the cloud's copy -----------------------------------------------
 
-    /** A-1: the first pass must not write the editor's design over a newer one from another phone before the question. */
     /**
      * The store reads the design list in pages, each with its own bound; the engine's bound for the whole fetch is only a
      * safety net. A fixed 20 s for all the designs would make every pass of a user with many photo designs on a slow link
@@ -1595,6 +1594,7 @@ class SyncEngineTest {
         assertTrue(a.engine.status.value is SyncStatus.Idle)
     }
 
+    /** A-1: the first pass must not write the editor's design over a newer one from another phone before the question. */
     @Test fun anEditDuringTheFirstFetchIsNotPushedOverANewerDesignFromAnotherPhone() = runTest {
         val remote = FakeRemoteStore()
         val flaky = FlakyRemote(remote)
@@ -1846,6 +1846,129 @@ class SyncEngineTest {
         assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
         a.engine.syncNow()
         assertEquals("the same again, not a different failure", SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
+    }
+
+
+    // ---- stage 3 fix round P: the current-only pass, the status, the offer and the retry ----------------------------------
+
+    /** A3-1: a listener reconcile that did not finish must not let a current-only pass say "synced" over its unfinished work. */
+    @Test fun aKeptBothCopyThatCouldNotBePushedIsPushedByTheNextPassEvenWhenOnlyTheCurrentDesignChanged() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        var firstPass = true
+        var copyFailsOnce = true
+        flaky.refuse = { name ->
+            when {
+                name == "Night" && firstPass -> RemoteException(RemoteErrorKind.PERMISSION, "denied")
+                name == "Night (Phone a)" && copyFailsOnce -> { copyFailsOnce = false; RemoteException(RemoteErrorKind.OFFLINE, "offline") }
+                else -> null
+            }
+        }
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.store.saveNamed("Night", night.copy(accent = "#FF111111"))      // refused at first: it stays unsent
+        a.engine.start("u1"); runCurrent()
+        firstPass = false
+        // another phone's different "Night" arrives through the listener: this phone's version becomes the copy "Night (Phone a)"
+        remote.seedDesign("u1", RemoteDesign(designId("Night"), "Night", DesignJson.toJson(night.copy(accent = "#FF222222")), 9_000_000, DesignState.LIVE, 1)); runCurrent()
+        assertTrue("the copy is on the phone and not yet in the cloud", "Night (Phone a)" in a.names())
+        assertTrue(remote.designsOf("u1").values.none { it.name == "Night (Phone a)" })
+        a.current = day
+        a.engine.onCurrentSaved(day, ChangeOrigin.USER)                    // only the design being edited changes now
+        advanceTimeBy(3_000); runCurrent()
+        assertTrue("the copy reached the cloud", remote.designsOf("u1").values.any { it.name == "Night (Phone a)" })
+        assertEquals(1, remote.currentWrites.size)
+    }
+
+    /** A3-2: leaving the app right after an edit: the flush comes after the stop, and must not wait for the debounce or read the designs. */
+    @Test fun anEditSavedByTheFlushAfterTheAppWasLeftIsPushedAtOnceWithoutReadingTheDesigns() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky, currentDebounceMs = 10_000)
+        a.store.saveNamed("Night", night)
+        a.engine.start("u1"); runCurrent()
+        val fetches = flaky.fetchTimes.size
+        a.engine.setForeground(false)                         // onStop, as the app does it: first the stop ...
+        a.current = day
+        a.engine.onCurrentSaved(day, ChangeOrigin.USER)       // ... then the flush saves the last edit
+        advanceTimeBy(2_000); runCurrent()
+        assertEquals(listOf(day), remote.currentWrites.map { DesignJson.fromJson(it.designJson) })
+        assertEquals("no read of the saved designs for it", fetches, flaky.fetchTimes.size)
+    }
+
+    /** A3-3: what the designs' listener found while the upload of the current design was running is what the status ends with. */
+    @Test fun aProblemTheListenerFindsWhileTheCurrentDesignIsBeingUploadedIsNotOverwrittenWithSynced() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.engine.start("u1"); runCurrent()
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+        val gate = CompletableDeferred<Unit>()
+        flaky.currentPutGate = gate
+        a.current = day
+        a.engine.onCurrentSaved(day, ChangeOrigin.USER)
+        advanceTimeBy(1_500); runCurrent()                    // the upload is under way
+        remote.seedDesign("u1", RemoteDesign("00000000000000000000000000000001", "Bad", "{not json", 1_500_000, DesignState.LIVE, 1)); runCurrent()
+        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
+        gate.complete(Unit); runCurrent()
+        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
+    }
+
+    /** A3-6: this phone's own upload landed after the offered design: "use theirs" must then put the chosen design in the cloud. */
+    @Test fun useTheirsAfterThisPhonesOwnNewerUploadPutsTheChosenDesignInTheCloud() = runTest {
+        val remote = FakeRemoteStore(serverNow = 3_000_000)
+        val flaky = FlakyRemote(remote)
+        val b = phone(remote, "b", engineRemote = flaky)
+        b.engine.start("u1"); runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        flaky.currentPutGate = gate
+        val mine = day.copy(accent = "#FF999999")
+        b.current = mine
+        b.engine.onCurrentSaved(mine, ChangeOrigin.USER)
+        advanceTimeBy(1_500); runCurrent()                    // b's upload is in flight
+        remote.seedCurrent("u1", RemoteCurrent(DesignJson.toJson(night), 2_000_000, "other", "Pixel 8")); runCurrent()
+        assertNotNull("the question opens about the other phone's design", b.engine.currentOffer.value)
+        gate.complete(Unit); runCurrent()                     // b's write lands later (3 001 000 > 2 000 000)
+        b.engine.resolveOffer(OfferChoice.USE_REMOTE)
+        b.current = night
+        b.engine.onCurrentSaved(night, ChangeOrigin.USER)     // the editor saves the design that was just applied
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals("the cloud ends with the design the person chose", night, DesignJson.fromJson(remote.getCurrent("u1")!!.designJson))
+    }
+
+    /** A failed full pass retries, whatever the failure was, except a refusal. */
+    @Test fun aFullPassThatFailedForAnUnknownReasonIsRetriedWithTheBackoff() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky)
+        flaky.snapshotDelayMs = 100_000_000                   // the designs listener says nothing: only the pass can recover
+        flaky.throwOnFetch = RemoteException(RemoteErrorKind.OTHER, "boom")
+        a.store.saveNamed("Night", night)
+        a.engine.start("u1"); runCurrent()
+        assertEquals(SyncStatus.Error(SyncProblem.FAILED, detail = "boom"), a.engine.status.value)
+        flaky.throwOnFetch = null
+        advanceTimeBy(40_000); runCurrent()
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+        assertEquals(1, remote.designsOf("u1").size)
+        // an exception that is not one of the cloud's is retried too
+        flaky.throwOnFetch = IllegalStateException("odd")
+        a.engine.syncNow()
+        assertEquals(SyncStatus.Error(SyncProblem.FAILED, detail = "odd"), a.engine.status.value)
+        flaky.throwOnFetch = null
+        advanceTimeBy(40_000); runCurrent()
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+    }
+
+    @Test fun aRefusedFullPassIsNotRetried() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky)
+        flaky.snapshotDelayMs = 100_000_000
+        flaky.throwOnFetch = RemoteException(RemoteErrorKind.PERMISSION, "denied")
+        a.engine.start("u1"); runCurrent()
+        val tries = flaky.fetchTimes.size
+        advanceTimeBy(600_000); runCurrent()
+        assertEquals(tries, flaky.fetchTimes.size)
+        assertEquals(SyncStatus.Error(SyncProblem.REFUSED), a.engine.status.value)
     }
 
 }

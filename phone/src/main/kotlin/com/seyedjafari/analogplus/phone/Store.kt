@@ -188,7 +188,10 @@ class Store(
                 // write beside, then rename, so a crash never leaves a half photo
                 val tmp = File(photoFile.parentFile, photoFile.name + ".tmp")
                 tmp.writeBytes(bytes)
-                if (!tmp.renameTo(photoFile)) { photoFile.delete(); tmp.renameTo(photoFile) }
+                if (!tmp.renameTo(photoFile)) {
+                    photoFile.delete()
+                    if (!tmp.renameTo(photoFile)) { tmp.delete(); throw java.io.IOException("The photo could not be moved into place") }
+                }
             }
             lastPhotoWritten = bytes
             true

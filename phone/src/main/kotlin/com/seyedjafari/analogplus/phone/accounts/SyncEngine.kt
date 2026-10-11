@@ -310,15 +310,20 @@ class SyncEngine(
         bound?.await()
         if (uid != id) return
         guarded(id) {
-            val designProblem = if (currentOnly && canSkipDesigns()) lastDesignProblem else fullPass(id)
+            val skipDesigns = currentOnly && canSkipDesigns()
+            val designProblem = if (skipDesigns) null else fullPass(id)
             pushCurrentIfNeeded(id)
-            finish(id, designProblem)
+            // read only now: the upload can take seconds, and the designs' listener may have found (or cleared) a problem meanwhile
+            finish(id, if (skipDesigns) lastDesignProblem else designProblem)
         }
     }
 
-    /** The designs listener is up, the last pass over them got through and none of them is waiting to go up. */
+    /**
+     * The designs listener is up (or the app is in the background, where no listener runs and nothing is applied; coming back
+     * runs a full pass), the last pass over them got through and none of them is waiting to go up.
+     */
     private suspend fun canSkipDesigns(): Boolean =
-        designsLive && designsPassOk && failingListeners.isEmpty() &&
+        (designsLive || !foreground) && designsPassOk && failingListeners.isEmpty() &&
             withContext(io) { journal.entries().values.none { it.mark == SyncMark.DIRTY } }
 
     override fun setForeground(foreground: Boolean) {
@@ -393,7 +398,8 @@ class SyncEngine(
         pendingCurrent.set(PendingCurrent(design, journal.currentStamp()))
         currentSync = CurrentSync.IN_SYNC   // a new design: whatever went wrong with the old one, ask again
         editMade()
-        wake(Wake.CURRENT_EDIT)
+        // The flush of onStop saves after the app was told it is in the background: nothing is to be waited for then.
+        wake(if (foreground) Wake.CURRENT_EDIT else Wake.CURRENT_NOW)
     }
 
     /** The user changed something: whatever the network did before, try at once (after the debounce) and start the backoff over. */
@@ -409,11 +415,15 @@ class SyncEngine(
 
     override fun resolveOffer(choice: OfferChoice) {
         val offer = _offer.getAndUpdate { null } ?: return
+        // this phone's own upload landed after the offered design (it was in flight when the offer opened): the cloud then
+        // holds the design the person is about to give up
+        val ownWriteIsNewer = seenCurrentAtMs > offer.remoteUpdatedAtMs
         noteCurrentSeen(offer.remoteUpdatedAtMs)
         when (choice) {
             OfferChoice.USE_REMOTE -> {
                 pendingCurrent.set(null)   // an edit that waited for this answer is given up with the design it was made on
-                lastPushedCurrent = offer.design
+                // the applied design's autosave pushes it when the cloud holds something else (this phone's newer upload)
+                lastPushedCurrent = if (ownWriteIsNewer) null else offer.design
                 applier.apply(offer.design)
             }
             OfferChoice.KEEP_MINE -> {
@@ -457,6 +467,7 @@ class SyncEngine(
      * synced, otherwise null.
      */
     private suspend fun reconcile(id: String, remoteList: List<RemoteDesign>): Problem? {
+        designsPassOk = false   // true again only when this pass gets to its end: a failed one (the copy of a kept-both, say) is not "done"
         val (local, planned) = withContext(io) {
             val entries = localEntries()
             entries to planSync(
@@ -804,10 +815,13 @@ class SyncEngine(
             throw e
         } catch (e: RemoteException) {
             setStatus(id, statusOf(e))
-            // offline, an expired sign-in and a used-up quota all pass by themselves: retry with the backoff
-            if (e.kind == RemoteErrorKind.OFFLINE || e.kind == RemoteErrorKind.AUTH || e.kind == RemoteErrorKind.QUOTA) scheduleRetry()
+            // Everything but a refusal is tried again with the backoff: offline, an expired sign-in and a used-up quota pass by
+            // themselves, and an unknown failure of the cloud may too (it is bounded by the cap of the backoff). A refusal does
+            // not fix itself: the next edit, sign-in or "Sync now" tries again.
+            if (e.kind != RemoteErrorKind.PERMISSION) scheduleRetry()
         } catch (e: Exception) {
             setStatus(id, SyncStatus.Error(SyncProblem.FAILED, detail = e.message ?: e.javaClass.simpleName))
+            scheduleRetry()
         }
     }
 

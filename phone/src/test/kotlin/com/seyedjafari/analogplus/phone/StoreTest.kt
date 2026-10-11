@@ -215,6 +215,15 @@ class StoreTest {
         assertArrayEquals(photo, file.readBytes())
     }
 
+    @Test fun aPhotoThatCouldNotBeMovedIntoPlaceMakesTheSaveNotDurable() {
+        val file = File(tmp.root, "background.jpg")
+        File(file, "blocker").apply { parentFile.mkdirs(); writeText("x") }   // a folder in the way: neither rename nor delete can work
+        val s = store(file = file)
+        val d = DesignSettings(background = BackgroundDesign(BackgroundKind.PHOTO, photoJpeg = ByteArray(50) { 1 }))
+        assertFalse(s.saveCurrent(d).durable)
+        assertFalse("no half-written file is left beside it", File(tmp.root, "background.jpg.tmp").exists())
+    }
+
     @Test fun sentKeyFingerprintIsNullUntilSavedAndSurvivesANewStore() {
         val kv = FakeKeyValueStore()
         assertNull(store(kv).lastSentKeyFingerprint())
