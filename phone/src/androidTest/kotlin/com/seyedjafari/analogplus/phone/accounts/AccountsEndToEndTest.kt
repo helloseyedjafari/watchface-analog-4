@@ -484,7 +484,7 @@ class AccountsEndToEndTest {
         }
         click(AccountTags.DELETE)
         click(AccountTags.DELETE_CONFIRM)
-        await("the controller to be cut off after the mark") { cut.get() }
+        await("the pending-deletion mark to be written (the controller is cut off right after it)") { cut.get() }
         await("the cut-off controller to have ended") { phone.ui.busy == Busy.NONE }
         phone.syncKv.afterWrite = {}
         assertTrue("the deletion must be remembered", phone.syncKv.getString("deletion_pending_v1")?.contains(uid) == true)
