@@ -456,13 +456,13 @@ class SyncEngine(
                 if (nameTooLong(local.name)) return Outcome.UNSYNCABLE
                 val mapped = withContext(io) { designToRemoteJson(design, photos) }
                 val json = mapped.remoteJson ?: return Outcome.UNSYNCABLE
-                val written = designWrite(json.length) { remote.putDesign(uid, local.id, local.name, json, DesignState.LIVE, DESIGN_SCHEMA) }
+                val written = designWrite(uid, json.length) { remote.putDesign(uid, local.id, local.name, json, DesignState.LIVE, DESIGN_SCHEMA) }
                 notePhoto(local.id, mapped)
                 withContext(io) { journal.markPushed(local.id, local.modifiedAtMs, written.updatedAtMs) }
             }
             is SyncAction.PushTombstone -> {
                 val e = local ?: return Outcome.UNSYNCABLE
-                val written = designWrite(0) { remote.putDesign(uid, e.id, e.name, "", DesignState.TOMBSTONE, DESIGN_SCHEMA) }
+                val written = designWrite(uid, 0) { remote.putDesign(uid, e.id, e.name, "", DesignState.TOMBSTONE, DESIGN_SCHEMA) }
                 withoutPhoto.remove(e.id)
                 withContext(io) { journal.markPushed(e.id, e.modifiedAtMs, written.updatedAtMs) }
             }
@@ -509,7 +509,7 @@ class SyncEngine(
                 val mapped = withContext(io) { designToRemoteJson(mine, photos) }
                 val json = mapped.remoteJson ?: return Outcome.UNSYNCABLE
                 val copyId = designId(action.copyName)
-                val written = designWrite(json.length) { remote.putDesign(uid, copyId, action.copyName, json, DesignState.LIVE, DESIGN_SCHEMA) }
+                val written = designWrite(uid, json.length) { remote.putDesign(uid, copyId, action.copyName, json, DesignState.LIVE, DESIGN_SCHEMA) }
                 notePhoto(copyId, mapped)
                 withContext(io) { journal.markCopyPushed(copyId, action.copyName, written.updatedAtMs) }
             }
@@ -586,7 +586,7 @@ class SyncEngine(
             }
             throw e
         }
-        noteProgress()
+        noteProgress(uid)
         currentSync = CurrentSync.IN_SYNC
         lastPushedCurrent = d
         withContext(NonCancellable + io) { journal.markCurrentPushed(p.stamp) }   // only for the save that went up
@@ -671,10 +671,10 @@ class SyncEngine(
      * A write of a saved design. Counted in [writeSeq] only when it succeeded: that is what makes the cloud send a fresher
      * list (a failed write changes nothing, and the current design is not in that list at all).
      */
-    private suspend fun designWrite(payloadChars: Int, block: suspend () -> RemoteDesign): RemoteDesign {
+    private suspend fun designWrite(id: String, payloadChars: Int, block: suspend () -> RemoteDesign): RemoteDesign {
         val written = write(payloadChars, block)
         writeSeq.incrementAndGet()
-        noteProgress()
+        noteProgress(id)
         return written
     }
 
@@ -682,10 +682,9 @@ class SyncEngine(
      * A write of a quiet pass (see [QuietPass]) went through: data is moving after all, so from here the pass shows
      * "syncing" until it has its result, instead of the old error for the whole upload.
      */
-    private suspend fun noteProgress() {
+    private suspend fun noteProgress(id: String) {
         if (currentCoroutineContext()[QuietPass] == null) return
-        val id = uid ?: return
-        setStatus(id, SyncStatus.Syncing)
+        setStatus(id, SyncStatus.Syncing)   // the pass's own account: a pass that outlived a sign-out does not bring the status back
     }
 
     /** A cloud call; no answer within [timeoutMs] is [RemoteErrorKind.OFFLINE] (the retry then asks again). */

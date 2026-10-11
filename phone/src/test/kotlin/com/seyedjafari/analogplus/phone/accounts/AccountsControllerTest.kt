@@ -992,15 +992,31 @@ class AccountsControllerTest {
         assertEquals(SyncStatus.Syncing, c.ui.value.sync)
     }
 
-    @Test fun aFinishTapThatLandsAfterTheAccountChangedDoesNotDeleteTheNewAccount() = runTest(UnconfinedTestDispatcher()) {
+    @Test fun aFinishTapQueuedBehindAnotherActionDoesNothingIfTheDeletionWasKeptMeanwhile() = runTest(UnconfinedTestDispatcher()) {
         marks.mark("u1")
         val c = controller()
         c.signIn()                                                // u1, pending
         val gate = CompletableDeferred<Unit>().also { remote.putGate = it }
         val busy = launch { c.upload(passphrase, BackupExpectation.None) }    // holds the action lock
         var result: DeletionResult? = null
-        val tap = launch { result = c.finishDeletion() }          // the button was tapped for u1 ...
-        accounts.force(AccountState.SignedIn("u2", null))         // ... then the account changed
+        val tap = launch { result = c.finishDeletion() }          // "Finish deleting" was tapped while the deletion was pending ...
+        marks.clear("u1")                                         // ... and then it ended (kept on another path)
+        gate.complete(Unit)
+        busy.join(); tap.join()
+        assertEquals(DeletionResult.NotPending, result)           // same account, no longer pending: the new check, not the account check
+        assertEquals(0, accounts.reauthCalls)
+        assertNull(c.ui.value.notice?.takeIf { it is Notice.AccountDeleted })
+    }
+
+    @Test fun aFinishTapThatLandsAfterTheAccountChangedDoesNotDeleteTheNewAccount() = runTest(UnconfinedTestDispatcher()) {
+        marks.mark("u1")
+        val c = controller()
+        c.signIn()
+        val gate = CompletableDeferred<Unit>().also { remote.putGate = it }
+        val busy = launch { c.upload(passphrase, BackupExpectation.None) }
+        var result: DeletionResult? = null
+        val tap = launch { result = c.finishDeletion() }
+        accounts.force(AccountState.SignedIn("u2", null))
         gate.complete(Unit)
         busy.join(); tap.join()
         assertEquals(DeletionResult.NotSignedIn, result)

@@ -252,7 +252,7 @@ class AccountDeletionTest {
         assertTrue(m.mark("u1"))                          // an existing mark is written again, so the disk catches up
     }
 
-    @Test fun aMarkThatIsAlreadyThereIsWrittenAgainSoTheDiskCatchesUp() {
+    @Test fun aMarkThatIsAlreadySavedIsNotWrittenAgain() {
         class CountingKv(val inner: MemoryKeyValueStore = MemoryKeyValueStore()) : com.seyedjafari.analogplus.phone.KeyValueStore by inner {
             var checkedWrites = 0
             override fun putStringChecked(key: String, value: String): Boolean { checkedWrites++; return inner.putStringChecked(key, value) }
@@ -261,7 +261,44 @@ class AccountDeletionTest {
         val m = DeletionMarks(kv)
         assertTrue(m.mark("u1"))
         assertTrue(m.mark("u1"))
-        assertEquals(2, kv.checkedWrites)
+        assertEquals(1, kv.checkedWrites)
+    }
+
+    @Test fun aFullDiskDoesNotTurnFinishDeletingIntoNothingWasDeleted() {
+        val kv = DiskFullKv().also { it.full = false }
+        val d = AccountDeletion(accounts, remote, sync, journal, DeletionMarks(kv), kotlinx.coroutines.Dispatchers.Unconfined)
+        remote.failDeleteAll = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        assertTrue(runBlocking { d.delete("u1") } is DeletionResult.DataFailed)      // the mark is saved, the wipe failed
+        assertTrue(d.isPending("u1"))
+        kv.full = true                                                              // and now the disk is full
+        remote.failDeleteAll = null
+        assertEquals(DeletionResult.Done, runBlocking { d.finish("u1") })           // the saved mark is enough: no second write
+        assertTrue(remote.designsOf("u1").isEmpty())
+    }
+
+    @Test fun aRefusedJournalWriteOfKeepLeavesTheJournalAsItWasInMemoryToo() {
+        journal.reconcileWithStore(listOf("Night"))
+        journal.markApplied(designId("Night"), "Night", EntryState.LIVE, 5)
+        marks.mark("u1")
+        val before = journal.entries()
+        val stamp = journal.currentStamp()
+        val full = DiskFullKv(journalMemory)                 // takes the value in memory, then refuses it, like SharedPreferences
+        val d = AccountDeletion(accounts, remote, sync, SyncJournal(full), marks, kotlinx.coroutines.Dispatchers.Unconfined)
+        assertFalse(runBlocking { d.keep("u1") })
+        assertEquals(before, journal.entries())              // nothing was left half done
+        assertEquals(stamp, journal.currentStamp())
+        assertTrue(marks.isPending("u1"))
+    }
+
+    @Test fun unbindIfResetsOnlyAJournalBoundToThatAccount() {
+        journal.reconcileWithStore(listOf("Night"))
+        journal.markApplied(designId("Night"), "Night", EntryState.LIVE, 5)
+        assertFalse(journal.unbindIf("u2"))
+        assertEquals("u1", journal.boundUid())
+        assertEquals(5L, journal.entries().getValue(designId("Night")).baseRemoteAtMs)
+        assertTrue(journal.unbindIf("u1"))
+        assertNull(journal.boundUid())
+        assertNull(journal.entries().getValue(designId("Night")).baseRemoteAtMs)
     }
 
     @Test fun aSecondDeleteTapAfterARefusedMarkStillDoesNotRunTheWipe() {

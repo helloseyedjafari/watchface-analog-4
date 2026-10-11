@@ -113,7 +113,7 @@ class AccountDeletion(
                 withContext(NonCancellable + io) {
                     // only the deleted account's history: the journal may belong to another account (it is not bound to a
                     // pending account while its sync is off)
-                    if (journal.boundUid() == uid) journal.unbind()
+                    journal.unbindIf(uid)
                     marks.clear(uid)
                 }
                 DeletionResult.Done

@@ -22,11 +22,13 @@ class DeletionMarks(private val kv: KeyValueStore) {
     /**
      * Writes the mark durably; false when the preferences refused the write, and then nothing is remembered: not on disk and
      * not in memory either (`SharedPreferences.commit()` updates its in-memory copy before the disk write and keeps it when
-     * the write fails, so the old value is put back). A mark that is already there is written again all the same: the disk
-     * may be behind the memory because an earlier write was refused, and a deletion must not start without the mark on disk.
+     * the write fails, so the old value is put back). So whatever memory holds is on disk, and a mark that is already there
+     * is not written again: a full disk must not turn "Finish deleting" into "nothing was deleted" for a deletion that is
+     * pending, and may be half done.
      */
     fun mark(uid: String): Boolean = synchronized(LOCK) {
         val old = read()
+        if (uid in old) return true
         if (kv.putStringChecked(KEY, encode(old + uid))) return true
         kv.putString(KEY, encode(old))
         false

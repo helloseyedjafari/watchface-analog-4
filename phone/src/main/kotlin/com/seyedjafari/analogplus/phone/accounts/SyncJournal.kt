@@ -136,14 +136,28 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
      * back, one that survived and was changed elsewhere goes through last-write-wins on the edit times, an edit made while
      * sync was off is still the newer one, a deletion made meanwhile stays a deletion, and nothing becomes a "(this phone)"
      * copy or comes back to life. A journal bound to another account is left alone: its sign-in merges everything.
-     * Returns false only when the write was refused (then nothing was changed).
+     * Returns false only when the write was refused; then the journal is as it was (the store's memory is put back, as
+     * `SharedPreferences.commit()` keeps the new value in memory when the disk refuses it).
      */
     fun markLiveUnsent(uid: String): Boolean = synchronized(LOCK) {
         val d = read()
         if (d.boundUid != uid) return true
+        val before = kv.getString(KEY)
         markCurrentDirty(d)
         for ((id, e) in d.entries.toMap()) if (e.state == EntryState.LIVE) d.entries[id] = e.copy(mark = SyncMark.DIRTY)
-        writeChecked(d)
+        if (writeChecked(d)) return true
+        if (before != null) kv.putString(KEY, before)
+        false
+    }
+
+    /**
+     * [unbind] only if the journal is bound to [uid], decided and done under one lock (so a sign-in that binds it to
+     * another account in between is not unbound). Returns whether it unbound.
+     */
+    fun unbindIf(uid: String): Boolean = synchronized(LOCK) {
+        if (read().boundUid != uid) return false
+        unbind()
+        true
     }
 
     /** Forgets the account and every base (after the account was deleted); local designs stay and count as unsynced. */

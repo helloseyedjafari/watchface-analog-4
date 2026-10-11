@@ -113,23 +113,45 @@ class KeepAccountResyncTest {
         assertEquals(listOf("Day", "Night"), rig.names())
     }
 
-    @Test fun keepingDoesNotAskAgainAboutTheCurrentDesignTheCloudHoldsAndKeepsTheHistory() = runTest {
+    @Test fun keepingDoesNotAskAgainAboutTheCurrentDesignOfAnotherDeviceThatWasAnsweredAlready() = runTest {
         val rig = rig()
         rig.current = night
         rig.store.saveNamed("Night", night)
+        // another device's current design is newer than anything this phone has seen: the question is asked once
+        val theirs = RemoteCurrent(com.seyedjafari.analogplus.facegen.design.DesignJson.toJson(day), 9_000_000, "b", "Pixel 8")
+        remote.seedCurrent("u1", theirs)
         rig.engine.start("u1"); runCurrent()
-        rig.engine.onCurrentSaved(night, ChangeOrigin.USER)
-        rig.engine.syncNow(); runCurrent()
+        assertEquals(theirs.updatedAtMs, rig.engine.currentOffer.value?.remoteUpdatedAtMs)
+        rig.engine.resolveOffer(OfferChoice.KEEP_MINE); runCurrent()
+        assertNull(rig.engine.currentOffer.value)
         val seen = rig.journal.currentSeenRemoteAtMs()
-        assertTrue(seen > 0)
+        assertTrue(seen >= theirs.updatedAtMs)
         rig.engine.stop()
+        // the deletion is cut off and kept
         marks.mark("u1")
         assertTrue(rig.deletion.keep("u1"))
         assertEquals("u1", rig.journal.boundUid())                  // the binding stays ...
         assertEquals(seen, rig.journal.currentSeenRemoteAtMs())     // ... and so does what was seen of the cloud's current design
         assertTrue(rig.journal.currentDirty())                      // the design being edited counts as not given to the cloud
+        // the other device's design is still the cloud's current one (nothing newer): nobody is asked again
+        remote.seedCurrent("u1", theirs)
         rig.engine.start("u1"); runCurrent()
-        assertNull(rig.engine.currentOffer.value)                   // nobody is asked "newer from another phone"
+        assertNull("the answered question is not asked again", rig.engine.currentOffer.value)
         assertEquals(listOf("Night"), rig.names())
+    }
+
+    @Test fun aKeepThatForgotWhatWasSeenWouldAskTheOldQuestionAgain() = runTest {
+        // the control of the test above: with the seen time reset (what a whole-journal reset does) the offer comes back
+        val rig = rig()
+        rig.current = night
+        rig.store.saveNamed("Night", night)
+        val theirs = RemoteCurrent(com.seyedjafari.analogplus.facegen.design.DesignJson.toJson(day), 9_000_000, "b", "Pixel 8")
+        remote.seedCurrent("u1", theirs)
+        rig.engine.start("u1"); runCurrent()
+        rig.engine.resolveOffer(OfferChoice.KEEP_MINE); runCurrent()
+        rig.engine.stop()
+        rig.journal.unbind()                                         // the old keep
+        rig.engine.start("u1"); runCurrent()
+        assertTrue("the control must be able to see the offer", rig.engine.currentOffer.value != null)
     }
 }
