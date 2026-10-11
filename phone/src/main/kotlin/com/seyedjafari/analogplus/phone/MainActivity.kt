@@ -35,6 +35,7 @@ import com.seyedjafari.analogplus.phone.accounts.AccountsController
 import com.seyedjafari.analogplus.phone.accounts.AccountsFactory
 import com.seyedjafari.analogplus.phone.accounts.CurrentApplier
 import com.seyedjafari.analogplus.phone.accounts.firebase.CurrentActivity
+import com.seyedjafari.analogplus.phone.accounts.firebase.PromptWatch
 import com.seyedjafari.analogplus.phone.ui.account.AccountScreen
 import com.seyedjafari.analogplus.phone.ui.account.LocalAccounts
 import com.seyedjafari.analogplus.phone.ui.components.LoadSharedDesignDialog
@@ -169,6 +170,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // in front again: a Google prompt that is still waiting for an answer was finished by the system (see PromptWatch)
+        PromptWatch.process.activityResumed()
+    }
+
     override fun onStart() {
         super.onStart()
         CurrentActivity.set(this)   // the Google account chooser needs a visible Activity
@@ -178,6 +185,8 @@ class MainActivity : ComponentActivity() {
     /** The activity is `singleTask`: a tapped link (or any start from another app or the launcher) reaches the running instance here, never a second one. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // the task was reopened (singleTask): the activities above this one, a Google prompt among them, are gone
+        PromptWatch.process.promptGone()
         setIntent(intent)
         loadFromIntent(intent)
     }

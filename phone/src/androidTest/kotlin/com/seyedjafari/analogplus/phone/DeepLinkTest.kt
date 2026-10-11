@@ -4,6 +4,20 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import androidx.lifecycle.Lifecycle
+import com.seyedjafari.analogplus.phone.accounts.firebase.IdTokenSource
+import com.seyedjafari.analogplus.phone.accounts.firebase.PromptAwareTokenSource
+import com.seyedjafari.analogplus.phone.accounts.firebase.PromptWatch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assume
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -44,8 +58,8 @@ class DeepLinkTest {
     private fun linkIntent(link: String) =
         Intent(Intent.ACTION_VIEW, Uri.parse(link)).setClass(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-    private fun launch(link: String? = null) {
-        scenario = if (link == null) ActivityScenario.launch(MainActivity::class.java) else ActivityScenario.launch(linkIntent(link))
+    private fun launch(link: String? = null, extraFlags: Int = 0) {
+        scenario = if (link == null) ActivityScenario.launch(MainActivity::class.java) else ActivityScenario.launch(linkIntent(link).addFlags(extraFlags))
         scenario!!.onActivity { startIntent = it.intent }
         original = design()
     }
@@ -123,6 +137,52 @@ class DeepLinkTest {
     @Test fun theActivityIsSingleTaskSoATappedLinkAlwaysReachesTheRunningOneThroughOnNewIntent() {
         val info = context.packageManager.getActivityInfo(ComponentName(context, MainActivity::class.java), 0)
         assertEquals(ActivityInfo.LAUNCH_SINGLE_TASK, info.launchMode)
+    }
+
+    @Test fun theOldLinkThatRecentsDeliversToAColdStartIsNotAskedAgain() {
+        // Android 9-11 start the activity afresh from Recents with the VIEW intent it was first started with
+        launch(DesignJson.shareLink(neon), extraFlags = Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY)
+        var flagged = false
+        scenario!!.onActivity { flagged = it.intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0 }
+        Assume.assumeTrue("this Android version strips the system flag from a started intent", flagged)
+        rule.waitForIdle()
+        Thread.sleep(1_000)   // the link is read off the main thread; a dialog, if one were coming, would be up by now
+        rule.waitForIdle()
+        rule.onNodeWithTag(Tags.field("link_dialog")).assertDoesNotExist()
+        assertEquals(original, design())
+    }
+
+    /** A Google prompt as the app's token source sees one the system finished: a request that never answers. */
+    private fun startWaitingPrompt(): Deferred<String?> {
+        val never = IdTokenSource { awaitCancellation() }
+        val source = PromptAwareTokenSource(never, PromptWatch.process)
+        val result = CoroutineScope(Dispatchers.Default).async { source.fetchIdToken() }
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!PromptWatch.process.isWaiting() && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        assertTrue("the request must be waiting", PromptWatch.process.isWaiting())
+        return result
+    }
+
+    @Test fun reopeningTheAppByATappedLinkEndsAWaitingGooglePromptAsClosed() {
+        launch()
+        val prompt = startWaitingPrompt()
+        deliverToTheOpenActivity(0)                               // singleTask: MainActivity.onNewIntent, the prompt's activity is finished
+        val answer = runBlocking { withTimeout(5_000) { prompt.await() } }
+        assertNull(answer)
+        rule.waitUntil(10_000) { rule.onAllNodesWithTagCount(Tags.field("link_dialog")) == 1 }
+        rule.onNodeWithTag(Tags.field("qr_keep")).performClick()
+        rule.waitForIdle()
+    }
+
+    @Test fun theActivityComingBackToTheFrontEndsAGooglePromptThatNeverAnsweredAfterTheGracePeriod() {
+        launch()
+        val prompt = startWaitingPrompt()
+        scenario!!.moveToState(Lifecycle.State.STARTED)           // paused, as with the prompt on top
+        val at = System.currentTimeMillis()
+        scenario!!.moveToState(Lifecycle.State.RESUMED)           // and in front again: nobody is on top any more
+        val answer = runBlocking { withTimeout(10_000) { prompt.await() } }
+        assertNull(answer)
+        assertTrue("it waited for a late answer first", System.currentTimeMillis() - at >= 1_500)
     }
 
     private fun deliverToTheOpenActivity(flags: Int) {

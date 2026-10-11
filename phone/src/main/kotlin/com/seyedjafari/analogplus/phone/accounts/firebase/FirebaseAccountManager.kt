@@ -45,7 +45,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  * is the Google account chooser, a prompt the person answers, and no timeout is invented around it. If the Credential
  * Manager chooser or the re-confirm prompt hung (a system fault; not observed, and the real chooser is not testable here),
  * [signIn] / [reauthenticate] would wait with it, [signIn] would keep its lock, and a sign-out queued behind a running
- * action would wait too. The person closing the prompt ends it (a null token).
+ * action would wait too. The person closing the prompt ends it (a null token). So does the app being opened again: the
+ * activity is `singleTask`, which finishes the prompt's activity, and `AccountsFactory` hands this manager a
+ * [PromptAwareTokenSource] that turns [PromptWatch.promptGone] into that null token.
  *
  * **Lifetime.** The manager listens to Firebase Auth (a listener on the process-wide `FirebaseAuth`). [close] removes the
  * listener; the owner calls it when it is done with the manager (`AccountsFactory` does when the controller's scope

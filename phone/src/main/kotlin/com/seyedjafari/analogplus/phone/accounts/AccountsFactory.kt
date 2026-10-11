@@ -18,6 +18,8 @@ import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseMode
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseProvider
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirestoreRemoteStore
 import com.seyedjafari.analogplus.phone.accounts.firebase.GoogleIdTokenSource
+import com.seyedjafari.analogplus.phone.accounts.firebase.PromptAwareTokenSource
+import com.seyedjafari.analogplus.phone.accounts.firebase.PromptWatch
 import com.seyedjafari.analogplus.phone.accounts.firebase.emulatorEmail
 import com.seyedjafari.analogplus.phone.accounts.vault.KeyVault
 import java.util.UUID
@@ -68,8 +70,10 @@ object AccountsFactory {
         store.addObserver(engine)
         // the emulator has no Google account and nothing cached to clear
         val credentialManager = if (setup.mode == FirebaseMode.EMULATOR) null else CredentialManager.create(app)
-        val tokens = if (credentialManager == null) EmulatorSetup.tokenSource { emulatorEmail(app) }
+        val rawTokens = if (credentialManager == null) EmulatorSetup.tokenSource { emulatorEmail(app) }
         else GoogleIdTokenSource(credentialManager, setup.webClientId) { CurrentActivity.get() }
+        // a prompt the system finished when the app was opened again never answers: MainActivity tells PromptWatch
+        val tokens = PromptAwareTokenSource(rawTokens, PromptWatch.process)
         val accounts = FirebaseAccountManager(FirebaseAuth.getInstance(), tokens, credentialManager)
         closeWhenScopeEnds(scope, accounts)
         val backup = BackupService(remote, KeyVault(), KeyStoreKeySource(keyStore), AttemptLimiter(syncKv))

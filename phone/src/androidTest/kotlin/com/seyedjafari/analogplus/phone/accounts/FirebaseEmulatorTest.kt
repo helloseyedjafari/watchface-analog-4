@@ -13,6 +13,8 @@ import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseProvider
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirestoreRemoteStore
 import com.seyedjafari.analogplus.phone.accounts.firebase.IdTokenSource
 import com.seyedjafari.analogplus.phone.accounts.firebase.NoGoogleAccountException
+import com.seyedjafari.analogplus.phone.accounts.firebase.PromptAwareTokenSource
+import com.seyedjafari.analogplus.phone.accounts.firebase.PromptWatch
 import com.seyedjafari.analogplus.phone.accounts.vault.KeyVault
 import com.seyedjafari.analogplus.phone.accounts.vault.OpenResult
 import com.seyedjafari.analogplus.phone.accounts.vault.SealedKey
@@ -25,6 +27,7 @@ import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -230,6 +233,31 @@ class FirebaseEmulatorTest {
         val uid = (m.state.value as AccountState.SignedIn).uid
         val closing = newManager(IdTokenSource { null })
         assertEquals(ReauthResult.Cancelled, closing.reauthenticate(uid))
+    }
+
+    @Test fun aPromptTheSystemFinishedEndsSignInAndReauthenticationAsClosedWhenTheAppSaysSo() = inTest {
+        val watch = PromptWatch()
+        val hanging = PromptAwareTokenSource(IdTokenSource { awaitCancellation() }, watch)
+        // sign-in: the chooser never answers; the app is opened again
+        auth.signOut()
+        val signingIn = newManager(hanging)
+        val signIn = launch { signingIn.signIn() }
+        waitUntil("signing in") { signingIn.state.value == AccountState.SigningIn }
+        watch.promptGone()
+        signIn.join()
+        assertEquals(AccountState.SignedOut, signingIn.state.value)
+        // re-confirmation: the same, and the manager is free again afterwards (its sign-in lock was released)
+        val m = manager(unique("prompt-gone"))
+        m.signIn()
+        val uid = (m.state.value as AccountState.SignedIn).uid
+        val reconfirming = newManager(hanging)
+        var result: ReauthResult? = null
+        val job = launch { result = reconfirming.reauthenticate(uid) }
+        waitUntil("waiting for the prompt") { watch.isWaiting() }
+        watch.promptGone()
+        job.join()
+        assertEquals(ReauthResult.Cancelled, result)
+        assertEquals(DeleteUserResult.Deleted, m.deleteUser(uid))   // nothing else was disturbed
     }
 
     @Test fun reauthenticateNoticesThatAnotherAccountSignedInWhileTheChooserWasOpen() = inTest {
