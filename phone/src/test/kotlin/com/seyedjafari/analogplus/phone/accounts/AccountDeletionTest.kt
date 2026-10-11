@@ -20,7 +20,8 @@ class AccountDeletionTest {
     private val accounts = FakeAccountManager(AccountState.SignedIn("u1", "me@example.com"))
     private val remote = FakeRemoteStore()
     private val sync = FakeCloudSync()
-    private val journal = SyncJournal(MemoryKeyValueStore())
+    private val journalMemory = MemoryKeyValueStore()
+    private val journal = SyncJournal(journalMemory)
     private val marks = DeletionMarks(MemoryKeyValueStore())
     private val deletion = AccountDeletion(accounts, remote, sync, journal, marks)
 
@@ -136,21 +137,73 @@ class AccountDeletionTest {
 
     // ---- keeping the account ------------------------------------------------------------------------------------
 
-    @Test fun keepingResetsTheJournalSoWhatWasWipedIsUploadedAgainAndClearsTheMark() {
+    @Test fun keepingMarksTheLiveDesignsUnsentAndKeepsTheirHistoryTheBindingAndTheDeletionsAndClearsTheMark() {
         journal.reconcileWithStore(listOf("Night"))
         journal.markApplied(designId("Night"), "Night", EntryState.LIVE, 5)     // synced: CLEAN with a cloud base
+        journal.markApplied(designId("Gone"), "Gone", EntryState.TOMBSTONE, 6)  // a deletion the cloud knows
         journal.markCurrentPushed(journal.currentStamp())
+        journal.setCurrentSeenRemoteAtMs(77)
+        val before = journal.entries()
         remote.failDeleteAll = RemoteException(RemoteErrorKind.OFFLINE, "offline")
         assertTrue(delete() is DeletionResult.DataFailed)
         assertTrue(marks.isPending("u1"))
-        runBlocking { deletion.keep("u1") }
-        val entry = journal.entries().values.single()
-        assertNull(entry.baseRemoteAtMs)                // no longer "synced": the planner will push it again
-        assertEquals(SyncMark.DIRTY, entry.mark)
-        assertNull(journal.boundUid())                   // the next start binds again and every design is merged in
+        assertTrue(runBlocking { deletion.keep("u1") })
+        val night = journal.entries().getValue(designId("Night"))
+        assertEquals(5L, night.baseRemoteAtMs)           // the history stays: nothing becomes a "never synced" copy
+        assertEquals(before.getValue(designId("Night")).modifiedAtMs, night.modifiedAtMs)
+        assertEquals(SyncMark.DIRTY, night.mark)         // but it counts as not given to the cloud: the planner pushes it if it is gone
+        assertEquals(before.getValue(designId("Gone")), journal.entries().getValue(designId("Gone")))   // a deletion stays a deletion
+        assertEquals("u1", journal.boundUid())
+        assertEquals(77L, journal.currentSeenRemoteAtMs())
+        assertTrue(journal.currentDirty())
         assertFalse(marks.isPending("u1"))
         assertEquals(0, accounts.deleteCalls)            // nothing more was deleted
         assertEquals(AccountState.SignedIn("u1", "me@example.com"), accounts.state.value)
+    }
+
+    @Test fun keepingLeavesAJournalOfAnotherAccountAloneBecauseItsSignInMerges() {
+        journal.bindTo("u2")
+        journal.reconcileWithStore(listOf("Night"))
+        journal.markApplied(designId("Night"), "Night", EntryState.LIVE, 5)
+        val before = journal.entries()
+        marks.mark("u1")
+        assertTrue(runBlocking { deletion.keep("u1") })
+        assertEquals(before, journal.entries())
+        assertEquals("u2", journal.boundUid())
+        assertFalse(marks.isPending("u1"))
+    }
+
+    /** A store whose checked writes are refused (a full disk): [SyncJournal.markLiveUnsent] cannot save. */
+    private class RefusingChecked(val inner: MemoryKeyValueStore) : com.seyedjafari.analogplus.phone.KeyValueStore by inner {
+        override fun putStringChecked(key: String, value: String) = false
+    }
+
+    @Test fun keepingDoesNotClearTheMarkWhenTheJournalWriteIsRefusedAndChangesNothing() {
+        journal.reconcileWithStore(listOf("Night"))
+        journal.markApplied(designId("Night"), "Night", EntryState.LIVE, 5)
+        marks.mark("u1")
+        val before = journal.entries()
+        val refusing = SyncJournal(RefusingChecked(journalMemory))
+        val d = AccountDeletion(accounts, remote, sync, refusing, marks, kotlinx.coroutines.Dispatchers.Unconfined)
+        assertFalse(runBlocking { d.keep("u1") })
+        assertTrue(marks.isPending("u1"))                // the choice can be made again
+        assertEquals(before, journal.entries())
+    }
+
+    @Test fun finishingAnAccountWithoutAPendingDeletionDoesNothing() {
+        assertEquals(DeletionResult.NotPending, runBlocking { deletion.finish("u1") })
+        assertEquals(0, accounts.reauthCalls)
+        assertEquals(0, sync.stops)
+        assertNull(remote.deletedAllFor)
+        marks.mark("u1")
+        assertEquals(DeletionResult.Done, runBlocking { deletion.finish("u1") })
+    }
+
+    @Test fun finishingADeletionThatWasKeptMeanwhileDoesNothing() {
+        marks.mark("u1")
+        runBlocking { deletion.keep("u1") }
+        assertEquals(DeletionResult.NotPending, runBlocking { deletion.finish("u1") })
+        assertEquals(0, accounts.reauthCalls)
     }
 
     @Test fun keepingOneAccountLeavesAnotherAccountsMarkAlone() {
@@ -167,6 +220,60 @@ class AccountDeletionTest {
         assertTrue(deletion.isPending("u9"))
         assertEquals(DeletionResult.Done, delete())      // and deleting u1 leaves u9's mark
         assertTrue(marks.isPending("u9"))
+    }
+
+    @Test fun aFinishedDeletionResetsOnlyTheDeletedAccountsHistory() {
+        journal.bindTo("u2")                              // the journal belongs to another account (u1's sync was off)
+        journal.reconcileWithStore(listOf("Night"))
+        journal.markApplied(designId("Night"), "Night", EntryState.LIVE, 5)
+        val before = journal.entries()
+        assertEquals(DeletionResult.Done, delete())
+        assertEquals("u2", journal.boundUid())
+        assertEquals(before, journal.entries())
+        assertFalse(marks.isPending("u1"))
+    }
+
+    /** Like SharedPreferences: the memory takes the new value, then the disk write is refused. */
+    private class DiskFullKv(val inner: MemoryKeyValueStore = MemoryKeyValueStore()) : com.seyedjafari.analogplus.phone.KeyValueStore by inner {
+        var full = true
+        override fun putStringChecked(key: String, value: String): Boolean { inner.putString(key, value); return !full }
+    }
+
+    @Test fun aMarkTheDiskRefusedDoesNotCountInMemoryEither() {
+        val kv = DiskFullKv()
+        val m = DeletionMarks(kv)
+        assertFalse(m.mark("u1"))
+        assertFalse(m.isPending("u1"))
+        assertFalse(m.mark("u1"))                         // and a second try is not taken for "already there"
+        assertFalse(DeletionMarks(kv.inner).isPending("u1"))
+        kv.full = false
+        assertTrue(m.mark("u1"))
+        assertTrue(m.isPending("u1"))
+        assertTrue(m.mark("u1"))                          // an existing mark is written again, so the disk catches up
+    }
+
+    @Test fun aMarkThatIsAlreadyThereIsWrittenAgainSoTheDiskCatchesUp() {
+        class CountingKv(val inner: MemoryKeyValueStore = MemoryKeyValueStore()) : com.seyedjafari.analogplus.phone.KeyValueStore by inner {
+            var checkedWrites = 0
+            override fun putStringChecked(key: String, value: String): Boolean { checkedWrites++; return inner.putStringChecked(key, value) }
+        }
+        val kv = CountingKv()
+        val m = DeletionMarks(kv)
+        assertTrue(m.mark("u1"))
+        assertTrue(m.mark("u1"))
+        assertEquals(2, kv.checkedWrites)
+    }
+
+    @Test fun aSecondDeleteTapAfterARefusedMarkStillDoesNotRunTheWipe() {
+        val kv = DiskFullKv()
+        val d = AccountDeletion(accounts, remote, sync, journal, DeletionMarks(kv), kotlinx.coroutines.Dispatchers.Unconfined)
+        assertEquals(DeletionResult.NotStarted, runBlocking { d.delete("u1") })
+        assertEquals(DeletionResult.NotStarted, runBlocking { d.delete("u1") })
+        assertNull(remote.deletedAllFor)
+        assertEquals(0, sync.stops)
+        assertFalse(d.isPending("u1"))
+        kv.full = false
+        assertEquals(DeletionResult.Done, runBlocking { d.delete("u1") })
     }
 
     @Test fun marksSurviveARestartBecauseTheyLiveInTheStore() {

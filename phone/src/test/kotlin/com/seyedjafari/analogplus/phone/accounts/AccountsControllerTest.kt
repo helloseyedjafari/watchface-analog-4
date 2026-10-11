@@ -939,7 +939,7 @@ class AccountsControllerTest {
         assertEquals(SyncStatus.Syncing, c.ui.value.sync)
     }
 
-    @Test fun keepingTheAccountClearsTheMarkRestartsSyncAndResetsTheJournal() = runTest(UnconfinedTestDispatcher()) {
+    @Test fun keepingTheAccountClearsTheMarkRestartsSyncAndMarksTheDesignsUnsentWithoutLosingTheirHistory() = runTest(UnconfinedTestDispatcher()) {
         journal.bindTo("u1")
         journal.reconcileWithStore(listOf("Night"))
         journal.markApplied(designId("Night"), "Night", EntryState.LIVE, 5)
@@ -956,9 +956,55 @@ class AccountsControllerTest {
         assertEquals(Notice.AccountKept, c.ui.value.notice)
         assertEquals(Busy.NONE, c.ui.value.busy)
         val entry = journal.entries().values.single()
-        assertNull(entry.baseRemoteAtMs)                         // what was wiped is not treated as synced
-        assertEquals(SyncMark.DIRTY, entry.mark)
+        assertEquals(5L, entry.baseRemoteAtMs)                   // the history stays ...
+        assertEquals(SyncMark.DIRTY, entry.mark)                 // ... but the design counts as not given to the cloud
         assertEquals(AccountState.SignedIn("u1", "me@example.com"), c.ui.value.account)   // and nothing more was deleted
+    }
+
+    @Test fun aKeepTheJournalCouldNotSaveIsNotDoneAndTheDeletionStaysPending() = runTest(UnconfinedTestDispatcher()) {
+        class Refusing(val inner: MemoryKeyValueStore) : com.seyedjafari.analogplus.phone.KeyValueStore by inner {
+            override fun putStringChecked(key: String, value: String) = false
+        }
+        val memory = MemoryKeyValueStore()
+        SyncJournal(memory).bindTo("u1")
+        marks.mark("u1")
+        val c = AccountsController(
+            AccountsAvailability.AVAILABLE, accounts, sync,
+            BackupService(remote, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
+            AccountDeletion(accounts, remote, sync, SyncJournal(Refusing(memory)), marks, Dispatchers.Unconfined), backgroundScope,
+        )
+        c.signIn()
+        assertEquals(KeepResult.NOT_SAVED, c.keepAccount())
+        assertEquals(Notice.KeepNotSaved, c.ui.value.notice)
+        assertEquals(DeletionState.PENDING, c.ui.value.deletion)
+        assertTrue(marks.isPending("u1"))
+        assertTrue(sync.started.isEmpty())
+        assertEquals(Busy.NONE, c.ui.value.busy)
+    }
+
+    @Test fun finishingWhenNothingIsPendingStartsNoDeletion() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        assertEquals(DeletionResult.NotPending, c.finishDeletion())
+        assertEquals(0, accounts.reauthCalls)
+        assertNull(c.ui.value.notice)
+        assertEquals(Busy.NONE, c.ui.value.busy)
+        assertEquals(SyncStatus.Syncing, c.ui.value.sync)
+    }
+
+    @Test fun aFinishTapThatLandsAfterTheAccountChangedDoesNotDeleteTheNewAccount() = runTest(UnconfinedTestDispatcher()) {
+        marks.mark("u1")
+        val c = controller()
+        c.signIn()                                                // u1, pending
+        val gate = CompletableDeferred<Unit>().also { remote.putGate = it }
+        val busy = launch { c.upload(passphrase, BackupExpectation.None) }    // holds the action lock
+        var result: DeletionResult? = null
+        val tap = launch { result = c.finishDeletion() }          // the button was tapped for u1 ...
+        accounts.force(AccountState.SignedIn("u2", null))         // ... then the account changed
+        gate.complete(Unit)
+        busy.join(); tap.join()
+        assertEquals(DeletionResult.NotSignedIn, result)
+        assertEquals(0, accounts.reauthCalls)
     }
 
     @Test fun keepingWithNothingPendingOrNobodySignedInDoesNothing() = runTest(UnconfinedTestDispatcher()) {

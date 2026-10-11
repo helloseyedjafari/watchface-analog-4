@@ -89,6 +89,7 @@ class AccountMessagesTest {
             "Your cloud data is deleted but your account could not be deleted. Choose Finish deleting to try again, or keep your account.", "boom",
         ),
         Row(Notice.AccountKept, NoticeKind.INFO, "Your account was kept. Sync is on again and the designs on this phone are uploaded again."),
+        Row(Notice.KeepNotSaved, NoticeKind.ERROR, "Your choice could not be saved on this phone, so the deletion is still unfinished. Try again."),
         Row(Notice.ActionFailed("NullPointerException"), NoticeKind.ERROR, "Something went wrong and the action did not finish.", "NullPointerException"),
     )
 
@@ -243,7 +244,11 @@ class AccountMessagesTest {
         check(deletionRows) { deletionMessage(it as DeletionResult) }
         assertNull(deletionMessage(DeletionResult.Cancelled))
         assertNull(deletionMessage(DeletionResult.NotSignedIn))
-        assertSealedCovered(DeletionResult::class.java, deletionRows.map { it.case } + DeletionResult.Cancelled + DeletionResult.NotSignedIn)
+        assertEquals("There was no unfinished deletion to end.", en(deletionMessage(DeletionResult.NotPending)!!))
+        assertSealedCovered(
+            DeletionResult::class.java,
+            deletionRows.map { it.case } + DeletionResult.Cancelled + DeletionResult.NotSignedIn + DeletionResult.NotPending,
+        )
     }
 
     @Test fun aDeletionAndItsNoticeSayTheSameThing() {
@@ -261,6 +266,8 @@ class AccountMessagesTest {
         assertEquals(NoticeKind.INFO, keepMessage(KeepResult.KEPT).kind)
         assertEquals("There was no unfinished deletion to end.", en(keepMessage(KeepResult.NOT_PENDING)))
         assertEquals("Sign in first.", en(keepMessage(KeepResult.NOT_SIGNED_IN)))
+        assertEquals("Your choice could not be saved on this phone, so the deletion is still unfinished. Try again.", en(keepMessage(KeepResult.NOT_SAVED)))
+        assertEquals(noticeMessage(Notice.KeepNotSaved), keepMessage(KeepResult.NOT_SAVED))
         assertEquals(KeepResult.entries.size, KeepResult.entries.map { en(keepMessage(it)) }.toSet().size)
         assertEquals(noticeMessage(Notice.AccountKept), keepMessage(KeepResult.KEPT))
     }

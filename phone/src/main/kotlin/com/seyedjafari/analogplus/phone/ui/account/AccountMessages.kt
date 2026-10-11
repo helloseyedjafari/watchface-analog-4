@@ -75,6 +75,7 @@ fun noticeMessage(notice: Notice): AccountMessage = when (notice) {
     is Notice.DeleteDataFailed -> bad(R.string.account_msg_delete_data_failed, remoteReason(notice.cause), detail = notice.detail)
     is Notice.DeleteAccountFailed -> bad(deleteAccountProblemRes(notice.problem), detail = notice.detail)
     Notice.AccountKept -> good(R.string.account_msg_account_kept)
+    Notice.KeepNotSaved -> bad(R.string.account_msg_keep_not_saved)
     is Notice.ActionFailed -> bad(R.string.account_msg_action_failed, detail = notice.detail)
 }
 
@@ -126,6 +127,7 @@ fun discardMessage(result: DiscardResult): AccountMessage = when (result) {
 fun deletionMessage(result: DeletionResult): AccountMessage? = when (result) {
     DeletionResult.Done -> good(R.string.account_msg_account_deleted)
     DeletionResult.NotSignedIn, DeletionResult.Cancelled -> null
+    DeletionResult.NotPending -> good(R.string.account_msg_nothing_pending)
     DeletionResult.NotStarted -> bad(R.string.account_msg_delete_not_started)
     is DeletionResult.ReauthFailed -> bad(R.string.account_msg_delete_not_confirmed, detail = result.message)
     is DeletionResult.DataFailed -> bad(R.string.account_msg_delete_data_failed, remoteReason(result.kind), detail = result.message)
@@ -136,6 +138,7 @@ fun keepMessage(result: KeepResult): AccountMessage = when (result) {
     KeepResult.KEPT -> good(R.string.account_msg_account_kept)
     KeepResult.NOT_PENDING -> good(R.string.account_msg_nothing_pending)
     KeepResult.NOT_SIGNED_IN -> bad(R.string.account_msg_sign_in_first)
+    KeepResult.NOT_SAVED -> bad(R.string.account_msg_keep_not_saved)
 }
 
 /** Why a restore cannot start; null for the plans that ask for a passphrase (possibly after a confirmation). */

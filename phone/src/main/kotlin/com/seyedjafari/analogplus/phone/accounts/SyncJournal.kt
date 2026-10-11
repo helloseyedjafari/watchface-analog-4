@@ -128,6 +128,24 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
         BindResult.NEW_ACCOUNT
     }
 
+    /**
+     * "Keep my account" after a deletion that did not finish: the cloud may have lost any of this account's documents, so
+     * every LIVE design and the design being edited count as not yet given to the cloud again. Nothing else changes: the
+     * binding, the bases, the edit times ([JournalEntry.modifiedAtMs]), the deletions (tombstones) and
+     * [currentSeenRemoteAtMs] stay, so the planner's normal rules decide per design: a design the cloud lost is pushed
+     * back, one that survived and was changed elsewhere goes through last-write-wins on the edit times, an edit made while
+     * sync was off is still the newer one, a deletion made meanwhile stays a deletion, and nothing becomes a "(this phone)"
+     * copy or comes back to life. A journal bound to another account is left alone: its sign-in merges everything.
+     * Returns false only when the write was refused (then nothing was changed).
+     */
+    fun markLiveUnsent(uid: String): Boolean = synchronized(LOCK) {
+        val d = read()
+        if (d.boundUid != uid) return true
+        markCurrentDirty(d)
+        for ((id, e) in d.entries.toMap()) if (e.state == EntryState.LIVE) d.entries[id] = e.copy(mark = SyncMark.DIRTY)
+        writeChecked(d)
+    }
+
     /** Forgets the account and every base (after the account was deleted); local designs stay and count as unsynced. */
     fun unbind() = synchronized(LOCK) {
         val d = read()
@@ -271,7 +289,11 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
         mark = SyncMark.valueOf(e.getValue("mark").jsonPrimitive.content),
     )
 
-    private fun write(d: Data) {
+    private fun write(d: Data) { kv.putString(KEY, encode(d)) }
+
+    private fun writeChecked(d: Data): Boolean = kv.putStringChecked(KEY, encode(d))
+
+    private fun encode(d: Data): String {
         val o = buildJsonObject {
             put("boundUid", d.boundUid?.let { JsonPrimitive(it) } ?: JsonNull)
             put("currentSeenRemoteAtMs", d.currentSeenRemoteAtMs)
@@ -287,7 +309,7 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
                 })
             })
         }
-        kv.putString(KEY, o.toString())
+        return o.toString()
     }
 
     private companion object {

@@ -427,6 +427,7 @@
     <string name="account_msg_delete_account_changed">The cloud data of the account you were deleting is gone, but that account still exists. Sign in to it again to finish deleting it or to keep it.</string>
     <string name="account_msg_delete_account_failed">Your cloud data is deleted but your account could not be deleted. Choose Finish deleting to try again, or keep your account.</string>
     <string name="account_msg_account_kept">Your account was kept. Sync is on again and the designs on this phone are uploaded again.</string>
+    <string name="account_msg_keep_not_saved">Your choice could not be saved on this phone, so the deletion is still unfinished. Try again.</string>
     <string name="account_msg_nothing_pending">There was no unfinished deletion to end.</string>
     <string name="account_msg_action_failed">Something went wrong and the action did not finish.</string>
 

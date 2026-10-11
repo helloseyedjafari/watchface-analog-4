@@ -39,7 +39,7 @@ enum class Busy {
 enum class DeletionState { NONE, PENDING }
 
 /** What [AccountsController.keepAccount] did. */
-enum class KeepResult { KEPT, NOT_PENDING, NOT_SIGNED_IN }
+enum class KeepResult { KEPT, NOT_PENDING, NOT_SIGNED_IN, NOT_SAVED }
 
 enum class NoticeKind { INFO, ERROR }
 
@@ -114,6 +114,9 @@ sealed interface Notice {
 
     /** The pending deletion was ended by keeping the account: sync runs again and uploads this phone's designs. */
     data object AccountKept : Notice { override val kind = NoticeKind.INFO }
+
+    /** "Keep my account" could not be saved on this phone (the preferences refused the write); the deletion is still pending. */
+    data object KeepNotSaved : Notice { override val kind = NoticeKind.ERROR }
 
     /**
      * An action failed in a way nobody planned for, after the screen that started it had gone, so no caller could be told.
@@ -369,16 +372,18 @@ class AccountsController(
      * that finished, or that found another account signed in after the wipe ([AccountDeleteProblem.ACCOUNT_CHANGED]: the
      * first account's data is gone, the account is not), outlives the account it was for.
      */
-    suspend fun deleteAccount(): DeletionResult {
+    suspend fun deleteAccount(): DeletionResult = deleteAction(finishOnly = false)
+
+    private suspend fun deleteAction(finishOnly: Boolean): DeletionResult {
         val uid = uid() ?: return DeletionResult.NotSignedIn
         return action(uid, Busy.DELETING, DeletionResult.NotSignedIn, outlivesAccount = ::outlivesAccount) {
-            val result = deletion.delete(uid)
+            val result = if (finishOnly) deletion.finish(uid) else deletion.delete(uid)
             catchUpSync(uid, result)
             ActionOutcome(
                 result,
                 when (result) {
                     DeletionResult.Done -> Notice.AccountDeleted
-                    DeletionResult.Cancelled, DeletionResult.NotSignedIn -> null
+                    DeletionResult.Cancelled, DeletionResult.NotSignedIn, DeletionResult.NotPending -> null
                     DeletionResult.NotStarted -> Notice.DeleteNotStarted
                     is DeletionResult.ReauthFailed -> Notice.DeleteNotConfirmed(result.message)
                     is DeletionResult.DataFailed -> Notice.DeleteDataFailed(result.kind, result.message)
@@ -390,8 +395,12 @@ class AccountsController(
         }
     }
 
-    /** "Finish deleting", offered while [AccountsUi.deletion] is [DeletionState.PENDING]: the normal deletion path, with its Google prompt. */
-    suspend fun finishDeletion(): DeletionResult = deleteAccount()
+    /**
+     * "Finish deleting", offered while [AccountsUi.deletion] is [DeletionState.PENDING]: the normal deletion path, with its
+     * Google prompt. Checked inside the action, when its turn comes: if the deletion is no longer pending for the signed-in
+     * account (it was kept, or the account changed) nothing happens and the result is [DeletionResult.NotPending].
+     */
+    suspend fun finishDeletion(): DeletionResult = deleteAction(finishOnly = true)
 
     /**
      * "Keep my account", offered while [AccountsUi.deletion] is [DeletionState.PENDING]: ends the pending deletion without
@@ -403,7 +412,7 @@ class AccountsController(
         val uid = uid() ?: return KeepResult.NOT_SIGNED_IN
         return action(uid, Busy.KEEPING_ACCOUNT, KeepResult.NOT_SIGNED_IN) {
             if (!deletion.isPending(uid)) return@action ActionOutcome(KeepResult.NOT_PENDING, null, refresh = false)
-            deletion.keep(uid)
+            if (!deletion.keep(uid)) return@action ActionOutcome(KeepResult.NOT_SAVED, Notice.KeepNotSaved, refresh = false)
             if (uid() == uid) {
                 _ui.update { it.copy(deletion = DeletionState.NONE) }
                 syncedUid = uid

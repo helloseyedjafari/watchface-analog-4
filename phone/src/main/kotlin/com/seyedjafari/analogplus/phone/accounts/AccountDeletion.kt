@@ -29,6 +29,9 @@ sealed interface DeletionResult {
      */
     data object NotStarted : DeletionResult
 
+    /** [AccountDeletion.finish] found no unfinished deletion of this account (it was kept or finished meanwhile). Nothing was done. */
+    data object NotPending : DeletionResult
+
     /** The person backed out of the Google account prompt. Nothing was deleted. */
     data object Cancelled : DeletionResult
 
@@ -79,6 +82,12 @@ class AccountDeletion(
     /** Whether a deletion of [uid] was started and not finished (also from before the last restart). Cheap: a read. */
     fun isPending(uid: String): Boolean = marks.isPending(uid)
 
+    /**
+     * "Finish deleting": [delete] for an account whose deletion is pending, otherwise [DeletionResult.NotPending] and
+     * nothing happens (a tap on the button after the account changed or the deletion was kept must not start a new one).
+     */
+    suspend fun finish(uid: String): DeletionResult = if (isPending(uid)) delete(uid) else DeletionResult.NotPending
+
     suspend fun delete(uid: String): DeletionResult {
         if (!stillSignedIn(uid)) return DeletionResult.NotSignedIn
         when (val r = accounts.reauthenticate(uid)) {
@@ -102,7 +111,9 @@ class AccountDeletion(
         return when (val r = accounts.deleteUser(uid)) {
             DeleteUserResult.Deleted -> {
                 withContext(NonCancellable + io) {
-                    journal.unbind()
+                    // only the deleted account's history: the journal may belong to another account (it is not bound to a
+                    // pending account while its sync is off)
+                    if (journal.boundUid() == uid) journal.unbind()
                     marks.clear(uid)
                 }
                 DeletionResult.Done
@@ -114,17 +125,18 @@ class AccountDeletion(
     }
 
     /**
-     * "Keep my account": ends a pending deletion of [uid] without deleting anything more. The journal forgets every
-     * cloud base (so each design counts as never synced and the next sync pass uploads it again; designs the cloud
-     * already holds again are matched by content, differing ones are kept as copies), then the mark is cleared. In that
-     * order: if this is cut off in between, the mark is still there and the person can choose again. Starting sync again
-     * is the caller's job (the controller). Runs on [io], cannot be cancelled halfway.
+     * "Keep my account": ends a pending deletion of [uid] without deleting anything more. The journal marks every live
+     * design and the design being edited as not yet given to the cloud ([SyncJournal.markLiveUnsent]): the account's
+     * binding, the history of each design, its edit time and the deletions stay, so the designs the wipe took are uploaded
+     * again by the normal rules and nothing is copied or brought back. Then the mark is cleared. In that order and only
+     * when the journal write was accepted: if this is cut off or the write is refused, the mark is still there and the
+     * person can choose again. Returns false when the journal write was refused. Starting sync again is the caller's job
+     * (the controller). Runs on [io], cannot be cancelled halfway.
      */
-    suspend fun keep(uid: String) {
-        withContext(NonCancellable + io) {
-            journal.unbind()
-            marks.clear(uid)
-        }
+    suspend fun keep(uid: String): Boolean = withContext(NonCancellable + io) {
+        if (!journal.markLiveUnsent(uid)) return@withContext false
+        marks.clear(uid)
+        true
     }
 
     private fun stillSignedIn(uid: String) = (accounts.state.value as? AccountState.SignedIn)?.uid == uid

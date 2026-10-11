@@ -19,10 +19,17 @@ import com.seyedjafari.analogplus.phone.KeyValueStore
 class DeletionMarks(private val kv: KeyValueStore) {
     fun isPending(uid: String): Boolean = synchronized(LOCK) { uid in read() }
 
-    /** Writes the mark durably; false when the preferences refused the write (then nothing is remembered). */
+    /**
+     * Writes the mark durably; false when the preferences refused the write, and then nothing is remembered: not on disk and
+     * not in memory either (`SharedPreferences.commit()` updates its in-memory copy before the disk write and keeps it when
+     * the write fails, so the old value is put back). A mark that is already there is written again all the same: the disk
+     * may be behind the memory because an earlier write was refused, and a deletion must not start without the mark on disk.
+     */
     fun mark(uid: String): Boolean = synchronized(LOCK) {
-        val all = read()
-        uid in all || kv.putStringChecked(KEY, encode(all + uid))
+        val old = read()
+        if (kv.putStringChecked(KEY, encode(old + uid))) return true
+        kv.putString(KEY, encode(old))
+        false
     }
 
     fun clear(uid: String) = synchronized(LOCK) {
