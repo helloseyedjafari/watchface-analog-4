@@ -210,7 +210,7 @@ class OnboardingRealActivityTest {
         next(); next()
         pageIs(OnboardingPage.PERMISSION, 3)
         val before = design()
-        // what another app does when a link is tapped: the activity is singleTop, so the open one gets it in onNewIntent
+        // what another app does when a link is tapped: the activity is singleTask, so the open one gets it in onNewIntent
         scenario!!.onActivity { it.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(DesignJson.shareLink(neon))).setClass(it, MainActivity::class.java)) }
         rule.waitForTag(Tags.field("link_dialog"))
         pageIs(OnboardingPage.PERMISSION, 3)

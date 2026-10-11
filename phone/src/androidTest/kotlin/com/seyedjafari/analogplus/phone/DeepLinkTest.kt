@@ -1,6 +1,8 @@
 package com.seyedjafari.analogplus.phone
 
+import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
@@ -99,7 +101,7 @@ class DeepLinkTest {
         launch()
         rule.onNodeWithTag(Destination.ACCOUNT.tag).performClick()
         rule.onNodeWithTag(Destination.ACCOUNT.tag).assertIsSelected()
-        // what another app does when a link is tapped: start the VIEW intent; the activity is singleTop, so the open one gets it in onNewIntent
+        // what another app does when a link is tapped: start the VIEW intent; the activity is singleTask, so the open one gets it in onNewIntent
         val link = DesignJson.shareLink(neon)
         var open: MainActivity? = null
         scenario!!.onActivity { open = it; it.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)).setClass(it, MainActivity::class.java)) }
@@ -115,6 +117,35 @@ class DeepLinkTest {
         rule.waitForIdle()
         rule.onNodeWithTag(Tags.field("link_dialog")).assertDoesNotExist()
         rule.onNodeWithTag(Destination.ACCOUNT.tag).assertIsSelected()
+        assertEquals(original, design())
+    }
+
+    @Test fun theActivityIsSingleTaskSoATappedLinkAlwaysReachesTheRunningOneThroughOnNewIntent() {
+        val info = context.packageManager.getActivityInfo(ComponentName(context, MainActivity::class.java), 0)
+        assertEquals(ActivityInfo.LAUNCH_SINGLE_TASK, info.launchMode)
+    }
+
+    private fun deliverToTheOpenActivity(flags: Int) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(DesignJson.shareLink(neon))).setClass(context, MainActivity::class.java).addFlags(flags)
+        scenario!!.onActivity { InstrumentationRegistry.getInstrumentation().callActivityOnNewIntent(it, intent) }
+    }
+
+    @Test fun aLinkDeliveredToTheOpenActivityByTheSystemAsksBeforeReplacing() {
+        launch()
+        deliverToTheOpenActivity(0)
+        rule.waitUntil(10_000) { rule.onAllNodesWithTagCount(Tags.field("link_dialog")) == 1 }
+        assertEquals("nothing is replaced before the answer", original, design())
+        rule.onNodeWithTag(Tags.field("qr_keep")).performClick()
+        rule.waitForIdle()
+    }
+
+    @Test fun theOldLinkThatRecentsDeliversAgainWhenTheAppIsReopenedFromThereIsNotAskedAgain() {
+        launch()
+        deliverToTheOpenActivity(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY)
+        rule.waitForIdle()
+        Thread.sleep(1_000)   // the link is read off the main thread; a dialog, if one were coming, would be up by now
+        rule.waitForIdle()
+        rule.onNodeWithTag(Tags.field("link_dialog")).assertDoesNotExist()
         assertEquals(original, design())
     }
 

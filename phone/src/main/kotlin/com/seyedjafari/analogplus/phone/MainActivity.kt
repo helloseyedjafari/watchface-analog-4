@@ -175,6 +175,7 @@ class MainActivity : ComponentActivity() {
         reportStarted(model.accounts::setForeground)
     }
 
+    /** The activity is `singleTask`: a tapped link (or any start from another app or the launcher) reaches the running instance here, never a second one. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
