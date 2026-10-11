@@ -49,6 +49,13 @@ object AccountsFactory {
     /** The rules accept a device label of up to 80 characters. */
     private const val MAX_DEVICE_LABEL = 80
 
+    /**
+     * Whether this build can reach a Firebase project (or, in a debug build, the emulator), asked without building anything: the
+     * same answer [create] gives its controller. `FirebaseProvider.setUp` decides once per process and remembers, so asking early
+     * (the app does, before the onboarding controller reads its page list) costs nothing the first [create] would not cost.
+     */
+    fun availability(context: Context): AccountsAvailability = FirebaseProvider.setUp(context.applicationContext).availability
+
     fun create(
         context: Context,
         store: Store,

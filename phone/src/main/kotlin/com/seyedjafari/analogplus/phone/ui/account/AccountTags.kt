@@ -52,4 +52,5 @@ object AccountTags {
     const val PAGE_SKIP = "backup_page_skip"
     const val PAGE_DONE = "backup_page_done"
     const val PAGE_RESTORE = "backup_page_restore"
+    const val PAGE_BACK_UP = "backup_page_back_up"
 }

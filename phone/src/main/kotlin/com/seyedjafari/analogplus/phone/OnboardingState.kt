@@ -1,15 +1,25 @@
 package com.seyedjafari.analogplus.phone
 
+import com.seyedjafari.analogplus.phone.accounts.AccountsAvailability
+
 /** The pages of first-run setup, in order. [BACKUP] is only shown when accounts ship ([OnboardingConfig.accountsAvailable]). */
 enum class OnboardingPage { WELCOME, PAIR, PERMISSION, TEMPLATE, BACKUP }
 
 object OnboardingConfig {
     /**
-     * Whether the optional sign-in / passphrase page exists. The accounts plan sets this to true when sign-in and sync
-     * ship (and supplies the page through `OnboardingHost.backupPage`). Not `const`, so tests and the compiler do not
-     * treat the page list as a constant.
+     * Whether the optional sign-in / backup page exists. `AppModel` sets it (with [setAccountsFrom]) once, before it builds
+     * the [OnboardingController], which reads it when it is constructed: a build that cannot reach a Firebase project keeps
+     * the four-page flow. Not `const`, so tests and the compiler do not treat the page list as a constant.
      */
-    val accountsAvailable: Boolean = false
+    @Volatile var accountsAvailable: Boolean = false
+
+    /** The page list follows the build: accounts on (a Firebase project or the emulator) means the backup page is the fifth. */
+    fun setAccountsFrom(availability: AccountsAvailability) {
+        accountsAvailable = when (availability) {
+            AccountsAvailability.AVAILABLE -> true
+            AccountsAvailability.NOT_CONFIGURED -> false
+        }
+    }
 }
 
 fun onboardingPages(accountsAvailable: Boolean): List<OnboardingPage> =

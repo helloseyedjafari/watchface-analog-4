@@ -73,13 +73,9 @@ class CloudCallbacks(
 fun AccountSection(modifier: Modifier = Modifier) {
     val accounts = LocalAccounts.current
     val ui by accounts.ui.collectAsState()
-    val flow = remember(accounts) { CloudFlow(accounts) }
+    val flow = rememberCloudFlow(accounts, ui)
     val scope = rememberCoroutineScope()
     val nowMs = rememberNowMs()
-    val card = cloudCard(ui)
-    val uid = (ui.account as? AccountState.SignedIn)?.uid
-    // signed out (also by an expired session) or another account: no dialog and no note of the account that left stays open
-    LaunchedEffect(card, uid) { if (card != CloudCard.SIGNED_IN) flow.reset() else flow.resetIfAnother(uid) }
 
     val callbacks = CloudCallbacks(
         signIn = accounts::signIn,
@@ -95,6 +91,19 @@ fun AccountSection(modifier: Modifier = Modifier) {
     )
     CloudSectionContent(ui, nowMs, flow.note, callbacks, modifier)
     CloudDialogHost(flow, ui, accounts)
+}
+
+/**
+ * The dialog flow of [accounts] for the screen that shows [ui]. Signed out (also by an expired session) or another account: no
+ * dialog and no note of the account that left stays open. Shared by the Account card and the onboarding backup page.
+ */
+@Composable
+fun rememberCloudFlow(accounts: AccountsController, ui: AccountsUi): CloudFlow {
+    val flow = remember(accounts) { CloudFlow(accounts) }
+    val card = cloudCard(ui)
+    val uid = (ui.account as? AccountState.SignedIn)?.uid
+    LaunchedEffect(card, uid) { if (card != CloudCard.SIGNED_IN) flow.reset() else flow.resetIfAnother(uid) }
+    return flow
 }
 
 /**
@@ -150,12 +159,7 @@ fun CloudSectionContent(ui: AccountsUi, nowMs: Long, note: AccountMessage?, call
                 modifier = Modifier.testTag(AccountTags.NOT_CONFIGURED),
             )
             CloudCard.SIGNED_OUT -> SignedOutContent(ui, message, callbacks)
-            CloudCard.SIGNING_IN -> {
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag(AccountTags.SIGNING_IN)) {
-                    CircularProgressIndicator(Modifier.size(Spacing.xl))
-                    Text(stringResource(AccountText.SIGNING_IN), style = MaterialTheme.typography.bodyMedium)
-                }
-            }
+            CloudCard.SIGNING_IN -> SigningInLine()
             CloudCard.SIGNED_IN -> SignedInContent(ui, nowMs, message, callbacks)
         }
     }
@@ -163,7 +167,7 @@ fun CloudSectionContent(ui: AccountsUi, nowMs: Long, note: AccountMessage?, call
 
 /** The message under the card's heading; the person dismisses it. */
 @Composable
-private fun NoticeRow(message: AccountMessage, onDismiss: () -> Unit) {
+internal fun NoticeRow(message: AccountMessage, onDismiss: () -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
         MessageLines(message, Modifier.testTag(AccountTags.NOTICE))
         val dismissDescription = stringResource(AccountText.NOTICE_DISMISS_DESCRIPTION)
@@ -179,10 +183,7 @@ private fun SignedOutContent(ui: AccountsUi, message: AccountMessage?, callbacks
     message?.let { NoticeRow(it, callbacks.dismissMessage) }
     Text(stringResource(AccountText.SIGNED_OUT_BENEFIT), style = MaterialTheme.typography.bodyMedium)
     Text(stringResource(AccountText.SIGNED_OUT_PRIVACY), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    (ui.account as? AccountState.Failed)?.let { failed ->
-        val reason = AccountMessage(signInFailureText(failed.reason), NoticeKind.ERROR, failed.message.ifBlank { null })
-        MessageLines(reason, Modifier.testTag(AccountTags.SIGN_IN_ERROR))
-    }
+    SignInFailure(ui.account)
     PrimaryButton(stringResource(AccountText.SIGN_IN), callbacks.signIn, Modifier.fillMaxWidth().testTag(AccountTags.SIGN_IN))
 }
 
@@ -196,15 +197,7 @@ private fun SignedInContent(ui: AccountsUi, nowMs: Long, message: AccountMessage
     Pill(backupPill(ui.backup), AccountTags.BACKUP_STATUS)
     // under the pills: the texts say "the backup line above", and this is where the eyes are after a dialog closes
     message?.let { NoticeRow(it, callbacks.dismissMessage) }
-    busyText(ui.busy)?.let { words ->
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(Spacing.md), verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.testTag(AccountTags.BUSY).semantics { liveRegion = LiveRegionMode.Polite },
-        ) {
-            CircularProgressIndicator(Modifier.size(Spacing.xl))
-            Text(uiTextResource(words), style = MaterialTheme.typography.bodyMedium)
-        }
-    }
+    BusyLine(ui.busy)
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         val onlyOneMainAction = buttons.backUp == Show.HIDDEN && buttons.changePassphrase == Show.HIDDEN
         Shown(buttons.backUp) { PrimaryButton(stringResource(AccountText.BACK_UP), { callbacks.backUp(BackupButton.BACK_UP) }, Modifier.fillMaxWidth().testTag(AccountTags.BACK_UP), enabled = it) }
@@ -228,6 +221,38 @@ private fun SignedInContent(ui: AccountsUi, nowMs: Long, message: AccountMessage
     Text(stringResource(AccountText.SIGN_OUT_NOTE), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
+/** Why the last sign-in did not work; nothing unless it failed. */
+@Composable
+internal fun SignInFailure(account: AccountState) {
+    (account as? AccountState.Failed)?.let { failed ->
+        val reason = AccountMessage(signInFailureText(failed.reason), NoticeKind.ERROR, failed.message.ifBlank { null })
+        MessageLines(reason, Modifier.testTag(AccountTags.SIGN_IN_ERROR))
+    }
+}
+
+/** The spinner and "Signing in..." while the Google prompt is open. */
+@Composable
+internal fun SigningInLine() {
+    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag(AccountTags.SIGNING_IN)) {
+        CircularProgressIndicator(Modifier.size(Spacing.xl))
+        Text(stringResource(AccountText.SIGNING_IN), style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/** The spinner and the words of the action that runs; nothing when none does. */
+@Composable
+internal fun BusyLine(busy: Busy) {
+    busyText(busy)?.let { words ->
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(Spacing.md), verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.testTag(AccountTags.BUSY).semantics { liveRegion = LiveRegionMode.Polite },
+        ) {
+            CircularProgressIndicator(Modifier.size(Spacing.xl))
+            Text(uiTextResource(words), style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
 /** Draws [content] unless [show] hides it; the argument says whether it can be used. */
 @Composable
 private fun Shown(show: Show, content: @Composable (enabled: Boolean) -> Unit) {
@@ -236,7 +261,7 @@ private fun Shown(show: Show, content: @Composable (enabled: Boolean) -> Unit) {
 
 /** A pill with our own second sentence and the system's own words under it. */
 @Composable
-private fun Pill(pill: PillText, tag: String) {
+internal fun Pill(pill: PillText, tag: String) {
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
         StatusPill(uiTextResource(pill.text), pill.kind, Modifier.testTag(tag))
         pill.note?.let { Text(uiTextResource(it), style = MaterialTheme.typography.bodySmall) }
@@ -246,7 +271,7 @@ private fun Pill(pill: PillText, tag: String) {
 
 /** A deletion that was started and not finished: the person decides, and nothing syncs until then. */
 @Composable
-private fun PendingDeletionCard(text: PendingDeletionText, buttons: CloudButtons, callbacks: CloudCallbacks) {
+internal fun PendingDeletionCard(text: PendingDeletionText, buttons: CloudButtons, callbacks: CloudCallbacks) {
     Surface(
         shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer,
         modifier = Modifier.fillMaxWidth().testTag(AccountTags.DELETION_PENDING),

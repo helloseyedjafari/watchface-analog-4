@@ -538,6 +538,13 @@
     <!-- Onboarding: backup page (hidden until accounts ship) -->
     <string name="onboarding_backup_placeholder_body">Sign-in is coming. Your designs are saved on this phone.</string>
     <string name="onboarding_backup_not_now">Not now</string>
+    <!-- Onboarding: backup page (the real one, once accounts ship; the sign-in and card words are the Account card's own) -->
+    <string name="onboarding_backup_intro">Optional. Sign in with Google and your saved designs follow you to a new phone, and your signing key is backed up (encrypted with a passphrase only you know), so a new phone can keep updating the face on your watch.</string>
+    <string name="onboarding_backup_found">This account already has a backup of a signing key.</string>
+    <string name="onboarding_backup_back_up">Back up my signing key</string>
+    <string name="onboarding_backup_restore">Restore my signing key</string>
+    <string name="onboarding_backup_skip">Skip for now</string>
+    <string name="onboarding_backup_done">Done</string>
     <!-- Onboarding: navigation (the primary button and the progress line) -->
     <string name="onboarding_nav_get_started">Get started</string>
     <string name="onboarding_nav_continue">Continue</string>

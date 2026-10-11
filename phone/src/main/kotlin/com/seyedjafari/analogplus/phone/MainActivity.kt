@@ -38,6 +38,7 @@ import com.seyedjafari.analogplus.phone.accounts.firebase.CurrentActivity
 import com.seyedjafari.analogplus.phone.accounts.firebase.PromptWatch
 import com.seyedjafari.analogplus.phone.ui.account.AccountScreen
 import com.seyedjafari.analogplus.phone.ui.account.AccountOfferHost
+import com.seyedjafari.analogplus.phone.ui.account.BackupPage
 import com.seyedjafari.analogplus.phone.ui.account.LocalAccounts
 import com.seyedjafari.analogplus.phone.ui.components.LoadSharedDesignDialog
 import com.seyedjafari.analogplus.phone.ui.design.DesignScreen
@@ -62,6 +63,9 @@ import kotlinx.coroutines.withContext
 /** Lives across rotation: the design being edited, its store and the running send. */
 class AppModel(app: Application) : AndroidViewModel(app) {
     val store = Store(app)
+    // Whether the build has accounts decides how many pages setup has, and the controller below reads that when it is built: so the flag is set
+    // first. (FirebaseProvider decides once per process; the accounts below ask it again and get the same answer.)
+    init { OnboardingConfig.setAccountsFrom(AccountsFactory.availability(app)) }
     // Decides first run vs existing user and stores it NOW, before the autosave of the default design below can make a new install look used.
     val onboarding = OnboardingController(store)
     // the photo (up to 25 MB) is read in the background and attached by the first init block below
@@ -156,7 +160,7 @@ internal fun reportStopped(changingConfigurations: Boolean, setForeground: (Bool
 class MainActivity : ComponentActivity() {
     private val model: AppModel by viewModels()
     private val watchChecker: WatchStatusChecker by lazy { gmsWatchStatusChecker(applicationContext) }
-    private val onboardingHost by lazy { OnboardingHost(model.onboarding) }
+    private val onboardingHost by lazy { OnboardingHost(model.onboarding, backupPage = { onDone -> BackupPage(onDone) }) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
