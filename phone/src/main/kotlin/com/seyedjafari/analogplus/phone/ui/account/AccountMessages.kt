@@ -172,6 +172,9 @@ fun keepMessage(result: KeepResult): AccountMessage = when (result) {
     KeepResult.NOT_SAVED -> bad(R.string.account_msg_keep_not_saved)
 }
 
+/** The backup line on screen was out of date (the cloud or this phone changed since it was read): it is read again, nothing was changed. */
+fun staleStatusMessage(): AccountMessage = bad(R.string.account_msg_status_stale)
+
 /** Why a restore cannot start; null for the plans that ask for a passphrase (possibly after a confirmation). */
 fun planProblem(plan: RestorePlan): AccountMessage? = when (plan) {
     RestorePlan.NotSignedIn -> bad(R.string.account_msg_sign_in_first)

@@ -318,6 +318,7 @@
     <string name="account_button_back_up">Back up signing key</string>
     <string name="account_button_change_passphrase">Change passphrase</string>
     <string name="account_button_restore">Restore signing key from backup</string>
+    <string name="account_button_replace_backup">Replace the backup with this phone\'s key</string>
     <string name="account_button_sync_now">Sync now</string>
     <string name="account_button_sign_out">Sign out</string>
     <string name="account_button_delete">Delete account and cloud data</string>
@@ -437,6 +438,7 @@
     <string name="account_msg_delete_account_failed">Your cloud data is deleted but your account could not be deleted. Choose Finish deleting to try again, or keep your account.</string>
     <string name="account_msg_account_kept">Your account was kept. Sync is on again and the designs on this phone are uploaded again.</string>
     <string name="account_msg_keep_not_saved">Your choice could not be saved on this phone, so the deletion is still unfinished. Try again.</string>
+    <string name="account_msg_status_stale">The backup line above was out of date, so nothing was changed. It has been read again: look at it, then choose again.</string>
     <string name="account_msg_nothing_pending">There was no unfinished deletion to end.</string>
     <string name="account_msg_action_failed">Something went wrong and the action did not finish.</string>
 
@@ -471,6 +473,10 @@
     <string name="account_replace_backup_title">Replace the backup in the cloud?</string>
     <string name="account_replace_backup_body">The backup in the cloud holds the key %1$s. This phone has the key %2$s. If you replace the backup, the key %1$s can no longer be restored from the cloud. Replace it only if you do not need that key any more.</string>
     <string name="account_replace_backup_confirm">Replace backup</string>
+    <string name="account_reask_title">The backup changed</string>
+    <string name="account_reask_gone_body">While you were choosing a passphrase, the backup in the cloud was deleted. Back up the signing key on this phone again?</string>
+    <string name="account_reask_same_body">While you were choosing a passphrase, the backup in the cloud was changed. It now holds the key on this phone (%1$s). Choose a passphrase again to replace it?</string>
+    <string name="account_reask_confirm">Continue</string>
     <string name="account_forgot_new_title">You do not need the old passphrase</string>
     <string name="account_forgot_new_body">This phone still has your signing key. Choose a new passphrase and the backup is replaced.</string>
     <string name="account_forgot_new_confirm">Choose a new passphrase</string>

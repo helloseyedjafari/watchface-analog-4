@@ -11,6 +11,7 @@ object AccountTags {
     const val BACKUP_STATUS = "account_backup_status"
     const val BACK_UP = "account_back_up"
     const val RESTORE = "account_restore"
+    const val REPLACE_BACKUP = "account_replace_backup"
     const val SYNC_NOW = "account_sync_now"
     const val SIGN_OUT = "account_sign_out"
     const val DELETE = "account_delete"

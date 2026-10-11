@@ -27,6 +27,7 @@ object AccountText {
     @StringRes val BACK_UP = R.string.account_button_back_up
     @StringRes val CHANGE_PASSPHRASE = R.string.account_button_change_passphrase
     @StringRes val RESTORE = R.string.account_button_restore
+    @StringRes val REPLACE_BACKUP = R.string.account_button_replace_backup
     @StringRes val SYNC_NOW = R.string.account_button_sync_now
     @StringRes val SIGN_OUT = R.string.account_button_sign_out
     @StringRes val DELETE = R.string.account_button_delete
