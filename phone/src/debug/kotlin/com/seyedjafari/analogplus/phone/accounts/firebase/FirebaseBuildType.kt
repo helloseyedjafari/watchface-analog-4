@@ -32,7 +32,8 @@ fun emulatorEmail(context: Context): String =
     } ?: "tester@example.com"
 
 /**
- * Debug builds use the App Check debug provider: it logs a token that is registered once in the Firebase console.
+ * Debug builds use the App Check debug provider: it logs a token that is registered in the Firebase console. The token is new
+ * for every installation of the app (a reinstall or Clear data makes a new one, to be registered again).
  * NOT VERIFIED here (no Firebase project): the provider is installed, nothing has been enforced or tested against a server.
  */
 object AppCheckInstaller {

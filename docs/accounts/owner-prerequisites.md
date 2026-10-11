@@ -27,14 +27,25 @@ off. Do these in order; each item says what to hand back to the code.
   rules and indexes from the repository:
   `cd firebase && npm ci && npx firebase login && npx firebase deploy --only firestore --project <project-id>`.
   Put the project id into `firebase/.firebaserc` as a second alias (`"prod": "<project-id>"`).
+  **Deploy the rules again every time `firebase/firestore.rules` changes** (run `cd firebase && npm test` first). The app's
+  protection of a deleted account ("kill switch") lives in those rules and needs two things together: the rules deployed, and
+  the account's **marker document** `users/<uid>/meta/account` in Firestore. The app creates the marker itself when it starts
+  syncing for an account (you create nothing by hand); the rules then refuse every write of designs, the current design and the
+  signing-key backup unless that marker exists and is not marked deleted, and the deletion marks it first. With older rules
+  (without `meta/account`) the app cannot create its marker and sync will report that the cloud refused it; with the rules left in
+  "test mode" sync works, but other phones of a deleted account are **not** stopped. After
+  deploying, open Firestore, Rules in the console and check that the published text contains `meta/account`. This stops the other phones
+  from writing and signs them out; it is not a revocation of their Google/Firebase tokens (that would need a Cloud Function on
+  the Blaze plan, not built).
 - [ ] **6. App Check (Play Integrity).** Build, App Check, Apps, register the Android app with the **Play Integrity** provider
   (needs the app in Play Console and the Cloud project linked to it: Play Console, Test and release, App integrity; the app's
   **app-signing SHA-256** from item 2 must be registered in Project settings).
   Register a **debug token** for your own debug builds: run a debug build once with the project's `google-services.json`, find the
   log line "Enter this debug secret into the allow list in the Firebase Console" (`adb logcat | grep -i appcheck`), and add the
   token under App Check, Apps, Manage debug tokens. The debug token is **new for every installation of the debug app**: after a reinstall or
-  Clear data you register a new one (or fix a secret with the `firebaseAppCheckDebugSecret` setting, see the Firebase App Check
-  debug-provider documentation). Watch App Check's request metrics for a few days, **then** switch Firestore
+  Clear data (also each time Android Studio or Gradle reinstalls the app with its data removed) the log shows a new one and you
+  register it again. (The Firebase setting for a fixed secret, `firebaseAppCheckDebugSecret`, is an argument of instrumented tests
+  only and does not apply to a debug build you start by hand.) Watch App Check's request metrics for a few days, **then** switch Firestore
   to *Enforced*. Enforcing earlier locks out your own test builds.
 - [ ] **7. Privacy policy at a public URL.** Host the text of `docs/accounts/privacy-policy-draft.md` on any public page. First
   fill in every `[OWNER: ...]` in it (your name or company, contact email, the Firestore location from item 5, the URL of the
@@ -46,30 +57,35 @@ off. Do these in order; each item says what to hand back to the code.
   app name, not a raw project id, shows in the Google account chooser.
 - [ ] **9. Play Data Safety form.** After item 7 (it needs the privacy policy URL). Play Console, App content, Data safety. The
   answers are in the appendix of `docs/accounts/privacy-policy-draft.md`; copy them into the form and settle the lines marked
-  `[OWNER]` there (name, phone model). Re-check them whenever the app collects something new.
+  `[OWNER]` there (the Name row, and the phone-name row: the device name the person set in Android Settings, or the model when none
+  is set). Re-check them whenever the app collects something new.
 - [ ] **10. Account deletion page.** Play requires an in-app way **and** a web URL for deleting an account. The in-app way
   is in the app (Account, Delete account and cloud data). Host `docs/accounts/account-deletion-page-draft.md` as a public page
   (fill in its `[OWNER: ...]` places) and enter its URL in Play Console, App content, Data deletion. The page promises that a
   request by email is answered by hand: you delete the user under Authentication and the `users/<uid>` data under Firestore
-  yourself, so decide how many days you promise.
+  yourself (all four collections: `designs`, `state`, `backup` and `meta`, the last one is the account marker), so decide how many
+  days you promise.
 - [ ] **11. Usage watch.** The Spark plan has **no budget alerts**. After launch, look at the Usage tab for Firestore and
   Authentication now and then (quotas change, read them there). For email alerts, upgrade to **Blaze** (pay as you go, still
-  keeps the free allowance) and set a budget alert. The number of documents per user is small, but a design with a photo is large (item 12).
-- [ ] **12. Choose Spark or Blaze before launch.** The plan avoided a billing account, but the traffic of a photo design may use up
-  the free quotas faster than the document count suggests. **This is an estimate from reading the code as it was at commit 8a550b0 (before the final review fixes), not a
-  measurement, and Firebase's allowances change: read the current ones in the console.** The estimate:
-  - In that code, every time editing paused (about 1 second after the last change), the app uploaded the design being edited and read it back.
-    With a photo that is about 400 kB each way, plus about 400 kB to every other phone of the same account that has the app open.
-    That is roughly 0.8 MB or more of data out of Firestore per pause, and the app also re-reads every saved design (and the
-    records of deleted ones) each time.
-  - **Since the fixes** the design being edited is uploaded after 10 seconds of quiet or when you leave the app, and a pass about that
-    design alone no longer reads the saved designs. A slider drag is now one upload instead of dozens. The upload is still read back
-    (about the same size again) and still reaches other phones that have the app open. So the traffic **should be much lower, but
-    this has not been re-measured**; the numbers below are the old ones and are an upper bound only until someone measures (checklist
-    item G3).
+  keeps the free allowance) and set a budget alert. The number of documents per user is small; the one large document is the design being edited when it has a photo (item 12).
+- [ ] **12. Choose Spark or Blaze before launch.** The plan avoided a billing account, but the quotas of the free plan may be
+  used up faster than the document count suggests. **This is an estimate from reading the code at commit c403885, not a
+  measurement, and Firebase's allowances change: read the current ones in the console.** What the app sends:
+  - **Saved designs carry no photo** (the photo exists only in the design being edited). A saved design is a few kilobytes of
+    text, and the app reads and writes them in pages of 50. So the saved designs cost **document reads**, not data: each full pass
+    (when the app opens, each time it comes back to the front, "Sync now") reads every saved design once (and every record of a
+    deleted one), and starting the live updates reads them once more. That is about two reads per saved design per session; 20
+    saved designs are about 40 reads. Every write also costs **one extra read**, because the rules look up the account marker
+    (the kill switch of item 5). The deletion of an account reads and deletes every document of it, in pages.
+  - **The design being edited is the one big document when it has a photo.** The photo is shrunk to at most 512 pixels and about
+    300 kB, about 400 kB inside the document. The design is uploaded after 10 seconds of quiet or when you leave the app (a
+    slider drag is one upload), the upload is read back (about the same size again), and it reaches every other phone of the
+    same account that has the app open. With one such phone that is roughly 0.8 MB of data out of Firestore per upload. Without a
+    photo it is a few kilobytes.
   - If Spark allows about 10 GiB of data out per month for the whole project and 50 000 document reads a day (check this), that is
-    roughly 13 000 pauses a month for all users together. An editing session of about 100 pauses is about 80 MB, so about 130 such
-    sessions would use the month's allowance.
+    roughly 13 000 photo uploads a month for all users together (an editing session of 20 uploads is about 16 MB, so about 600
+    such sessions use the month's data allowance), and about 1 250 sessions a day of a user with 20 saved designs for the read
+    allowance. A few hundred active users stay well inside this; thousands do not. Measure it after launch (checklist item G3).
   - As understood from Firebase's rules, an exhausted Spark quota stops Firestore until it resets (the day for reads, the month for
     data out), and every user sees "Cloud limit reached".
   - On **Blaze** the same traffic costs cents at this size, with a budget alert (item 11), but it needs a billing account. Choose
