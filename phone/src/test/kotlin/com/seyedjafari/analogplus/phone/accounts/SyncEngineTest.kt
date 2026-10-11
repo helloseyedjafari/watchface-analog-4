@@ -1808,4 +1808,19 @@ class SyncEngineTest {
         assertEquals("not 'synced' over a skipped design", SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
     }
 
+
+    /** A-L1: a document the store refuses (a name that is blank here although the cloud accepted it) must not block the others. */
+    @Test fun aCloudDocumentWhoseNameIsBlankHereIsSkippedAndTheOthersStillArrive() = runTest {
+        val remote = FakeRemoteStore()
+        val blank = "\u3000"                                    // white space to Kotlin's trim(), maybe not to the rules'
+        remote.seedDesign("u1", RemoteDesign(designId(blank), blank, DesignJson.toJson(night), 1_500_000, DesignState.LIVE, 1))
+        remote.seedDesign("u1", RemoteDesign(designId("Zed"), "Zed", DesignJson.toJson(day), 1_600_000, DesignState.LIVE, 1))
+        val a = phone(remote, "a")
+        a.engine.start("u1"); runCurrent()
+        assertEquals(listOf("Zed"), a.names())
+        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
+        a.engine.syncNow()
+        assertEquals("the same again, not a different failure", SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
+    }
+
 }

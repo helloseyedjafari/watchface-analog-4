@@ -475,6 +475,10 @@ class SyncEngine(
                 if (e.kind != RemoteErrorKind.PERMISSION && e.kind != RemoteErrorKind.OTHER) throw e
                 if (firstReason.isEmpty()) firstReason = e.message.orEmpty()
                 Outcome.UNSYNCABLE
+            } catch (e: IllegalArgumentException) {
+                // the store refuses the document (a name that is blank here although the cloud accepted it): skipped like an
+                // unreadable one, and the others still go through
+                Outcome.UNSYNCABLE
             }
             if (outcome == Outcome.UNSYNCABLE) skipped++
         }
