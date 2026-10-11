@@ -40,7 +40,9 @@ import kotlinx.coroutines.withTimeout
  *
  * [currentDesign] is the design in the editor and must be the COMPLETE one: photo bytes present. While the editor is still
  * loading the photo it reports `kind = PHOTO` without bytes; the engine never pushes such a design (it would take the photo
- * away from the other devices) and waits for the complete autosave. It is read from any thread, so it must be thread-safe.
+ * away from the other devices). What waited for a complete design goes up when the editor says it is complete
+ * ([editorComplete], called once the photo is attached) or with the first complete save, whichever comes first. It is read
+ * from any thread, so it must be thread-safe.
  *
  * Threads: [io] runs everything blocking, that is the store and journal (SharedPreferences commits, photo file) and the
  * bitmap decoding and encoding behind [photos] and [designToRemoteJson]. Nothing here touches them on the caller's
@@ -531,7 +533,8 @@ class SyncEngine(
 
     /**
      * While the editor's photo is being read from disk its design says `PHOTO` and has no bytes yet. Pushed, that would make
-     * the other devices lose their photo; the complete design arrives with the autosave that follows the load.
+     * the other devices lose their photo. The complete design goes up on [editorComplete] (a launch with nothing edited has no
+     * autosave that follows the load) or with the complete save of an edit.
      */
     private fun DesignSettings.photoStillLoading() = background.kind == BackgroundKind.PHOTO && background.photoJpeg == null
 

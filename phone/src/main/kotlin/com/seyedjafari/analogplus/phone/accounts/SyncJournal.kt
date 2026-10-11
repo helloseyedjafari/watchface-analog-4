@@ -50,7 +50,9 @@ const val TOMBSTONE_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
  * thread, and there is no way to make the two writes one. If the process dies in between, a saved design without an
  * entry is adopted as new by [reconcileWithStore] (nothing is lost), but a deletion whose tombstone was not yet
  * written is forgotten, so the design comes back once from the cloud at the next sync. The journal write stays
- * synchronous: a delayed write would widen that window.
+ * synchronous: a delayed write would widen that window. The mark of the design being edited has the same window between the
+ * store's write and the journal's, with no reconciliation to repair it: a crash there leaves a saved current design unmarked, so
+ * it is given to the cloud at the person's next edit rather than at the next start. It is microseconds wide and accepted too.
  *
  * A damaged journal restarts empty; a single malformed entry (for example a value written by a newer app version) is
  * skipped on its own and the rest is kept.

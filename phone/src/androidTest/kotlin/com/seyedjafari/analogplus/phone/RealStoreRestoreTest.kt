@@ -6,6 +6,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.Description
 import org.junit.runner.RunWith
@@ -29,7 +30,7 @@ class RealStoreRestoreTest {
     private val syncBackupName = "restore_test_sync_backup"
     private val syncPrefs = context.getSharedPreferences(syncName, Context.MODE_PRIVATE)
     private fun syncSnapshot() = RealStoreSnapshot(
-        context, syncName, syncBackupName, File(context.cacheDir, "restore_test_no_photo.jpg"), RealStoreSnapshot.SYNC_USER_DATA_KEYS,
+        context, syncName, syncBackupName, File(context.cacheDir, "restore_test_no_photo.jpg"), RealStoreSnapshot::syncPrefsAreUsed,
     )
 
     @After fun cleanUp() {
@@ -138,23 +139,38 @@ class RealStoreRestoreTest {
         assertEquals(mapOf("sync_journal_v1" to "the owner's journal", "device_id" to "d1"), syncPrefs.all)
     }
 
-    @Test fun aSyncBackupLeftByARunThatDiedIsKeptWhenOnlyTheDeviceIdWasWrittenSince() {
-        syncPrefs.edit().putString("sync_journal_v1", "owner").putString("device_id", "d1").commit()
+    /** What a launch of the app on an emptied store leaves in the sync preferences: its device id and the mark of the first design it saved. */
+    private val aLaunchsJournal = """{"boundUid":null,"currentSeenRemoteAtMs":0,"currentModifiedAtMs":5,"currentMark":"DIRTY","entries":{}}"""
+    private val ownersJournal = """{"boundUid":"u1","currentSeenRemoteAtMs":7,"currentModifiedAtMs":3,"currentMark":"CLEAN","entries":{"x":{"name":"Night","modifiedAtMs":1,"state":"TOMBSTONE","baseRemoteAtMs":2,"mark":"DIRTY"}}}"""
+
+    @Test fun aSyncBackupLeftByARunThatDiedIsKeptWhenOnlyWhatALaunchWritesWasWrittenSince() {
+        syncPrefs.edit().putString("sync_journal_v1", ownersJournal).putString("device_id", "d1").putLong("restore_failures", 2L).commit()
         syncSnapshot().backUp()                                      // died
-        syncPrefs.edit().putString("device_id", "d-test").commit()   // a launch
+        syncPrefs.edit().putString("device_id", "d-test").putString("sync_journal_v1", aLaunchsJournal).commit()   // a launch
         syncSnapshot().backUp()
         syncSnapshot().restore()
-        assertEquals(mapOf("sync_journal_v1" to "owner", "device_id" to "d1"), syncPrefs.all)
+        assertEquals(mapOf("sync_journal_v1" to ownersJournal, "device_id" to "d1", "restore_failures" to 2L), syncPrefs.all)
+    }
+
+    @Test fun whatOnlyTheOwnersUseLeavesInTheSyncPreferencesIsNotAFreshLaunch() {
+        assertFalse(RealStoreSnapshot.syncPrefsAreUsed(mapOf("device_id" to "d", "sync_journal_v1" to aLaunchsJournal)))
+        assertFalse(RealStoreSnapshot.syncPrefsAreUsed(mapOf("device_id" to "d")))
+        assertTrue(RealStoreSnapshot.syncPrefsAreUsed(mapOf("sync_journal_v1" to ownersJournal)))
+        assertTrue("an account", RealStoreSnapshot.syncPrefsAreUsed(mapOf("sync_journal_v1" to aLaunchsJournal.replace("\"boundUid\":null", "\"boundUid\":\"u1\""))))
+        assertTrue("a seen time", RealStoreSnapshot.syncPrefsAreUsed(mapOf("sync_journal_v1" to aLaunchsJournal.replace("\"currentSeenRemoteAtMs\":0", "\"currentSeenRemoteAtMs\":9"))))
+        assertTrue("a counter", RealStoreSnapshot.syncPrefsAreUsed(mapOf("restore_last_failure_at" to 5L)))
+        assertTrue("unreadable", RealStoreSnapshot.syncPrefsAreUsed(mapOf("sync_journal_v1" to "{broken")))
     }
 
     @Test fun aSyncBackupLeftByARunThatDiedIsDiscardedWhenTheJournalWasUsedSince() {
-        syncPrefs.edit().putString("sync_journal_v1", "old").commit()
+        syncPrefs.edit().putString("sync_journal_v1", ownersJournal).commit()
         syncSnapshot().backUp()                                      // died
-        syncPrefs.edit().putString("sync_journal_v1", "newer, from real use").commit()
+        val newer = ownersJournal.replace("Night", "Day")
+        syncPrefs.edit().putString("sync_journal_v1", newer).commit()
         val second = syncSnapshot()
         second.backUp()
         second.restore()
-        assertEquals(mapOf("sync_journal_v1" to "newer, from real use"), syncPrefs.all)
+        assertEquals(mapOf("sync_journal_v1" to newer), syncPrefs.all)
     }
 
     @Test fun theSetupSkippedRulePutsTheWholeStoreBackNotOnlyTheOnboardingKey() {

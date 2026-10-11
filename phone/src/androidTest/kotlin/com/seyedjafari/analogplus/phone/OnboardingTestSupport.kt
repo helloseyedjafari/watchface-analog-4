@@ -216,7 +216,8 @@ class SetupSkippedRule internal constructor(
  * idempotent.
  *
  * A copy left by a run that died is trusted only while the store is still in the state that run left (a launched app writes
- * the current design and the onboarding state, and into the sync preferences its device id; nothing else). If the store holds the owner's own data since (saved designs,
+ * the current design and the onboarding state, and into the sync preferences its device id and a journal holding only the
+ * mark of the current design; nothing else). If the store holds the owner's own data since (saved designs,
  * a version counter, the key fingerprint of a send), the old copy is older than that use and is discarded, with a log line,
  * and a fresh copy of what is there is taken instead: restoring the old one would overwrite newer data.
  */
@@ -225,7 +226,7 @@ internal class RealStoreSnapshot(
     prefsName: String = PREFS,
     backupName: String = "analogplus_store_test_backup",
     private val photoFile: File = File(context.filesDir, "background.jpg"),
-    private val userDataKeys: Set<String> = USER_DATA_KEYS,
+    private val holdsUserData: (Map<String, *>) -> Boolean = { all -> all.keys.any { it in USER_DATA_KEYS } },
 ) {
     private val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
     private val backup = context.getSharedPreferences(backupName, Context.MODE_PRIVATE)
@@ -234,8 +235,8 @@ internal class RealStoreSnapshot(
     /** Copies the real preferences and photo aside (unless a run that died left its copy and the store is untouched since) and empties them. */
     fun backUp() {
         val stale = backup.getBoolean(MARKER, false)
-        if (stale && prefs.all.keys.any { it in userDataKeys }) {
-            Log.w(TAG, "discarding the backup left by a run that died: the store has been used since (${prefs.all.keys.filter { it in userDataKeys }})")
+        if (stale && holdsUserData(prefs.all)) {
+            Log.w(TAG, "discarding the backup left by a run that died: the store has been used since (${prefs.all.keys})")
             check(backup.edit().clear().commit())
             photoAside.delete()
         }
@@ -281,12 +282,27 @@ internal class RealStoreSnapshot(
 
         const val SYNC_PREFS = "analogplus_sync"
 
-        /** What the owner's use leaves in the sync preferences (a launch alone writes only the device id): the journal and the restore-attempt counters. */
-        val SYNC_USER_DATA_KEYS = setOf("sync_journal_v1", "restore_failures", "restore_last_failure_at")
+        /**
+         * Whether the sync preferences hold more than a launch of the app leaves in them. A launch writes the device id and a
+         * journal that holds only the mark "the current design was saved and not yet given to the cloud" (the autosave of the
+         * first design does that); anything else is the owner's use: saved-design entries (tombstones included), an account the
+         * journal is bound to, a seen cloud time, or the restore-attempt counters.
+         */
+        fun syncPrefsAreUsed(all: Map<String, *>): Boolean {
+            if ("restore_failures" in all || "restore_last_failure_at" in all) return true
+            val text = all["sync_journal_v1"] as? String ?: return false
+            return try {
+                val o = org.json.JSONObject(text)
+                (o.optJSONObject("entries")?.length() ?: 0) > 0 || !o.isNull("boundUid") && o.optString("boundUid").isNotEmpty() ||
+                    o.optLong("currentSeenRemoteAtMs", 0L) > 0L
+            } catch (e: Exception) {
+                true   // a journal that cannot be read is not something to throw away
+            }
+        }
 
         /** The snapshot of the sync preferences (no photo: the file named here never exists). */
         fun forSync(context: Context) = RealStoreSnapshot(
-            context, SYNC_PREFS, "analogplus_sync_test_backup", File(context.cacheDir, "no-sync-photo.jpg"), SYNC_USER_DATA_KEYS,
+            context, SYNC_PREFS, "analogplus_sync_test_backup", File(context.cacheDir, "no-sync-photo.jpg"), ::syncPrefsAreUsed,
         )
     }
 }

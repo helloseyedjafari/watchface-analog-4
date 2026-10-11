@@ -5,7 +5,16 @@ import com.seyedjafari.analogplus.facegen.design.BackgroundDesign
 import com.seyedjafari.analogplus.facegen.design.BackgroundKind
 import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.phone.accounts.AccountDeletion
+import com.seyedjafari.analogplus.phone.accounts.AccountState
+import com.seyedjafari.analogplus.phone.accounts.AccountsAvailability
+import com.seyedjafari.analogplus.phone.accounts.AccountsController
+import com.seyedjafari.analogplus.phone.accounts.AttemptLimiter
+import com.seyedjafari.analogplus.phone.accounts.BackupService
 import com.seyedjafari.analogplus.phone.accounts.CurrentApplier
+import com.seyedjafari.analogplus.phone.accounts.FakeAccountManager
+import com.seyedjafari.analogplus.phone.accounts.FakeKeySource
+import com.seyedjafari.analogplus.phone.accounts.vault.KeyVault
 import com.seyedjafari.analogplus.phone.accounts.FakeRemoteStore
 import com.seyedjafari.analogplus.phone.accounts.MemoryKeyValueStore
 import com.seyedjafari.analogplus.phone.accounts.PhotoDownscaler
@@ -66,13 +75,12 @@ class CurrentPersistenceTest {
         val persistence = CurrentPersistence.atStart(store, designAtStart)
         val journal = SyncJournal(MemoryKeyValueStore())
         val engine = SyncEngine(
-            store, journal, remote, scope.backgroundScope, PhotoDownscaler { it }, CurrentApplier { state.replace(it) },
+            store, journal, remote, scope.backgroundScope, PhotoDownscaler { it }, CurrentApplier { state.replaceWholeDesign(it) },
             { state.design }, deviceId = "a", deviceLabel = "Phone", copySuffix = " (this phone)",
             clock = { scope.testScheduler.currentTime + 5_000_000 }, io = Dispatchers.Unconfined, debounceMs = 1_000,
         )
-        val attach: Job = scope.backgroundScope.launch(start = CoroutineStart.LAZY) {
-            attachSavedPhoto(state, store, persistence, designAtStart, Dispatchers.Unconfined)
-        }
+        /** The controller of the app over this engine: it starts sync for the signed-in account and is what the photo read reports to. */
+        val accounts: AccountsController
 
         init {
             if (inSync) {   // this phone gave the cloud its current design earlier: sign-in has nothing to seed
@@ -81,9 +89,18 @@ class CurrentPersistenceTest {
             }
             store.addObserver(journal)
             store.addObserver(engine)
-            engine.start("u1")
+            val manager = FakeAccountManager(AccountState.SignedIn("u1", null))
+            accounts = AccountsController(
+                AccountsAvailability.AVAILABLE, manager, engine,
+                BackupService(remote, KeyVault(), FakeKeySource(null), AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
+                AccountDeletion(manager, remote, engine, journal, Dispatchers.Unconfined), scope.backgroundScope,
+            )
             scope.backgroundScope.launch { autosave(state, persistence, Dispatchers.Unconfined, 400) }
             scope.runCurrent()
+        }
+
+        val attach: Job = scope.backgroundScope.launch(start = CoroutineStart.LAZY) {
+            attachSavedPhoto(state, store, persistence, designAtStart, accounts, Dispatchers.Unconfined)
         }
 
         fun edit(transform: (DesignSettings) -> DesignSettings) {
@@ -94,7 +111,6 @@ class CurrentPersistenceTest {
         /** The photo read-back runs; then the state change it made is announced to the autosave, as the running app's UI does. */
         fun finishLoading(scope: TestScope, advance: Boolean = true) {
             attach.start(); scope.runCurrent()
-            engine.editorComplete()                          // what AppModel does after the photo is attached
             Snapshot.sendApplyNotifications(); if (advance) scope.runCurrent()
         }
 
@@ -120,6 +136,16 @@ class CurrentPersistenceTest {
         attachNothing(app)
         advanceTimeBy(1_000); runCurrent()
         assertEquals(DesignJson.toJson(DesignSettings()), kv.getString("current_design"))
+    }
+
+    @Test fun aSeedThatWaitedForThePhotoIsPushedWithItWhenTheLoadEndsWithoutAnEdit() = runTest {
+        leftBehind(withPhoto)
+        val app = Launch(this, inSync = false)                 // never gave the cloud its design: sign-in wants to seed it
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(emptyList<DesignSettings>(), app.pushed())   // the editor is not complete: no photo-less design goes up
+        app.finishLoading(this)
+        advanceTimeBy(5_000); runCurrent()
+        assertArrayEquals(photo, app.pushed().single().background.photoJpeg)
     }
 
     @Test fun aLaunchNeverOverwritesANewerDesignFromAnotherPhoneItOffersInstead() = runTest {
@@ -190,6 +216,17 @@ class CurrentPersistenceTest {
         assertArrayEquals(photo, Store(kv, photoFile).readPhotoFile())    // the file on disk is still there
     }
 
+    @Test fun aSlotEditedWhilePhotoLoadsKeepsThePhotoOnScreenAndOnDisk() = runTest {
+        leftBehind(withPhoto)
+        val app = Launch(this)
+        app.edit { SlotGeometry.addSlot(it).design }              // what the Complications section does: an edit that rebuilds the design
+        app.finishLoading(this)
+        advanceTimeBy(5_000); runCurrent()
+        assertArrayEquals(photo, app.state.design.background.photoJpeg)
+        assertArrayEquals(photo, Store(kv, photoFile).readPhotoFile())
+        assertArrayEquals(photo, app.pushed().single().background.photoJpeg)
+    }
+
     @Test fun switchingTheBackgroundToAColourWhilePhotoLoadsDoesNotThrowThePhotoAway() = runTest {
         leftBehind(withPhoto)
         val app = Launch(this)
@@ -206,7 +243,7 @@ class CurrentPersistenceTest {
     @Test fun aDesignReplacedWhilePhotoLoadsDropsThePhotoAndTheEngineHearsOfItOnceTheLoadIsOver() = runTest {
         leftBehind(withPhoto)
         val app = Launch(this)
-        app.state.replace(night)                                // a template, say
+        app.state.replaceWholeDesign(night)                                // a template, say
         Snapshot.sendApplyNotifications()
         advanceTimeBy(5_000); runCurrent()                     // saved while the photo is pending: kept on disk, not announced
         assertEquals(emptyList<DesignSettings>(), app.pushed())

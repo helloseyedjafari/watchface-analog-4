@@ -2,6 +2,7 @@ package com.seyedjafari.analogplus.phone
 
 import androidx.compose.runtime.snapshotFlow
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.phone.accounts.AccountsController
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.Dispatchers
@@ -60,11 +61,12 @@ internal class CurrentPersistence(private val store: Store, onDiskAtStart: Desig
  * any field, the background included, keeps it, as it is kept once the photo is loaded. When nothing at all was changed the
  * design with its photo is exactly what is on disk, so it is recorded as such and not saved again (saving it would tell the
  * sync engine the person had edited it). In every other case the design is saved once the load is over, complete, so that
- * the engine hears of an edit that was made while the photo was loading.
+ * the engine hears of an edit that was made while the photo was loading. Then [accounts] is told the editor is complete, which
+ * is what lets sync push a design that had to wait for the photo.
  */
 internal suspend fun attachSavedPhoto(
     state: EditorState, store: Store, persistence: CurrentPersistence, designAtStart: DesignSettings,
-    io: CoroutineContext = Dispatchers.IO, saveDispatcher: CoroutineContext = io,
+    accounts: AccountsController, io: CoroutineContext = Dispatchers.IO, saveDispatcher: CoroutineContext = io,
 ) {
     val photo = withContext(io) { store.readPhotoFile() }
     if (photo != null && state.replacements == 0 && state.design.background.photoJpeg == null) {
@@ -75,6 +77,7 @@ internal suspend fun attachSavedPhoto(
     state.photoLoaded()
     withContext(io) { store.finishPhotoLoad(photo) }
     withContext(saveDispatcher) { persistence.persist(state.design) }
+    accounts.editorComplete()   // last: what waited for a complete design (a seed, a "keep mine") goes up now
 }
 
 /** Saves shortly after the last change (one write per burst of typing). Runs until cancelled. */

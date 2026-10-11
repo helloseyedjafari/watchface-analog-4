@@ -74,7 +74,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
      * the sync engine does not push that (see `CloudSync`).
      */
     val accounts: AccountsController = AccountsFactory.create(
-        app, store, viewModelScope, currentDesign = { state.design }, applier = CurrentApplier { design -> state.replace(design) },
+        app, store, viewModelScope, currentDesign = { state.design }, applier = CurrentApplier { design -> state.replaceWholeDesign(design) },
     )
     /** A design from a tapped link, waiting for the user to confirm that it replaces the current one. */
     var pendingLinkDesign: DesignSettings? by mutableStateOf(null)
@@ -82,10 +82,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     init {
         // the photo (up to 25 MB) is read in the background and attached
-        viewModelScope.launch {
-            attachSavedPhoto(state, store, persistence, designAtStart, saveDispatcher = saveDispatcher)
-            accounts.editorComplete()
-        }
+        viewModelScope.launch { attachSavedPhoto(state, store, persistence, designAtStart, accounts, saveDispatcher = saveDispatcher) }
         // save shortly after the last change (one write per burst of typing)
         viewModelScope.launch { autosave(state, persistence, saveDispatcher, SAVE_DELAY_MS) }
     }
@@ -231,7 +228,7 @@ fun AppShell(
             }
         }
         pendingLink?.let { incoming ->
-            LoadSharedDesignDialog(incoming, onLoad = { state.replace(incoming); onPendingLinkResolved() }, onKeep = onPendingLinkResolved)
+            LoadSharedDesignDialog(incoming, onLoad = { state.replaceWholeDesign(incoming); onPendingLinkResolved() }, onKeep = onPendingLinkResolved)
         }
     }
 }
