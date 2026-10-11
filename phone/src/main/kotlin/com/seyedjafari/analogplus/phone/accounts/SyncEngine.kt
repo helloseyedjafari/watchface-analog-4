@@ -192,12 +192,14 @@ class SyncEngine(
                 seenCurrentAtMs = journal.currentSeenRemoteAtMs()
             }
             ready.complete(Unit)
-            runPass(uid)
+            // The cloud's current design is looked at before the first pass, because that pass would otherwise push an edit
+            // made in the meantime over a newer design from another phone before the question about it is asked.
             guarded(uid) {
                 val rc = call { remote.getCurrent(uid) }
                 onRemoteCurrent(uid, rc)
                 seedCurrent(uid, rc)
             }
+            runPass(uid)
             ensureListeners()
             launch {
                 for (t in channel) {
@@ -300,10 +302,20 @@ class SyncEngine(
     private suspend fun seedCurrent(id: String, rc: RemoteCurrent?) {
         if (uid != id || currentKnown) return
         currentKnown = true
-        if (_offer.value != null) return
-        if (rc != null && !withContext(io) { journal.currentDirty() }) return
-        if (currentDesign() == DesignSettings()) return
+        if (_offer.value != null) return   // the answer decides: "use theirs" drops what waited, "keep mine" pushes it
+        val dirty = withContext(io) { journal.currentDirty() }
+        // A cloud that has no current design although this phone saw one before was emptied (the account's data was deleted,
+        // maybe from another phone): the same rule the designs follow, nothing is written back. An edit that was saved here
+        // and never uploaded is the person's and still goes up.
+        val emptiedByDeletion = rc == null && seenCurrentAtMs > 0
+        if (!dirty && (rc != null || emptiedByDeletion)) { releaseHeld(); return }
+        if (currentDesign() == DesignSettings()) { releaseHeld(); return }
         queueCurrent()
+    }
+
+    /** An edit that waited for the cloud's current design to be looked at may go up now. */
+    private fun releaseHeld() {
+        if (pendingCurrent.get() != null) trigger?.trySend(Unit)
     }
 
     override fun onSavedDesignChanged(change: SavedChange, origin: ChangeOrigin) {
@@ -335,7 +347,11 @@ class SyncEngine(
         val offer = _offer.getAndUpdate { null } ?: return
         noteCurrentSeen(offer.remoteUpdatedAtMs)
         when (choice) {
-            OfferChoice.USE_REMOTE -> { lastPushedCurrent = offer.design; applier.apply(offer.design) }
+            OfferChoice.USE_REMOTE -> {
+                pendingCurrent.set(null)   // an edit that waited for this answer is given up with the design it was made on
+                lastPushedCurrent = offer.design
+                applier.apply(offer.design)
+            }
             OfferChoice.KEEP_MINE -> {
                 lastPushedCurrent = null
                 queueCurrent()
@@ -566,6 +582,9 @@ class SyncEngine(
     private suspend fun pushCurrentIfNeeded(uid: String) {
         if (this.uid != uid) return   // a pass that outlived its session must not take (or give back) the new session's design
         val p = pendingCurrent.getAndSet(null) ?: return
+        // Not before the cloud's current design has been looked at, and not while the question about a newer one is open:
+        // the answer decides. The edit is kept (the journal's mark stays) and goes up when it is released.
+        if (!currentKnown || _offer.value != null) { pendingCurrent.compareAndSet(null, p); return }
         val d = p.design
         if (d.photoStillLoading()) return
         if (d == lastPushedCurrent) {   // the cloud has it (the design that was just taken from there, say)

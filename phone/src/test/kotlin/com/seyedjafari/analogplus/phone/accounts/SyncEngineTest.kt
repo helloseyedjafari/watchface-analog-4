@@ -81,8 +81,20 @@ class SyncEngineTest {
         /** The first snapshot of a designs listener arrives this late. */
         var snapshotDelayMs = 0L
 
+        /** The next read of the cloud's current design fails with this, once. */
+        var getCurrentFailure: RemoteException? = null
+
+        override suspend fun getCurrent(uid: String): RemoteCurrent? {
+            getCurrentFailure?.let { getCurrentFailure = null; throw it }
+            return inner.getCurrent(uid)
+        }
+
+        /** The full fetch waits here (cancellable) before it answers. */
+        var fetchGate: CompletableDeferred<Unit>? = null
+
         override suspend fun fetchDesigns(uid: String): List<RemoteDesign> {
             fetchTimes += clockMs()
+            fetchGate?.await()
             throwOnFetch?.let { throw it }
             return inner.fetchDesigns(uid)
         }
@@ -102,8 +114,12 @@ class SyncEngineTest {
             emitAll(merge(inner.observeDesigns(uid), injected))
         }
 
+        /** The first snapshot of the current-design listener arrives this late. */
+        var currentSnapshotDelayMs = 0L
+
         override fun observeCurrent(uid: String): Flow<RemoteCurrent?> = flow {
             currentListens++
+            if (currentSnapshotDelayMs > 0) delay(currentSnapshotDelayMs)
             emitAll(inner.observeCurrent(uid))
         }
 
@@ -1015,12 +1031,11 @@ class SyncEngineTest {
         val a = phone(remote, "a", engineRemote = flaky, photos = PhotoDownscaler { ByteArray(400_000) { 3 } })
         val withPhoto = DesignSettings(background = BackgroundDesign(kind = BackgroundKind.PHOTO, photoJpeg = ByteArray(10) { 1 }))
         a.current = withPhoto
+        flaky.hangPutCurrent = true                          // the design is seeded at sign-in, and that write never answers
         a.engine.start("u1"); runCurrent()
-        flaky.hangPutCurrent = true
-        a.engine.onCurrentSaved(withPhoto, ChangeOrigin.USER)
         advanceTimeBy(28_000); runCurrent()
         assertEquals("a 530 kB write gets more than the flat 20 s", SyncStatus.Syncing, a.engine.status.value)
-        advanceTimeBy(5_000); runCurrent()
+        advanceTimeBy(2_800); runCurrent()                   // 30.8 s: the scaled timeout (30.4 s) has run out, the next try has not begun
         assertEquals(SyncStatus.Offline, a.engine.status.value)
     }
 
@@ -1548,4 +1563,147 @@ class SyncEngineTest {
         advanceTimeBy(3_000); runCurrent()
         assertTrue("a pass for the foreground shows syncing: $seen", seen.contains(SyncStatus.Syncing))
     }
+
+    // ---- final review fix round F1: the current design and the cloud's copy -----------------------------------------------
+
+    /** A-1: the first pass must not write the editor's design over a newer one from another phone before the question. */
+    @Test fun anEditDuringTheFirstFetchIsNotPushedOverANewerDesignFromAnotherPhone() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        remote.seedCurrent("u1", RemoteCurrent(DesignJson.toJson(night), 2_000_000, "other", "Pixel 8"))
+        val b = phone(remote, "b", engineRemote = flaky); b.current = day
+        val gate = CompletableDeferred<Unit>()
+        flaky.fetchGate = gate
+        b.engine.start("u1"); runCurrent()                   // the first pass is waiting for the cloud
+        val edited = day.copy(accent = "#FF999999")
+        b.current = edited
+        b.engine.onCurrentSaved(edited, ChangeOrigin.USER)   // the person drags a slider
+        gate.complete(Unit); runCurrent()
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals("the edit must not be written over the other phone's design", 0, remote.currentWrites.size)
+        assertNotNull("the question is asked", b.engine.currentOffer.value)
+    }
+
+    @Test fun anEditQueuedWhileAnOfferIsOpenWaitsForTheAnswerAndUseRemoteDropsIt() = runTest {
+        val remote = FakeRemoteStore()
+        remote.seedCurrent("u1", RemoteCurrent(DesignJson.toJson(night), 2_000_000, "other", "Pixel 8"))
+        val b = phone(remote, "b"); b.current = day
+        b.engine.start("u1"); runCurrent()
+        assertNotNull(b.engine.currentOffer.value)
+        val edited = day.copy(accent = "#FF999999")
+        b.current = edited
+        b.engine.onCurrentSaved(edited, ChangeOrigin.USER)   // typed while the question is on the screen
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(0, remote.currentWrites.size)
+        b.engine.resolveOffer(OfferChoice.USE_REMOTE)
+        b.engine.syncNow()                                    // any pass after the answer
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals("the edit the person gave up is not uploaded", 0, remote.currentWrites.size)
+        assertEquals(listOf(night), b.applied)
+    }
+
+    @Test fun anEditQueuedWhileAnOfferIsOpenIsPushedWhenThePersonKeepsIt() = runTest {
+        val remote = FakeRemoteStore()
+        remote.seedCurrent("u1", RemoteCurrent(DesignJson.toJson(night), 2_000_000, "other", "Pixel 8"))
+        val b = phone(remote, "b"); b.current = day
+        b.engine.start("u1"); runCurrent()
+        val edited = day.copy(accent = "#FF999999")
+        b.current = edited
+        b.engine.onCurrentSaved(edited, ChangeOrigin.USER)
+        advanceTimeBy(5_000); runCurrent()
+        b.engine.resolveOffer(OfferChoice.KEEP_MINE)
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(listOf(edited), remote.currentWrites.map { DesignJson.fromJson(it.designJson) })
+    }
+
+    @Test fun anEditMadeWhileOfflineWaitsUntilTheCloudsCurrentDesignHasBeenLookedAt() = runTest {
+        val remote = FakeRemoteStore()
+        remote.seedCurrent("u1", RemoteCurrent(DesignJson.toJson(night), 2_000_000, "other", "Pixel 8"))
+        remote.failWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        val b = phone(remote, "b"); b.current = day
+        b.engine.start("u1"); runCurrent()
+        val edited = day.copy(accent = "#FF999999")
+        b.current = edited
+        b.engine.onCurrentSaved(edited, ChangeOrigin.USER)
+        advanceTimeBy(5_000); runCurrent()
+        remote.failWith = null
+        advanceTimeBy(40_000); runCurrent()                   // the retry gets through; the cloud's design is found
+        assertNotNull(b.engine.currentOffer.value)
+        assertEquals("not written over the design the question is about", 0, remote.currentWrites.size)
+    }
+
+    @Test fun anEditIsNotPushedWhenTheFirstReadOfTheCloudsDesignFailedAndAnotherPhoneHasANewerOne() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        remote.seedCurrent("u1", RemoteCurrent(DesignJson.toJson(night), 2_000_000, "other", "Pixel 8"))
+        flaky.getCurrentFailure = RemoteException(RemoteErrorKind.OFFLINE, "offline")   // the read of the design fails, the rest works
+        val b = phone(remote, "b", engineRemote = flaky); b.current = day
+        val gate = CompletableDeferred<Unit>()
+        flaky.fetchGate = gate
+        b.engine.start("u1"); runCurrent()
+        val edited = day.copy(accent = "#FF999999")
+        b.current = edited
+        b.engine.onCurrentSaved(edited, ChangeOrigin.USER)
+        gate.complete(Unit); runCurrent()                     // the pass runs before the cloud's design has been looked at
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(0, remote.currentWrites.size)
+        assertNotNull("the listener finds the design and the question is asked", b.engine.currentOffer.value)
+    }
+
+    @Test fun anEditThatWaitedForTheCloudsDesignIsPushedAsSoonAsItIsKnownToBeThePhonesOwn() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        remote.seedCurrent("u1", RemoteCurrent(DesignJson.toJson(day), 2_000_000, "b", "Phone b"))   // an older save of this phone
+        flaky.getCurrentFailure = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        flaky.currentSnapshotDelayMs = 10_000                 // the listener answers late
+        val b = phone(remote, "b", engineRemote = flaky); b.current = day
+        b.engine.start("u1"); runCurrent()
+        advanceTimeBy(500); runCurrent()
+        val reset = DesignSettings()                          // the person resets the design: a seed has nothing to say about it
+        b.current = reset
+        b.engine.onCurrentSaved(reset, ChangeOrigin.USER)
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals("held: the cloud's design is not known yet", 0, remote.currentWrites.size)
+        advanceTimeBy(8_000); runCurrent()                    // the listener has answered, far less than the 30 s retry
+        assertEquals(listOf(reset), remote.currentWrites.map { DesignJson.fromJson(it.designJson) })
+    }
+
+    /** C1: after the account's data was deleted, a phone that had seen the cloud's current design must not write it back. */
+    @Test fun aPhoneThatHadSeenTheCloudsCurrentDesignDoesNotSeedItAgainAfterTheAccountWasWiped() = runTest {
+        val remote = FakeRemoteStore()
+        val a = phone(remote, "a")
+        a.current = night
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(1, remote.currentWrites.size)            // seeded once: the cloud had none
+        a.engine.stop()
+        remote.deleteAllUserData("u1")                        // deleted on another phone; this one still holds a valid token
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals("nothing is written back", 1, remote.currentWrites.size)
+        assertNull(remote.getCurrent("u1"))
+    }
+
+    @Test fun aNewAccountOrAnUnsentEditStillSeedsTheCloudWhenItHasNoCurrentDesign() = runTest {
+        val remote = FakeRemoteStore()
+        val a = phone(remote, "a")
+        a.current = night
+        a.engine.start("u1"); runCurrent()
+        advanceTimeBy(3_000); runCurrent()
+        a.engine.stop()
+        remote.deleteAllUserData("u1")
+        a.engine.start("u2"); runCurrent()                    // another account: nothing was ever seen there
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(2, remote.currentWrites.size)
+        assertNotNull(remote.getCurrent("u2"))
+        // an edit that was saved here and never uploaded is still given to the cloud
+        a.engine.stop()
+        a.store.saveCurrent(day)                              // marks the journal
+        remote.deleteAllUserData("u2")
+        a.current = day
+        a.engine.start("u2"); runCurrent()
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(listOf(night, night, day), remote.currentWrites.map { DesignJson.fromJson(it.designJson) })
+    }
+
 }
