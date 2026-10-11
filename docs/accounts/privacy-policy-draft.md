@@ -6,8 +6,8 @@ Google sign-in or a release build, and it is not legal advice. Fill in before pu
 **[OWNER: URL of the account deletion page]**, **[OWNER: date]**. Remove this paragraph when you publish.
 
 Code check before publishing: the part of "How long we keep it, and deleting it" that says other signed-in phones are signed out when
-an account is deleted describes the kill switch (`.superpowers/sdd/2026-10-09-accounts-sync/kill-switch-spec.md`), which is built since
-commit c403885 and checked only against the Firebase emulators and fakes. The app's own words for it (the question "Delete your
+an account is deleted describes the kill switch (the `users/<uid>/meta/account` marker in `firebase/firestore.rules`), which is built and
+checked only against the Firebase emulators and fakes. The app's own words for it (the question "Delete your
 account?" and the notice on the signed-out phone) say the same: a sign-out and nothing more, the next time a phone reaches the cloud,
 designs and signing key stay on that phone, and a phone that is offline stays signed in until it reconnects. Try it with a real
 project (checklist G1) before you publish.

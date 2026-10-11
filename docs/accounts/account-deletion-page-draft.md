@@ -2,7 +2,7 @@
 
 Fill in: **[OWNER: contact email]**. Written from the code; not tried with a real Firebase project or a real Google account.
 Code check before publishing: the paragraph "Your other phones" describes the kill switch
-(`.superpowers/sdd/2026-10-09-accounts-sync/kill-switch-spec.md`), which is built since commit c403885 and checked only against the
+(the `users/<uid>/meta/account` marker in `firebase/firestore.rules`), which is built and checked only against the
 Firebase emulators and fakes. The question the app asks before deleting says the same in short: other phones are signed out, and
 nothing more, the next time they reach the cloud; their designs and signing keys stay; a phone that is offline stays signed in until
 it reconnects. Try it with a real project (checklist G1) before you publish.
