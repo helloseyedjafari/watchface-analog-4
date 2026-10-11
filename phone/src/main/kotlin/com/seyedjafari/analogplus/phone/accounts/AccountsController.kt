@@ -17,7 +17,29 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** What the person is waiting for right now. */
-enum class Busy { NONE, BACKING_UP, RESTORING, DISCARDING, DELETING }
+enum class Busy {
+    NONE,
+    BACKING_UP,
+
+    /** Checking what a restore would do (asking the cloud, before any passphrase is typed). */
+    CHECKING_BACKUP,
+    RESTORING,
+    DISCARDING,
+    DELETING,
+
+    /** Ending a pending deletion with "keep my account". */
+    KEEPING_ACCOUNT,
+}
+
+/**
+ * Whether the signed-in account has a deletion that was started and not finished (see [DeletionMarks]). While
+ * [PENDING], sync is off for the account and the screen offers [AccountsController.finishDeletion] and
+ * [AccountsController.keepAccount]. [NONE] also when signed out.
+ */
+enum class DeletionState { NONE, PENDING }
+
+/** What [AccountsController.keepAccount] did. */
+enum class KeepResult { KEPT, NOT_PENDING, NOT_SIGNED_IN }
 
 enum class NoticeKind { INFO, ERROR }
 
@@ -81,11 +103,17 @@ sealed interface Notice {
     /** Nothing was deleted: the Google account could not be confirmed. */
     data class DeleteNotConfirmed(val detail: String) : Notice { override val kind = NoticeKind.ERROR }
 
-    /** Nothing changed: the cloud data could not be deleted. */
+    /** Nothing was deleted: the deletion could not be written down first, and one that cannot be remembered is not started. */
+    data object DeleteNotStarted : Notice { override val kind = NoticeKind.ERROR }
+
+    /** The cloud data could not be deleted (all of it, perhaps). The deletion is pending: finish it or keep the account. */
     data class DeleteDataFailed(val cause: RemoteErrorKind, val detail: String) : Notice { override val kind = NoticeKind.ERROR }
 
-    /** The cloud data is deleted but the account is not; trying again finishes it. */
+    /** The cloud data is deleted but the account is not. The deletion is pending: finish it or keep the account. */
     data class DeleteAccountFailed(val problem: AccountDeleteProblem, val detail: String) : Notice { override val kind = NoticeKind.ERROR }
+
+    /** The pending deletion was ended by keeping the account: sync runs again and uploads this phone's designs. */
+    data object AccountKept : Notice { override val kind = NoticeKind.INFO }
 
     /**
      * An action failed in a way nobody planned for, after the screen that started it had gone, so no caller could be told.
@@ -103,6 +131,7 @@ data class AccountsUi(
     val busy: Busy,
     val notice: Notice?,
     val offer: CurrentOffer?,
+    val deletion: DeletionState = DeletionState.NONE,
 )
 
 /**
@@ -113,8 +142,12 @@ data class AccountsUi(
  *
  * Lifecycle: [scope] belongs to whoever owns the controller. The app gives it the `AppModel` view model's scope, so it
  * lives as long as that view model: a rotation keeps it, finishing the activity (Back from the root on Android 9-11)
- * or the system killing the process ends it. A deletion that is cut off that way is not finished by the controller;
- * what the app does about that is the owner's DECISION A (Task 14). Every cloud-changing action (backup, restore, discard, delete, and sign-out, which waits for
+ * or the system killing the process ends it. A deletion that is cut off that way (or that failed) is not finished by the
+ * controller: it stays pending in [AccountDeletion] (durably), sync stays off for that account, also after a restart or
+ * a new sign-in, and [AccountsUi.deletion] is [DeletionState.PENDING] until [finishDeletion] or [keepAccount] ends it.
+ * A pending mark of another account than the signed-in one is kept and ignored.
+ *
+ * Every cloud-changing action (backup, restore, discard, delete, keep, and sign-out, which waits for
  * them) runs in that scope, not in the caller's coroutine. Cancelling the caller (the screen rotates, the person leaves
  * the tab) only stops it waiting for the answer: the action carries on to its end, then writes [ui] (busy, notice,
  * backup status) as usual, so a deletion is never abandoned halfway. The only way to cancel an action is to cancel
@@ -143,7 +176,7 @@ class AccountsController(
     /** One cloud-changing action at a time. */
     private val actionLock = Mutex()
 
-    /** The account whose deletion is running (sync must not be started for it meanwhile); null when none. */
+    /** The account whose deletion (or keep) is running; the sign-in guard does not start sync for it meanwhile; null when none. */
     private var deletingUid: String? = null
 
     /** The account the notice on screen belongs to; null for a notice that outlives its account (the deletion's). */
@@ -182,10 +215,18 @@ class AccountsController(
                     noticeUid = null
                     _ui.update { it.copy(notice = null) }
                 }
+                val pending = deletion.isPending(state.uid)
+                _ui.update { it.copy(deletion = if (pending) DeletionState.PENDING else DeletionState.NONE) }
                 // not while its deletion runs: what sync wrote between now and the end of the wipe would be orphaned
                 if (deletingUid == state.uid) {
                     // the sync of another account that ran meanwhile must not go on for this one; the deletion catches up at its end
                     if (syncedUid != null && syncedUid != state.uid) {
+                        sync.stop()
+                        syncedUid = null
+                    }
+                } else if (pending) {
+                    // an unfinished deletion: the cloud may be wiped, so nothing may sync until the person decides
+                    if (syncedUid != null) {
                         sync.stop()
                         syncedUid = null
                     }
@@ -201,7 +242,12 @@ class AccountsController(
                 sync.stop()
                 checkSeq++
                 lastSettled = BackupStatus.SignedOut
-                _ui.update { it.copy(backup = BackupStatus.SignedOut) }
+                // the notice of the account that left goes with it; the deletion's own notice belongs to no account and stays
+                if (noticeUid != null) {
+                    noticeUid = null
+                    _ui.update { it.copy(notice = null) }
+                }
+                _ui.update { it.copy(backup = BackupStatus.SignedOut, deletion = DeletionState.NONE) }
             }
         }
     }
@@ -272,7 +318,7 @@ class AccountsController(
 
     suspend fun planRestore(): RestorePlan {
         val uid = uid() ?: return RestorePlan.NotSignedIn
-        return action(uid, Busy.RESTORING, RestorePlan.NotSignedIn, clearNotice = false) {
+        return action(uid, Busy.CHECKING_BACKUP, RestorePlan.NotSignedIn, clearNotice = false) {
             val plan = backup.plan(uid)
             ActionOutcome(
                 plan,
@@ -317,9 +363,15 @@ class AccountsController(
         }
     }
 
+    /**
+     * Deletes the account and all its cloud data (asks for the Google account first). If it does not get to the end, the
+     * deletion stays pending ([AccountsUi.deletion]) and sync stays off; see the class comment. The notice of a deletion
+     * that finished, or that found another account signed in after the wipe ([AccountDeleteProblem.ACCOUNT_CHANGED]: the
+     * first account's data is gone, the account is not), outlives the account it was for.
+     */
     suspend fun deleteAccount(): DeletionResult {
         val uid = uid() ?: return DeletionResult.NotSignedIn
-        return action(uid, Busy.DELETING, DeletionResult.NotSignedIn, outlivesAccount = { it == DeletionResult.Done }) {
+        return action(uid, Busy.DELETING, DeletionResult.NotSignedIn, outlivesAccount = ::outlivesAccount) {
             val result = deletion.delete(uid)
             catchUpSync(uid, result)
             ActionOutcome(
@@ -327,6 +379,7 @@ class AccountsController(
                 when (result) {
                     DeletionResult.Done -> Notice.AccountDeleted
                     DeletionResult.Cancelled, DeletionResult.NotSignedIn -> null
+                    DeletionResult.NotStarted -> Notice.DeleteNotStarted
                     is DeletionResult.ReauthFailed -> Notice.DeleteNotConfirmed(result.message)
                     is DeletionResult.DataFailed -> Notice.DeleteDataFailed(result.kind, result.message)
                     is DeletionResult.AccountFailed -> Notice.DeleteAccountFailed(result.problem, result.message)
@@ -337,20 +390,52 @@ class AccountsController(
         }
     }
 
+    /** "Finish deleting", offered while [AccountsUi.deletion] is [DeletionState.PENDING]: the normal deletion path, with its Google prompt. */
+    suspend fun finishDeletion(): DeletionResult = deleteAccount()
+
+    /**
+     * "Keep my account", offered while [AccountsUi.deletion] is [DeletionState.PENDING]: ends the pending deletion without
+     * deleting anything more. This phone's journal forgets that anything was synced, so the wiped designs are uploaded
+     * again (see [AccountDeletion.keep]); sync starts again and the backup status is re-read (the wipe may have taken the
+     * backup document).
+     */
+    suspend fun keepAccount(): KeepResult {
+        val uid = uid() ?: return KeepResult.NOT_SIGNED_IN
+        return action(uid, Busy.KEEPING_ACCOUNT, KeepResult.NOT_SIGNED_IN) {
+            if (!deletion.isPending(uid)) return@action ActionOutcome(KeepResult.NOT_PENDING, null, refresh = false)
+            deletion.keep(uid)
+            if (uid() == uid) {
+                _ui.update { it.copy(deletion = DeletionState.NONE) }
+                syncedUid = uid
+                sync.start(uid)
+            }
+            ActionOutcome(KeepResult.KEPT, Notice.AccountKept)
+        }
+    }
+
+    private fun outlivesAccount(result: DeletionResult): Boolean =
+        result == DeletionResult.Done ||
+            (result is DeletionResult.AccountFailed && result.problem == AccountDeleteProblem.ACCOUNT_CHANGED)
+
     /**
      * The sign-in guard skipped starting sync for [uid] while its deletion ran. When the deletion ended without touching
-     * the cloud and the account is still signed in, sync is started now if it is not running; after a failed wipe the
-     * deletion has restarted it itself, which the guard has to know.
+     * the cloud and the account is still signed in, sync is started now if it is not running. When it left the deletion
+     * pending, sync stays off (the guard is told that nothing runs) and the screen state is read from the mark.
      */
     private fun catchUpSync(uid: String, result: DeletionResult) {
         if (uid() != uid) return
         when (result) {
-            DeletionResult.Cancelled, is DeletionResult.ReauthFailed -> if (syncedUid != uid) {
-                syncedUid = uid
-                sync.start(uid)
+            // nothing was touched: sync runs again, unless an earlier, unfinished deletion of this account keeps it off
+            DeletionResult.Cancelled, DeletionResult.NotStarted, is DeletionResult.ReauthFailed ->
+                if (syncedUid != uid && !deletion.isPending(uid)) {
+                    syncedUid = uid
+                    sync.start(uid)
+                }
+            is DeletionResult.DataFailed, is DeletionResult.AccountFailed -> {
+                syncedUid = null
+                _ui.update { it.copy(deletion = if (deletion.isPending(uid)) DeletionState.PENDING else DeletionState.NONE) }
             }
-            is DeletionResult.DataFailed -> syncedUid = uid
-            // Done: signed out. AccountFailed: sync stays off on purpose. NotSignedIn: not this account.
+            // Done: signed out. NotSignedIn: not this account.
             else -> Unit
         }
     }
@@ -409,12 +494,12 @@ class AccountsController(
         if (uid() != uid) return@withLock signedOut
         _ui.update { it.copy(busy = busy, notice = if (clearNotice) null else it.notice) }
         if (clearNotice) noticeUid = null
-        if (busy == Busy.DELETING) deletingUid = uid
+        if (busy == Busy.DELETING || busy == Busy.KEEPING_ACCOUNT) deletingUid = uid
         var outcome: ActionOutcome<R>? = null
         try {
             outcome = block()
         } finally {
-            if (busy == Busy.DELETING) deletingUid = null
+            if (busy == Busy.DELETING || busy == Busy.KEEPING_ACCOUNT) deletingUid = null
             _ui.update { it.copy(busy = Busy.NONE) }
         }
         val done = outcome
@@ -463,7 +548,7 @@ class AccountsController(
             return AccountsController(
                 AccountsAvailability.NOT_CONFIGURED, accounts, sync,
                 BackupService(remote, KeyVault(), NoKeySource(), AttemptLimiter(NoPersistKeyValueStore())),
-                AccountDeletion(accounts, remote, sync, journal), scope,
+                AccountDeletion(accounts, remote, sync, journal, DeletionMarks(NoPersistKeyValueStore())), scope,
             )
         }
     }

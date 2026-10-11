@@ -12,6 +12,7 @@ import com.seyedjafari.analogplus.phone.accounts.AccountsController
 import com.seyedjafari.analogplus.phone.accounts.AttemptLimiter
 import com.seyedjafari.analogplus.phone.accounts.BackupService
 import com.seyedjafari.analogplus.phone.accounts.CurrentApplier
+import com.seyedjafari.analogplus.phone.accounts.DeletionMarks
 import com.seyedjafari.analogplus.phone.accounts.FakeAccountManager
 import com.seyedjafari.analogplus.phone.accounts.FakeKeySource
 import com.seyedjafari.analogplus.phone.accounts.vault.KeyVault
@@ -93,7 +94,7 @@ class CurrentPersistenceTest {
             accounts = AccountsController(
                 AccountsAvailability.AVAILABLE, manager, engine,
                 BackupService(remote, KeyVault(), FakeKeySource(null), AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
-                AccountDeletion(manager, remote, engine, journal, Dispatchers.Unconfined), scope.backgroundScope,
+                AccountDeletion(manager, remote, engine, journal, DeletionMarks(MemoryKeyValueStore()), Dispatchers.Unconfined), scope.backgroundScope,
             )
             scope.backgroundScope.launch { autosave(state, persistence, Dispatchers.Unconfined, 400) }
             scope.runCurrent()

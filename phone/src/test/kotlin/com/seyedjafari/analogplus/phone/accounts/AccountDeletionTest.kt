@@ -9,6 +9,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -20,7 +21,8 @@ class AccountDeletionTest {
     private val remote = FakeRemoteStore()
     private val sync = FakeCloudSync()
     private val journal = SyncJournal(MemoryKeyValueStore())
-    private val deletion = AccountDeletion(accounts, remote, sync, journal)
+    private val marks = DeletionMarks(MemoryKeyValueStore())
+    private val deletion = AccountDeletion(accounts, remote, sync, journal, marks)
 
     init {
         remote.seedDesign("u1", RemoteDesign("a".repeat(32), "Night", "{}", 5, DesignState.LIVE, 1))
@@ -52,9 +54,14 @@ class AccountDeletionTest {
         class LoggedSync : CloudSync by sync {
             override fun stop() { log += "stop"; sync.stop() }
         }
-        val ordered = AccountDeletion(LoggedAccounts(), LoggedRemote(), LoggedSync(), journal)
+        class LoggedKv(val inner: MemoryKeyValueStore = MemoryKeyValueStore()) : com.seyedjafari.analogplus.phone.KeyValueStore by inner {
+            override fun putString(key: String, value: String) { log += "unmark"; inner.putString(key, value) }
+            override fun putStringChecked(key: String, value: String): Boolean { log += "mark"; return inner.putStringChecked(key, value) }
+        }
+        val ordered = AccountDeletion(LoggedAccounts(), LoggedRemote(), LoggedSync(), journal, DeletionMarks(LoggedKv()))
         assertEquals(DeletionResult.Done, runBlocking { ordered.delete("u1") })
-        assertEquals(listOf("reauth", "stop", "wipe", "deleteUser"), log)
+        // the mark is set after the prompt and before anything is stopped or deleted, and cleared when the account is gone
+        assertEquals(listOf("reauth", "mark", "stop", "wipe", "deleteUser", "unmark"), log)
     }
 
     @Test fun aCancelledReauthDeletesNothingAndLeavesSyncAlone() {
@@ -64,6 +71,7 @@ class AccountDeletionTest {
         assertEquals(0, sync.stops)
         assertEquals(0, accounts.deleteCalls)
         assertEquals("u1", journal.boundUid())
+        assertFalse(marks.isPending("u1"))           // nothing was started, so nothing is pending
     }
 
     @Test fun aFailedReauthDeletesNothing() {
@@ -72,51 +80,101 @@ class AccountDeletionTest {
         assertEquals(1, remote.designsOf("u1").size)
         assertEquals(0, sync.stops)
         assertNull(remote.deletedAllFor)
+        assertFalse(marks.isPending("u1"))
     }
 
-    @Test fun aDataFailureKeepsTheAccountAndRestartsSync() {
+    @Test fun aDataFailureLeavesTheDeletionPendingAndSyncOff() {
         remote.failDeleteAll = RemoteException(RemoteErrorKind.OFFLINE, "offline")
         assertEquals(DeletionResult.DataFailed(RemoteErrorKind.OFFLINE, "offline"), delete())
         assertEquals(0, accounts.deleteCalls)
-        assertEquals(listOf("u1"), sync.started)
+        assertTrue(sync.started.isEmpty())           // the cloud may be half wiped: nothing may run until the person decides
+        assertTrue(marks.isPending("u1"))
         assertEquals("u1", journal.boundUid())
     }
 
-    @Test fun aDataFailureDoesNotRestartSyncForAnAccountThatIsNoLongerSignedIn() {
-        remote.failDeleteAll = RemoteException(RemoteErrorKind.OFFLINE, "offline")
-        val d = deletionWithWipeHook { accounts.force(AccountState.SignedOut) }       // signed out while the wipe was running
-        assertTrue(runBlocking { d.delete("u1") } is DeletionResult.DataFailed)
-        assertTrue(sync.started.isEmpty())
-    }
-
-    @Test fun cancellingTheWipeRestartsSyncAndStaysCancelled() = runTest(UnconfinedTestDispatcher()) {
+    @Test fun cancellingTheWipeLeavesTheDeletionPendingAndSyncOffAndStaysCancelled() = runTest(UnconfinedTestDispatcher()) {
         class HangingWipe : RemoteStore by remote {
             override suspend fun deleteAllUserData(uid: String) = awaitCancellation()
         }
-        val hanging = AccountDeletion(accounts, HangingWipe(), sync, journal)
+        val hanging = AccountDeletion(accounts, HangingWipe(), sync, journal, marks, kotlinx.coroutines.Dispatchers.Unconfined)
         val job = launch { hanging.delete("u1") }
         assertEquals(1, sync.stops)                  // it is inside the wipe
+        assertTrue(marks.isPending("u1"))            // and the mark was there before it got that far
         job.cancelAndJoin()
         assertTrue(job.isCancelled)
-        assertEquals(listOf("u1"), sync.started)
+        assertTrue(sync.started.isEmpty())
+        assertTrue(marks.isPending("u1"))
         assertEquals(0, accounts.deleteCalls)
     }
 
-    @Test fun anAccountFailureAfterTheDataIsGoneKeepsSyncOffSoNothingIsResurrected() {
+    @Test fun theMarkIsSetBeforeTheWipeBegins() {
+        var pendingAtWipe: Boolean? = null
+        val d = deletionWithWipeHook { pendingAtWipe = marks.isPending("u1") }
+        assertEquals(DeletionResult.Done, runBlocking { d.delete("u1") })
+        assertEquals(true, pendingAtWipe)
+    }
+
+    @Test fun anAccountFailureAfterTheDataIsGoneLeavesTheDeletionPendingAndSyncOffUntilItIsFinished() {
         accounts.nextDelete = DeleteUserResult.Failed("try later")
         assertEquals(DeletionResult.AccountFailed(AccountDeleteProblem.FAILED, "try later"), delete())
         assertTrue(remote.designsOf("u1").isEmpty())
         assertTrue(sync.started.isEmpty())
+        assertTrue(marks.isPending("u1"))
         assertEquals("u1", journal.boundUid())       // not forgotten until the account is gone
         accounts.nextDelete = DeleteUserResult.Deleted
         assertEquals(DeletionResult.Done, delete())  // trying again finishes the job
         assertNull(journal.boundUid())
+        assertFalse(marks.isPending("u1"))           // and the mark goes with the account
     }
 
-    @Test fun needingARecentLoginIsReportedAsAnAccountFailureOfThatKind() {
+    @Test fun needingARecentLoginIsReportedAsAnAccountFailureOfThatKindAndStaysPending() {
         accounts.nextDelete = DeleteUserResult.NeedsRecentLogin
         assertEquals(DeletionResult.AccountFailed(AccountDeleteProblem.NEEDS_RECENT_LOGIN, ""), delete())
         assertNotNull(journal.boundUid())
+        assertTrue(marks.isPending("u1"))
+    }
+
+    // ---- keeping the account ------------------------------------------------------------------------------------
+
+    @Test fun keepingResetsTheJournalSoWhatWasWipedIsUploadedAgainAndClearsTheMark() {
+        journal.reconcileWithStore(listOf("Night"))
+        journal.markApplied(designId("Night"), "Night", EntryState.LIVE, 5)     // synced: CLEAN with a cloud base
+        journal.markCurrentPushed(journal.currentStamp())
+        remote.failDeleteAll = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        assertTrue(delete() is DeletionResult.DataFailed)
+        assertTrue(marks.isPending("u1"))
+        runBlocking { deletion.keep("u1") }
+        val entry = journal.entries().values.single()
+        assertNull(entry.baseRemoteAtMs)                // no longer "synced": the planner will push it again
+        assertEquals(SyncMark.DIRTY, entry.mark)
+        assertNull(journal.boundUid())                   // the next start binds again and every design is merged in
+        assertFalse(marks.isPending("u1"))
+        assertEquals(0, accounts.deleteCalls)            // nothing more was deleted
+        assertEquals(AccountState.SignedIn("u1", "me@example.com"), accounts.state.value)
+    }
+
+    @Test fun keepingOneAccountLeavesAnotherAccountsMarkAlone() {
+        marks.mark("u9")
+        marks.mark("u1")
+        runBlocking { deletion.keep("u1") }
+        assertFalse(marks.isPending("u1"))
+        assertTrue(marks.isPending("u9"))
+    }
+
+    @Test fun aMarkOfAnotherAccountDoesNotMakeThisOnePending() {
+        marks.mark("u9")
+        assertFalse(deletion.isPending("u1"))
+        assertTrue(deletion.isPending("u9"))
+        assertEquals(DeletionResult.Done, delete())      // and deleting u1 leaves u9's mark
+        assertTrue(marks.isPending("u9"))
+    }
+
+    @Test fun marksSurviveARestartBecauseTheyLiveInTheStore() {
+        val kv = MemoryKeyValueStore()
+        DeletionMarks(kv).mark("u1")
+        assertTrue(DeletionMarks(kv).isPending("u1"))
+        DeletionMarks(kv).clear("u1")
+        assertFalse(DeletionMarks(kv).isPending("u1"))
     }
 
     @Test fun localDesignsStayInTheJournalAndCountAsUnsynced() {
@@ -136,7 +194,7 @@ class AccountDeletionTest {
         class HookedWipe : RemoteStore by remote {
             override suspend fun deleteAllUserData(uid: String) { onWipe(); remote.deleteAllUserData(uid) }
         }
-        return AccountDeletion(accounts, HookedWipe(), sync, journal)
+        return AccountDeletion(accounts, HookedWipe(), sync, journal, marks)
     }
 
     @Test fun anotherAccountSignedInDuringTheWipeIsNeverDeleted() {
@@ -146,6 +204,8 @@ class AccountDeletionTest {
         assertTrue(accounts.deleted.isEmpty())
         assertEquals(AccountState.SignedIn("u2", null), accounts.state.value)
         assertEquals("u1", journal.boundUid())
+        assertTrue(marks.isPending("u1"))              // u1's data is gone and u1 still exists: waits for u1's next sign-in
+        assertFalse(marks.isPending("u2"))
         assertTrue(sync.started.isEmpty())                  // and nothing is started for anybody
     }
 
@@ -164,7 +224,7 @@ class AccountDeletionTest {
                 return ReauthResult.Ok
             }
         }
-        val d = AccountDeletion(SignsOutWhileAsking(), remote, sync, journal)
+        val d = AccountDeletion(SignsOutWhileAsking(), remote, sync, journal, marks)
         assertEquals(DeletionResult.NotSignedIn, runBlocking { d.delete("u1") })
         assertEquals(0, sync.stops)
         assertNull(remote.deletedAllFor)
@@ -203,7 +263,7 @@ class AccountDeletionTest {
         kv.threads.clear()
         val executor = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "io-test") }
         try {
-            val d = AccountDeletion(accounts, remote, sync, j, executor.asCoroutineDispatcher())
+            val d = AccountDeletion(accounts, remote, sync, j, marks, executor.asCoroutineDispatcher())
             assertEquals(DeletionResult.Done, runBlocking { d.delete("u1") })
             assertTrue(kv.threads.isNotEmpty() && kv.threads.all { it.startsWith("io-test") })
         } finally {

@@ -1,6 +1,5 @@
 package com.seyedjafari.analogplus.phone.accounts
 
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -24,6 +23,12 @@ sealed interface DeletionResult {
     /** Nobody is signed in as the account that was to be deleted (also when it changed during the Google prompt). Nothing was deleted. */
     data object NotSignedIn : DeletionResult
 
+    /**
+     * The deletion could not be written down (the preferences refused the write), so it was not started: nothing was
+     * stopped or deleted. A deletion that cannot be remembered would be lost on a cut-off.
+     */
+    data object NotStarted : DeletionResult
+
     /** The person backed out of the Google account prompt. Nothing was deleted. */
     data object Cancelled : DeletionResult
 
@@ -31,14 +36,16 @@ sealed interface DeletionResult {
     data class ReauthFailed(val message: String) : DeletionResult
 
     /**
-     * Nothing was deleted (or only part of the cloud data; trying again finishes it). Sync is running again when the
-     * account is still the signed-in one. [kind] separates offline from an expired sign-in from refused.
+     * Nothing was deleted, or only part of the cloud data. The deletion is pending ([AccountDeletion.isPending]) and
+     * sync stays off: the person finishes it (another [AccountDeletion.delete]) or keeps the account
+     * ([AccountDeletion.keep]). [kind] separates offline from an expired sign-in from refused.
      */
     data class DataFailed(val kind: RemoteErrorKind, val message: String) : DeletionResult
 
     /**
-     * The cloud data is gone but the sign-in account is not; trying again finishes it. Sync stays off. Also when another
-     * account was signed in after the wipe ([AccountDeleteProblem.ACCOUNT_CHANGED]): that account is never deleted.
+     * The cloud data is gone but the sign-in account is not. The deletion is pending and sync stays off, as after
+     * [DataFailed]. Also when another account was signed in after the wipe ([AccountDeleteProblem.ACCOUNT_CHANGED]): that
+     * account is never deleted, and the first account's mark waits for its next sign-in.
      */
     data class AccountFailed(val problem: AccountDeleteProblem, val message: String) : DeletionResult
 }
@@ -46,23 +53,32 @@ sealed interface DeletionResult {
 /**
  * Deletes everything the cloud holds for the user, then the account. Order matters: the Google account is asked for
  * again first (Firebase refuses to delete an account without a recent sign-in, and asking later would leave the data
- * deleted and the account standing), then sync is stopped so nothing is written back, then the data, then the user.
- * Local designs and the local signing key are never touched.
+ * deleted and the account standing), then the deletion is marked as pending ([DeletionMarks]), then sync is stopped so
+ * nothing is written back, then the data, then the user. Local designs and the local signing key are never touched.
  *
  * It acts for [delete]'s `uid` only. The signed-in account is checked before each step that cannot be undone (before
- * the Google prompt, before stopping sync, before deleting the Auth user) and the account manager gets the uid too, so
- * a sign-out or another sign-in during the wipe can never make it delete, or stop the sync of, someone else.
+ * the Google prompt, before the mark and the stop of sync, before deleting the Auth user) and the account manager gets
+ * the uid too, so a sign-out or another sign-in during the wipe can never make it delete, or stop the sync of, someone
+ * else.
  *
- * The journal is unbound only once the account is gone (on [io], it is a disk write): until then a retry can still
- * finish the job. From the wipe on, sync stays off (it starts again with the next sign-in).
+ * A deletion that does not reach the end (the wipe failed, the app was cut off, the Auth user could not be deleted)
+ * stays pending, durably, and sync stays off for that account: the cloud may be partly or wholly wiped while the
+ * journal still says the designs were synced, so sync running again would silently never put them back. The person
+ * ends it with another [delete] (the normal path, including the Google prompt) or with [keep]. The mark is cleared when
+ * the Auth user is gone. The journal is reset then too, and on [io] (disk writes), after the account deletion, so that a
+ * retry can still finish the job.
  */
 class AccountDeletion(
     private val accounts: AccountManager,
     private val remote: RemoteStore,
     private val sync: CloudSync,
     private val journal: SyncJournal,
+    private val marks: DeletionMarks,
     private val io: CoroutineDispatcher = Dispatchers.IO,
 ) {
+    /** Whether a deletion of [uid] was started and not finished (also from before the last restart). Cheap: a read. */
+    fun isPending(uid: String): Boolean = marks.isPending(uid)
+
     suspend fun delete(uid: String): DeletionResult {
         if (!stillSignedIn(uid)) return DeletionResult.NotSignedIn
         when (val r = accounts.reauthenticate(uid)) {
@@ -73,22 +89,22 @@ class AccountDeletion(
         }
         // the Google prompt can take a long time and the person can sign out meanwhile; nothing has been touched yet
         if (!stillSignedIn(uid)) return DeletionResult.NotSignedIn
+        // remembered before the first destructive step, so that a cut-off at any later point is found again after a restart
+        if (!withContext(NonCancellable + io) { marks.mark(uid) }) return DeletionResult.NotStarted
         sync.stop()
         try {
             remote.deleteAllUserData(uid)
         } catch (e: RemoteException) {
-            resumeSync(uid)
             return DeletionResult.DataFailed(e.kind, e.message.orEmpty())
-        } catch (e: CancellationException) {
-            // the caller gave up before the data was gone: the person is still signed in, so sync carries on
-            resumeSync(uid)
-            throw e
         }
         // the data is gone; never delete the Auth user of whoever is signed in now
         if (!stillSignedIn(uid)) return DeletionResult.AccountFailed(AccountDeleteProblem.ACCOUNT_CHANGED, "")
         return when (val r = accounts.deleteUser(uid)) {
             DeleteUserResult.Deleted -> {
-                withContext(NonCancellable + io) { journal.unbind() }
+                withContext(NonCancellable + io) {
+                    journal.unbind()
+                    marks.clear(uid)
+                }
                 DeletionResult.Done
             }
             DeleteUserResult.NeedsRecentLogin -> DeletionResult.AccountFailed(AccountDeleteProblem.NEEDS_RECENT_LOGIN, "")
@@ -97,10 +113,19 @@ class AccountDeletion(
         }
     }
 
-    private fun stillSignedIn(uid: String) = (accounts.state.value as? AccountState.SignedIn)?.uid == uid
-
-    /** Sync was stopped for the wipe; it starts again only for the account that is still signed in. */
-    private fun resumeSync(uid: String) {
-        if (stillSignedIn(uid)) sync.start(uid)
+    /**
+     * "Keep my account": ends a pending deletion of [uid] without deleting anything more. The journal forgets every
+     * cloud base (so each design counts as never synced and the next sync pass uploads it again; designs the cloud
+     * already holds again are matched by content, differing ones are kept as copies), then the mark is cleared. In that
+     * order: if this is cut off in between, the mark is still there and the person can choose again. Starting sync again
+     * is the caller's job (the controller). Runs on [io], cannot be cancelled halfway.
+     */
+    suspend fun keep(uid: String) {
+        withContext(NonCancellable + io) {
+            journal.unbind()
+            marks.clear(uid)
+        }
     }
+
+    private fun stillSignedIn(uid: String) = (accounts.state.value as? AccountState.SignedIn)?.uid == uid
 }

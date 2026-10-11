@@ -33,6 +33,7 @@ class AccountsControllerTest {
     private val pemA = FakeKeySource.samplePem("A")
     private val keys = FakeKeySource(pemA)
     private val journal = SyncJournal(MemoryKeyValueStore())
+    private val marks = DeletionMarks(MemoryKeyValueStore())
     private val vault = KeyVault(iterations = 1_000, minAcceptedIterations = 1_000)
     private val passphrase = "correct horse battery staple"
     private val fpA = keyFingerprint(pemA)
@@ -72,10 +73,12 @@ class AccountsControllerTest {
         }
     }
 
-    private fun TestScope.controller(manager: AccountManager = accounts, scope: CoroutineScope = backgroundScope) = AccountsController(
-        AccountsAvailability.AVAILABLE, manager, sync,
+    private fun TestScope.controller(
+        manager: AccountManager = accounts, scope: CoroutineScope = backgroundScope, cloud: CloudSync = sync,
+    ) = AccountsController(
+        AccountsAvailability.AVAILABLE, manager, cloud,
         BackupService(remote, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
-        AccountDeletion(manager, remote, sync, journal, Dispatchers.Unconfined), scope,
+        AccountDeletion(manager, remote, cloud, journal, marks, Dispatchers.Unconfined), scope,
     )
 
     /** A scope of the controller's own, as the app owns one: cancelling it is the only way to cancel an action. Its parent keeps it from outliving the test. */
@@ -278,7 +281,7 @@ class AccountsControllerTest {
         val other = AccountsController(
             AccountsAvailability.AVAILABLE, FakeAccountManager(AccountState.SignedIn("u1", null)), FakeCloudSync(),
             BackupService(remote, vault, fresh, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
-            AccountDeletion(accounts, remote, sync, journal), backgroundScope,
+            AccountDeletion(accounts, remote, sync, journal, marks), backgroundScope,
         )
         val plan = other.planRestore()
         assertEquals(RestorePlan.InstallNew(fpA), plan)
@@ -575,7 +578,8 @@ class AccountsControllerTest {
         gate.complete(Unit)
         upload.join()
         assertEquals(AccountState.SignedOut, accounts.state.value)
-        assertEquals(Notice.KeyBackedUp(fpA), c.ui.value.notice)  // the upload finished (and was proven) while still signed in
+        assertTrue(inner.backupOf("u1") != null)               // the upload finished (and was proven) while still signed in
+        assertNull(c.ui.value.notice)                            // and the notice of the account that left went with it
     }
 
     @Test fun signingInAgainDuringADeletionDoesNotStartSyncForTheAccountBeingDeleted() = runTest(UnconfinedTestDispatcher()) {
@@ -628,15 +632,15 @@ class AccountsControllerTest {
         assertNull(c.ui.value.notice)
     }
 
-    @Test fun aNoticeSurvivesSigningOutAndBackInAsTheSameAccount() = runTest(UnconfinedTestDispatcher()) {
+    @Test fun signingOutClearsTheNoticeOfTheAccountThatLeft() = runTest(UnconfinedTestDispatcher()) {
         val c = controller()
         c.signIn()
         c.upload(passphrase, BackupExpectation.None)
-        val notice = c.ui.value.notice
+        assertTrue(c.ui.value.notice != null)
         accounts.force(AccountState.SignedOut)
-        assertEquals(notice, c.ui.value.notice)
+        assertNull(c.ui.value.notice)
         accounts.force(AccountState.SignedIn("u1", "me@example.com"))
-        assertEquals(notice, c.ui.value.notice)
+        assertNull(c.ui.value.notice)
     }
 
     @Test fun theAccountDeletedNoticeBelongsToNoAccountAndStays() = runTest(UnconfinedTestDispatcher()) {
@@ -716,7 +720,7 @@ class AccountsControllerTest {
         assertEquals(SyncStatus.Off, statusAtReturn)               // u2's engine is not left running for u1
     }
 
-    @Test fun afterAFailedWipeTheGuardKnowsThatSyncWasRestarted() = runTest(UnconfinedTestDispatcher()) {
+    @Test fun afterAFailedWipeSyncStaysOffEvenAfterASignOutAndInDuringIt() = runTest(UnconfinedTestDispatcher()) {
         val c = controller()
         c.signIn()
         remote.onWipe = {
@@ -727,9 +731,10 @@ class AccountsControllerTest {
             throw RemoteException(RemoteErrorKind.OFFLINE, "offline")
         }
         assertTrue(c.deleteAccount() is DeletionResult.DataFailed)
-        assertEquals(listOf("u1", "u1"), sync.started)            // the deletion restarted it
+        assertEquals(listOf("u1"), sync.started)                  // the cloud may be half wiped: nothing restarts it
+        assertEquals(DeletionState.PENDING, c.ui.value.deletion)
         accounts.force(AccountState.SignedIn("u1", "renamed@example.com"))
-        assertEquals(listOf("u1", "u1"), sync.started)            // and a repeated announcement does not restart it again
+        assertEquals(listOf("u1"), sync.started)                  // not even a repeated announcement
     }
 
     @Test fun afterAWipeThatLeftTheAccountStandingSyncStaysOffEvenAfterASignOutAndInDuringIt() = runTest(UnconfinedTestDispatcher()) {
@@ -791,6 +796,213 @@ class AccountsControllerTest {
         job.join()
         assertEquals("boom", failure?.message)
         assertNull(c.ui.value.notice)
+        assertEquals(Busy.NONE, c.ui.value.busy)
+    }
+
+    // ---- an unfinished deletion ---------------------------------------------------------------------------------
+
+    @Test fun afterARestartAMarkKeepsSyncOffAndTheScreenSaysPending() = runTest(UnconfinedTestDispatcher()) {
+        marks.mark("u1")
+        val c = controller(FakeAccountManager(AccountState.SignedIn("u1", null)))
+        assertTrue(sync.started.isEmpty())
+        assertEquals(DeletionState.PENDING, c.ui.value.deletion)
+        assertEquals(SyncStatus.Off, c.ui.value.sync)
+        assertTrue(c.ui.value.backup !is BackupStatus.Checking)   // the backup can still be looked at
+    }
+
+    @Test fun signingInWithAMarkKeepsSyncOff() = runTest(UnconfinedTestDispatcher()) {
+        marks.mark("u1")
+        val c = controller()
+        c.signIn()
+        assertTrue(sync.started.isEmpty())
+        assertEquals(DeletionState.PENDING, c.ui.value.deletion)
+        accounts.force(AccountState.SignedIn("u1", "renamed@example.com"))
+        assertTrue(sync.started.isEmpty())
+    }
+
+    @Test fun aMarkOfAnotherAccountIsIgnoredForThisOneButKept() = runTest(UnconfinedTestDispatcher()) {
+        marks.mark("u9")
+        val c = controller()
+        c.signIn()
+        assertEquals(listOf("u1"), sync.started)
+        assertEquals(DeletionState.NONE, c.ui.value.deletion)
+        assertTrue(marks.isPending("u9"))
+    }
+
+    @Test fun switchingStraightToAnAccountWithAMarkStopsTheRunningSync() = runTest(UnconfinedTestDispatcher()) {
+        marks.mark("u2")
+        val c = controller()
+        c.signIn()
+        assertEquals(SyncStatus.Syncing, c.ui.value.sync)
+        accounts.force(AccountState.SignedIn("u2", null))
+        assertEquals(SyncStatus.Off, c.ui.value.sync)
+        assertEquals(listOf("u1"), sync.started)
+        assertEquals(DeletionState.PENDING, c.ui.value.deletion)
+    }
+
+    @Test fun signingOutLeavesNoPendingStateOnScreenButKeepsTheMark() = runTest(UnconfinedTestDispatcher()) {
+        marks.mark("u1")
+        val c = controller()
+        c.signIn()
+        accounts.force(AccountState.SignedOut)
+        assertEquals(DeletionState.NONE, c.ui.value.deletion)
+        assertTrue(marks.isPending("u1"))
+    }
+
+    @Test fun aCancelledGooglePromptStartsNothingAndLeavesNothingPending() = runTest(UnconfinedTestDispatcher()) {
+        accounts.nextReauth = ReauthResult.Cancelled
+        val c = controller()
+        c.signIn()
+        c.deleteAccount()
+        assertEquals(DeletionState.NONE, c.ui.value.deletion)
+        assertTrue(!marks.isPending("u1"))
+        assertEquals(SyncStatus.Syncing, c.ui.value.sync)
+    }
+
+    @Test fun aFailedWipeLeavesTheDeletionPendingAndAFreshStartStillSeesIt() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        inner.failDeleteAll = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        assertTrue(c.deleteAccount() is DeletionResult.DataFailed)
+        assertEquals(DeletionState.PENDING, c.ui.value.deletion)
+        assertEquals(SyncStatus.Off, c.ui.value.sync)
+        assertEquals(Notice.DeleteDataFailed(RemoteErrorKind.OFFLINE, "offline"), c.ui.value.notice)
+        // the app is started again
+        val cloud = FakeCloudSync()
+        val again = controller(FakeAccountManager(AccountState.SignedIn("u1", null)), cloud = cloud)
+        assertTrue(cloud.started.isEmpty())
+        assertEquals(DeletionState.PENDING, again.ui.value.deletion)
+    }
+
+    @Test fun aDeletionCutOffInTheMiddleOfTheWipeIsFoundAgainAfterTheRestart() = runTest(UnconfinedTestDispatcher()) {
+        val own = ownScope()
+        val c = controller(scope = own)
+        c.signIn()
+        remote.wipeGate = CompletableDeferred()
+        val job = launch { c.deleteAccount() }
+        assertEquals(Busy.DELETING, c.ui.value.busy)
+        own.cancel()                                             // the process goes away
+        job.join()
+        val cloud = FakeCloudSync()
+        val again = controller(FakeAccountManager(AccountState.SignedIn("u1", null)), cloud = cloud)
+        assertTrue(cloud.started.isEmpty())
+        assertEquals(DeletionState.PENDING, again.ui.value.deletion)
+    }
+
+    @Test fun aFailedAuthDeleteLeavesTheDeletionPendingWithSyncOff() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        accounts.nextDelete = DeleteUserResult.Failed("later")
+        assertTrue(c.deleteAccount() is DeletionResult.AccountFailed)
+        assertEquals(DeletionState.PENDING, c.ui.value.deletion)
+        assertEquals(SyncStatus.Off, c.ui.value.sync)
+        accounts.force(AccountState.SignedOut); accounts.force(AccountState.SignedIn("u1", "me@example.com"))
+        assertEquals(listOf("u1"), sync.started)                  // a new sign-in does not start it either
+    }
+
+    @Test fun anAccountThatChangedDuringTheWipeIsToldAsTypedStateAndTheFirstAccountStaysPending() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        remote.onWipe = { accounts.force(AccountState.SignedIn("u2", null)); yield() }
+        val r = c.deleteAccount()
+        assertEquals(DeletionResult.AccountFailed(AccountDeleteProblem.ACCOUNT_CHANGED, ""), r)
+        // u2 is signed in: its screen says nothing is pending for it, and tells that u1's data is gone while u1 stands
+        assertEquals(DeletionState.NONE, c.ui.value.deletion)
+        assertEquals(Notice.DeleteAccountFailed(AccountDeleteProblem.ACCOUNT_CHANGED, ""), c.ui.value.notice)
+        assertEquals(listOf("u1", "u2"), sync.started)            // u2 syncs as usual
+        assertTrue(marks.isPending("u1"))
+        // the notice survives a sign-out (it belongs to no account) ...
+        accounts.force(AccountState.SignedOut)
+        assertEquals(Notice.DeleteAccountFailed(AccountDeleteProblem.ACCOUNT_CHANGED, ""), c.ui.value.notice)
+        // ... and u1's next sign-in finds the pending deletion
+        accounts.force(AccountState.SignedIn("u1", null))
+        assertEquals(DeletionState.PENDING, c.ui.value.deletion)
+        assertEquals(listOf("u1", "u2"), sync.started)
+    }
+
+    @Test fun aDeletionThatCannotBeWrittenDownIsNotStarted() = runTest(UnconfinedTestDispatcher()) {
+        class Refusing(val inner: MemoryKeyValueStore = MemoryKeyValueStore()) : com.seyedjafari.analogplus.phone.KeyValueStore by inner {
+            override fun putStringChecked(key: String, value: String) = false
+        }
+        val refusing = DeletionMarks(Refusing())
+        val c = AccountsController(
+            AccountsAvailability.AVAILABLE, accounts, sync,
+            BackupService(remote, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
+            AccountDeletion(accounts, remote, sync, journal, refusing, Dispatchers.Unconfined), backgroundScope,
+        )
+        c.signIn()
+        val stopsBefore = sync.stops
+        assertEquals(DeletionResult.NotStarted, c.deleteAccount())
+        assertEquals(Notice.DeleteNotStarted, c.ui.value.notice)
+        assertEquals(stopsBefore, sync.stops)
+        assertNull(inner.deletedAllFor)
+        assertEquals(SyncStatus.Syncing, c.ui.value.sync)
+    }
+
+    @Test fun keepingTheAccountClearsTheMarkRestartsSyncAndResetsTheJournal() = runTest(UnconfinedTestDispatcher()) {
+        journal.bindTo("u1")
+        journal.reconcileWithStore(listOf("Night"))
+        journal.markApplied(designId("Night"), "Night", EntryState.LIVE, 5)
+        val c = controller()
+        c.signIn()
+        inner.failDeleteAll = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        c.deleteAccount()
+        assertEquals(DeletionState.PENDING, c.ui.value.deletion)
+        assertEquals(KeepResult.KEPT, c.keepAccount())
+        assertEquals(DeletionState.NONE, c.ui.value.deletion)
+        assertTrue(!marks.isPending("u1"))
+        assertEquals(listOf("u1", "u1"), sync.started)
+        assertEquals(SyncStatus.Syncing, c.ui.value.sync)
+        assertEquals(Notice.AccountKept, c.ui.value.notice)
+        assertEquals(Busy.NONE, c.ui.value.busy)
+        val entry = journal.entries().values.single()
+        assertNull(entry.baseRemoteAtMs)                         // what was wiped is not treated as synced
+        assertEquals(SyncMark.DIRTY, entry.mark)
+        assertEquals(AccountState.SignedIn("u1", "me@example.com"), c.ui.value.account)   // and nothing more was deleted
+    }
+
+    @Test fun keepingWithNothingPendingOrNobodySignedInDoesNothing() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        assertEquals(KeepResult.NOT_SIGNED_IN, c.keepAccount())
+        c.signIn()
+        assertEquals(KeepResult.NOT_PENDING, c.keepAccount())
+        assertEquals(listOf("u1"), sync.started)
+        assertNull(c.ui.value.notice)
+    }
+
+    @Test fun finishingAPendingDeletionRunsTheNormalPathAndClearsTheMark() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        accounts.nextDelete = DeleteUserResult.Failed("later")
+        c.deleteAccount()
+        assertEquals(DeletionState.PENDING, c.ui.value.deletion)
+        accounts.nextDelete = DeleteUserResult.Deleted
+        val reauthsBefore = accounts.reauthCalls
+        assertEquals(DeletionResult.Done, c.finishDeletion())
+        assertEquals(reauthsBefore + 1, accounts.reauthCalls)    // the Google prompt is asked for again
+        assertTrue(!marks.isPending("u1"))
+        assertEquals(DeletionState.NONE, c.ui.value.deletion)
+        assertEquals(Notice.AccountDeleted, c.ui.value.notice)
+    }
+
+    @Test fun aCancelledPromptWhileFinishingLeavesTheDeletionPending() = runTest(UnconfinedTestDispatcher()) {
+        marks.mark("u1")
+        val c = controller()
+        c.signIn()
+        accounts.nextReauth = ReauthResult.Cancelled
+        assertEquals(DeletionResult.Cancelled, c.finishDeletion())
+        assertEquals(DeletionState.PENDING, c.ui.value.deletion)
+        assertTrue(sync.started.isEmpty())
+    }
+
+    @Test fun checkingWhatARestoreWouldDoHasItsOwnBusyState() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        val gate = CompletableDeferred<Unit>().also { remote.getGates += it }
+        val job = launch { c.planRestore() }
+        assertEquals(Busy.CHECKING_BACKUP, c.ui.value.busy)
+        gate.complete(Unit)
+        job.join()
         assertEquals(Busy.NONE, c.ui.value.busy)
     }
 

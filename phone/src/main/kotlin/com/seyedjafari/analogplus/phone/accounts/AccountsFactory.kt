@@ -73,7 +73,7 @@ object AccountsFactory {
         val accounts = FirebaseAccountManager(FirebaseAuth.getInstance(), tokens, credentialManager)
         closeWhenScopeEnds(scope, accounts)
         val backup = BackupService(remote, KeyVault(), KeyStoreKeySource(keyStore), AttemptLimiter(syncKv))
-        return AccountsController(setup.availability, accounts, engine, backup, AccountDeletion(accounts, remote, engine, journal), scope)
+        return AccountsController(setup.availability, accounts, engine, backup, AccountDeletion(accounts, remote, engine, journal, DeletionMarks(syncKv)), scope)
     }
 
     private fun deviceId(kv: KeyValueStore): String =
