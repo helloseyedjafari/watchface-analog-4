@@ -156,7 +156,7 @@ class SyncEngineTest {
         val remote: FakeRemoteStore, scope: CoroutineScope, val id: String, var now: () -> Long,
         engineRemote: RemoteStore = remote, photos: PhotoDownscaler = PhotoDownscaler { it },
         io: CoroutineDispatcher = Dispatchers.Unconfined, random: () -> Double = { 1.0 },
-        val journalKv: MemoryKeyValueStore = MemoryKeyValueStore(),
+        val journalKv: MemoryKeyValueStore = MemoryKeyValueStore(), currentDebounceMs: Long = 1_000,
     ) {
         val store = Store(MemoryKeyValueStore(), File(tmp.newFolder(), "background.jpg"))
         val journal = SyncJournal(journalKv) { now() }
@@ -165,7 +165,8 @@ class SyncEngineTest {
         val engine = SyncEngine(
             store, journal, engineRemote, scope, photos, { applied += it; current = it }, { current },
             deviceId = id, deviceLabel = "Phone $id", copySuffix = suffix, clock = { now() }, io = io,
-            debounceMs = 1_000, retryMs = 30_000, maxRetryMs = 300_000, callTimeoutMs = 20_000, random = random,
+            debounceMs = 1_000, currentDebounceMs = currentDebounceMs, retryMs = 30_000, maxRetryMs = 300_000,
+            callTimeoutMs = 20_000, random = random,
         )
         init { store.addObserver(journal); store.addObserver(engine) }
         fun names() = store.savedDesigns().map { it.name }.sorted()
@@ -174,8 +175,8 @@ class SyncEngineTest {
     private fun TestScope.phone(
         remote: FakeRemoteStore, id: String, clock: () -> Long = { testScheduler.currentTime + 5_000_000 },
         engineRemote: RemoteStore = remote, photos: PhotoDownscaler = PhotoDownscaler { it }, io: CoroutineDispatcher = Dispatchers.Unconfined,
-        random: () -> Double = { 1.0 }, journalKv: MemoryKeyValueStore = MemoryKeyValueStore(),
-    ) = Phone(remote, backgroundScope, id, clock, engineRemote, photos, io, random, journalKv)
+        random: () -> Double = { 1.0 }, journalKv: MemoryKeyValueStore = MemoryKeyValueStore(), currentDebounceMs: Long = 1_000,
+    ) = Phone(remote, backgroundScope, id, clock, engineRemote, photos, io, random, journalKv, currentDebounceMs)
 
     // ---- the brief's tests, adapted to the final signatures ---------------------------------------------------------
 
@@ -1704,6 +1705,105 @@ class SyncEngineTest {
         a.engine.start("u2"); runCurrent()
         advanceTimeBy(3_000); runCurrent()
         assertEquals(listOf(night, night, day), remote.currentWrites.map { DesignJson.fromJson(it.designJson) })
+    }
+
+
+    // ---- final review fix round F1: less cloud traffic for the design being edited ----------------------------------------
+
+    /** A burst of edits (a slider drag with pauses) is one upload, after the person has been quiet for the current-design debounce. */
+    @Test fun aBurstOfCurrentDesignEditsIsOneUploadAfterTheyStop() = runTest {
+        val remote = FakeRemoteStore()
+        val a = phone(remote, "a", currentDebounceMs = 10_000)
+        a.engine.start("u1"); runCurrent()
+        var last = night
+        repeat(10) { i ->
+            last = night.copy(accent = "#FF0000%02X".format(i))
+            a.current = last
+            a.engine.onCurrentSaved(last, ChangeOrigin.USER)
+            advanceTimeBy(3_000); runCurrent()                // pauses well under the debounce
+        }
+        assertEquals("nothing goes up while the person keeps editing", 0, remote.currentWrites.size)
+        advanceTimeBy(8_000); runCurrent()
+        assertEquals(listOf(last), remote.currentWrites.map { DesignJson.fromJson(it.designJson) })
+    }
+
+    @Test fun leavingTheAppPushesTheDesignAtOnceInsteadOfWaitingForTheDebounce() = runTest {
+        val remote = FakeRemoteStore()
+        val a = phone(remote, "a", currentDebounceMs = 10_000)
+        a.engine.start("u1"); runCurrent()
+        a.current = night
+        a.engine.onCurrentSaved(night, ChangeOrigin.USER)
+        advanceTimeBy(2_000); runCurrent()
+        assertEquals(0, remote.currentWrites.size)
+        a.engine.setForeground(false)                         // onStop
+        advanceTimeBy(2_000); runCurrent()
+        assertEquals(listOf(night), remote.currentWrites.map { DesignJson.fromJson(it.designJson) })
+    }
+
+    @Test fun aPassForTheCurrentDesignAloneDoesNotReadTheSavedDesigns() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.store.saveNamed("Night", night)
+        a.engine.start("u1"); runCurrent()                    // the designs listener is up and nothing is waiting
+        val fetches = flaky.fetchTimes.size
+        a.current = day
+        a.engine.onCurrentSaved(day, ChangeOrigin.USER)
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(1, remote.currentWrites.size)
+        assertEquals("no full read of the designs for an edit of the design being edited", fetches, flaky.fetchTimes.size)
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+    }
+
+    @Test fun anEditOfASavedDesignStillReadsThem() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.engine.start("u1"); runCurrent()
+        val fetches = flaky.fetchTimes.size
+        a.store.saveNamed("Night", night)
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(fetches + 1, flaky.fetchTimes.size)
+        assertEquals(1, remote.designsOf("u1").size)
+    }
+
+    @Test fun aPassForTheCurrentDesignStillReadsTheDesignsWhenSomethingIsWaitingOrTheListenerIsDown() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        flaky.refuse = { name -> if (name == "Bad") RemoteException(RemoteErrorKind.PERMISSION, "denied") else null }
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.store.saveNamed("Bad", night)                       // never accepted by the cloud: stays unsent
+        a.engine.start("u1"); runCurrent()
+        val fetches = flaky.fetchTimes.size
+        a.current = day
+        a.engine.onCurrentSaved(day, ChangeOrigin.USER)
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals("a design is still waiting: the full pass", fetches + 1, flaky.fetchTimes.size)
+
+        val flaky2 = FlakyRemote(FakeRemoteStore()).also { it.listenFailure = RemoteException(RemoteErrorKind.PERMISSION, "denied") }
+        val b = phone(flaky2.inner, "b", engineRemote = flaky2)
+        b.engine.start("u1"); runCurrent()                    // the designs listener was refused: nobody is watching the list
+        val fetchesB = flaky2.fetchTimes.size
+        b.current = day
+        b.engine.onCurrentSaved(day, ChangeOrigin.USER)
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(fetchesB + 1, flaky2.fetchTimes.size)
+    }
+
+    @Test fun aPassForTheCurrentDesignAloneKeepsReportingWhatWasWrongWithTheDesigns() = runTest {
+        val remote = FakeRemoteStore()
+        val flaky = FlakyRemote(remote)
+        remote.seedDesign("u1", RemoteDesign("00000000000000000000000000000001", "Bad", "{not json", 1_500_000, DesignState.LIVE, 1))
+        val a = phone(remote, "a", engineRemote = flaky)
+        a.engine.start("u1"); runCurrent()
+        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
+        val fetches = flaky.fetchTimes.size
+        a.current = day
+        a.engine.onCurrentSaved(day, ChangeOrigin.USER)
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(1, remote.currentWrites.size)
+        assertEquals(fetches, flaky.fetchTimes.size)
+        assertEquals("not 'synced' over a skipped design", SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 1), a.engine.status.value)
     }
 
 }

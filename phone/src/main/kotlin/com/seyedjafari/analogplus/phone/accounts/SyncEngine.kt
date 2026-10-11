@@ -31,6 +31,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * [CloudSync] over a [RemoteStore]: reads the local side from the [Store] and the [SyncJournal], decides with
@@ -51,6 +52,14 @@ import kotlinx.coroutines.withTimeout
  * device" question. [copySuffix] is the text added to the name of this phone's copy when two designs with the same name
  * differ (a string resource, resolved by the caller). A cloud call that gets no answer for [callTimeoutMs] counts as
  * offline; a write gets [writeTimeoutMsPerKb] more per kilobyte of payload (a 900 kB design needs more than 20 s on a slow link).
+ *
+ * Cloud traffic: a saved-design edit starts a pass after [debounceMs] of quiet. An edit of the design being edited waits for
+ * [currentDebounceMs] of quiet instead: a slider drag with pauses is dozens of autosaves, each of which would move the whole
+ * design (with a photo about 400 kB, twice, and to every other phone in front). Ten seconds is longer than the pauses of a
+ * drag and far shorter than the time it takes to pick up another phone; leaving the app ([setForeground] false) pushes at
+ * once, so the other phone has it by the time it is opened. A pass that only has the design being edited to deal with does
+ * not read the saved designs again: the designs listener keeps that list current, so the read is skipped when that listener
+ * is up, the last pass over the designs got through and no design is waiting to go up.
  *
  * Retrying: a failed pass (offline, sign-in expired, quota used up) or a dead listener (anything but a refusal) asks for one
  * retry after [retryMs] doubled for every failure in a row, up to [maxRetryMs], each wait randomised by [random] (0 to 1:
@@ -79,6 +88,7 @@ class SyncEngine(
     private val clock: () -> Long = System::currentTimeMillis,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val debounceMs: Long = 1_000,
+    private val currentDebounceMs: Long = 10_000,
     private val retryMs: Long = 30_000,
     private val maxRetryMs: Long = 300_000,
     private val callTimeoutMs: Long = 20_000,
@@ -160,6 +170,31 @@ class SyncEngine(
      */
     private val fetchSeq = AtomicLong()
 
+    /** Why the session loop has to run a pass: a reason that needs the saved designs read ([genericWanted]), or only a prompt push. */
+    private val genericWanted = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val currentNowWanted = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private enum class Wake { FULL, CURRENT_NOW, CURRENT_EDIT }
+
+    /** Wakes the session loop. FULL: a pass over everything, soon. CURRENT_NOW: just the design being edited, soon. CURRENT_EDIT: just that, after [currentDebounceMs]. */
+    private fun wake(kind: Wake) {
+        when (kind) {
+            Wake.FULL -> genericWanted.set(true)
+            Wake.CURRENT_NOW -> currentNowWanted.set(true)
+            Wake.CURRENT_EDIT -> Unit
+        }
+        trigger?.trySend(Unit)
+    }
+
+    /** True while the designs listener is delivering (it ended with an error, was cancelled in the background, or never started: false). */
+    @Volatile private var designsLive = false
+
+    /** True when the last pass over the designs (full or from the listener) got to its end. */
+    @Volatile private var designsPassOk = false
+
+    /** What the last pass over the designs found wrong, to be reported again by a pass that does not read them. */
+    @Volatile private var lastDesignProblem: Problem? = null
+
     /** Set by the retry timer for the next pass of the session loop; cleared by anything a person did (edit, keep mine). */
     private val quietNext = java.util.concurrent.atomic.AtomicBoolean(false)
     private val writeSeq = AtomicLong()
@@ -202,9 +237,17 @@ class SyncEngine(
             runPass(uid)
             ensureListeners()
             launch {
-                for (t in channel) {
-                    do { delay(debounceMs) } while (channel.tryReceive().isSuccess)   // waits until edits stop for debounceMs
-                    if (quietNext.getAndSet(false)) withContext(QuietPass()) { runPass(uid) } else runPass(uid)
+                for (first in channel) {
+                    // waits until the signals stop: for debounceMs when something needs the saved designs or a prompt push,
+                    // for currentDebounceMs when it is only an edit of the design being edited
+                    while (true) {
+                        val wait = if (genericWanted.get() || currentNowWanted.get()) debounceMs else currentDebounceMs
+                        val more = withTimeoutOrNull(wait) { channel.receiveCatching() } ?: break
+                        if (more.isClosed) return@launch
+                    }
+                    val full = genericWanted.getAndSet(false)
+                    currentNowWanted.set(false)
+                    if (quietNext.getAndSet(false)) withContext(QuietPass()) { runPass(uid, currentOnly = !full) } else runPass(uid, currentOnly = !full)
                 }
             }
         }
@@ -224,6 +267,11 @@ class SyncEngine(
         bound?.complete(Unit)   // lets a caller of syncNow() waiting for the start go; it then sees it is signed out
         bound = null
         quietNext.set(false)   // what the timer asked for belongs to the session that is over
+        genericWanted.set(false)
+        currentNowWanted.set(false)
+        designsLive = false
+        designsPassOk = false
+        lastDesignProblem = null
         lastRemoteSignature = null
         lastPushedCurrent = null
         pendingCurrent.set(null)
@@ -248,15 +296,24 @@ class SyncEngine(
         scope.launch(job) { runPass(id) }.join()
     }
 
-    private suspend fun runPass(id: String) {
+    /**
+     * One pass. [currentOnly]: the reason for it was the design being edited alone; the saved designs are then not read when
+     * nothing needs it (see the class comment) and the problem the last pass found with them is reported again.
+     */
+    private suspend fun runPass(id: String, currentOnly: Boolean = false) {
         bound?.await()
         if (uid != id) return
         guarded(id) {
-            val designProblem = fullPass(id)
+            val designProblem = if (currentOnly && canSkipDesigns()) lastDesignProblem else fullPass(id)
             pushCurrentIfNeeded(id)
             finish(id, designProblem)
         }
     }
+
+    /** The designs listener is up, the last pass over them got through and none of them is waiting to go up. */
+    private suspend fun canSkipDesigns(): Boolean =
+        designsLive && designsPassOk && failingListeners.isEmpty() &&
+            withContext(io) { journal.entries().values.none { it.mark == SyncMark.DIRTY } }
 
     override fun setForeground(foreground: Boolean) {
         if (this.foreground == foreground) return
@@ -264,6 +321,7 @@ class SyncEngine(
         if (!foreground) {
             cancelListeners()
             cancelRetry()
+            if (pendingCurrent.get() != null) wake(Wake.CURRENT_NOW)   // onStop: the other phone should have it when it is opened
         } else if (uid != null) {
             resetBackoff()
             recover()
@@ -289,7 +347,7 @@ class SyncEngine(
             if (mine.photoStillLoading()) { currentPushWanted = true; return@launch }
             pendingCurrent.compareAndSet(null, PendingCurrent(mine, journal.currentStamp()))   // a newer save is already queued: keep that
             quietNext.set(false)
-            trigger?.trySend(Unit)
+            wake(Wake.CURRENT_NOW)
         }
     }
 
@@ -315,13 +373,13 @@ class SyncEngine(
 
     /** An edit that waited for the cloud's current design to be looked at may go up now. */
     private fun releaseHeld() {
-        if (pendingCurrent.get() != null) trigger?.trySend(Unit)
+        if (pendingCurrent.get() != null) wake(Wake.CURRENT_NOW)
     }
 
     override fun onSavedDesignChanged(change: SavedChange, origin: ChangeOrigin) {
         if (origin != ChangeOrigin.USER) return
         editMade()
-        trigger?.trySend(Unit)
+        wake(Wake.FULL)
     }
 
     override fun onCurrentSaved(design: DesignSettings, origin: ChangeOrigin) {
@@ -329,7 +387,7 @@ class SyncEngine(
         pendingCurrent.set(PendingCurrent(design, journal.currentStamp()))
         currentSync = CurrentSync.IN_SYNC   // a new design: whatever went wrong with the old one, ask again
         editMade()
-        trigger?.trySend(Unit)
+        wake(Wake.CURRENT_EDIT)
     }
 
     /** The user changed something: whatever the network did before, try at once (after the debounce) and start the backoff over. */
@@ -384,6 +442,7 @@ class SyncEngine(
     /** Fetches the designs and carries out one pass, all under the lock so that the list a pass acts on is the one it just read. */
     private suspend fun fullPass(id: String): Problem? = passLock.withLock {
         fetchSeq.incrementAndGet()
+        designsPassOk = false
         reconcile(id, call { remote.fetchDesigns(id) })
     }
 
@@ -420,11 +479,14 @@ class SyncEngine(
             if (outcome == Outcome.UNSYNCABLE) skipped++
         }
         lastRemoteSignature = signatureOf(remoteList)
-        return when {
+        val problem = when {
             skipped > 0 -> Problem(SyncProblem.DESIGNS_SKIPPED, skipped, firstReason)
             planned.size != actions.size -> Problem(SyncProblem.TOO_MANY_DESIGNS, MAX_SYNCED_DESIGNS)
             else -> null
         }
+        lastDesignProblem = problem
+        designsPassOk = true
+        return problem
     }
 
     /**
@@ -769,7 +831,7 @@ class SyncEngine(
     private fun recover(quiet: Boolean = false) {
         quietNext.set(quiet)   // a pass for any other reason (back in the foreground, say) is not quiet, whatever a timer asked before
         ensureListeners()
-        trigger?.trySend(Unit)
+        wake(Wake.FULL)
     }
 
     /** Starts every listener that is not running (never started, ended with an error, or cancelled in the background). */
@@ -786,6 +848,7 @@ class SyncEngine(
 
     private fun cancelListeners() = synchronized(watchLock) {
         failingListeners.clear()
+        designsLive = false
         watchJobs.values.forEach { it.cancel() }
         watchJobs.clear()
     }
@@ -799,7 +862,11 @@ class SyncEngine(
         if (uid != id) return
         try {
             when (which) {
-                Watch.DESIGNS -> remote.observeDesigns(id).collect { listenerDelivered(which); onRemoteDesigns(id, it) }
+                Watch.DESIGNS -> try {
+                    remote.observeDesigns(id).collect { designsLive = true; listenerDelivered(which); onRemoteDesigns(id, it) }
+                } finally {
+                    designsLive = false   // ended, failed or cancelled: nobody keeps the list current any more
+                }
                 Watch.CURRENT -> remote.observeCurrent(id).collect { rc ->
                     listenerDelivered(which)
                     guarded(id) { onRemoteCurrent(id, rc); seedCurrent(id, rc) }
