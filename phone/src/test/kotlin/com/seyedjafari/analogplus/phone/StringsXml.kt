@@ -3,6 +3,9 @@ package com.seyedjafari.analogplus.phone
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertTrue
+import com.seyedjafari.analogplus.phone.ui.account.TextSource
+import com.seyedjafari.analogplus.phone.ui.account.UiText
+import com.seyedjafari.analogplus.phone.ui.account.render
 import org.w3c.dom.Element
 
 /**
@@ -19,6 +22,39 @@ object StringsXml {
         val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file)
         val nodes = doc.getElementsByTagName("string")
         (0 until nodes.length).map { nodes.item(it) as Element }.associate { it.getAttribute("name") to unescape(it.textContent) }
+    }
+
+    /** `<plurals>`: name to the text of its `one` and `other` items. */
+    private val plurals: Map<String, Map<String, String>> by lazy {
+        val file = File("src/main/res/values/strings.xml")
+        val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file)
+        val nodes = doc.getElementsByTagName("plurals")
+        (0 until nodes.length).map { nodes.item(it) as Element }.associate { plural ->
+            val items = plural.getElementsByTagName("item")
+            plural.getAttribute("name") to (0 until items.length).map { items.item(it) as Element }
+                .associate { it.getAttribute("quantity") to unescape(it.textContent) }
+        }
+    }
+
+    /** `Resources.getQuantityString(name, quantity, *args)` for English: `one` for 1, `other` for everything else. */
+    fun plural(name: String, quantity: Int, vararg args: Any): String {
+        val items = plurals[name] ?: error("no <plurals name=\"$name\"> in strings.xml")
+        val template = items[if (quantity == 1) "one" else "other"] ?: error("<plurals name=\"$name\"> has no item for $quantity")
+        return format(template, args)
+    }
+
+    /** The name of the plurals resource with this id (the generated `R.plurals` class lists them). */
+    fun pluralNameOf(id: Int): String {
+        val fields = Class.forName("${R::class.java.name}\$plurals").fields
+        return fields.firstOrNull { it.getInt(null) == id }?.name ?: error("no R.plurals field has the id $id")
+    }
+
+    /** What the user reads for [text]: the same [render] the app uses, over this file. */
+    fun text(text: UiText): String = text.render(Source)
+
+    private object Source : TextSource {
+        override fun string(res: Int, args: Array<Any>): String = text(nameOf(res), *args)
+        override fun plural(res: Int, quantity: Int, args: Array<Any>): String = plural(pluralNameOf(res), quantity, *args)
     }
 
     /** `Resources.getString(name, *args)` for the default locale. */

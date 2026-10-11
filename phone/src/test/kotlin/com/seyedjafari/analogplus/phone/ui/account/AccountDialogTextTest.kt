@@ -1,0 +1,123 @@
+package com.seyedjafari.analogplus.phone.ui.account
+
+import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.phone.StringsXml
+import com.seyedjafari.analogplus.phone.accounts.CurrentOffer
+import com.seyedjafari.analogplus.phone.accounts.KeyResetCopy
+import com.seyedjafari.analogplus.phone.accounts.RemoteErrorKind
+import com.seyedjafari.analogplus.phone.accounts.RestorePlan
+import com.seyedjafari.analogplus.phone.accounts.ResetPath
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AccountDialogTextTest {
+    private val cloud = "0123456789abcdef"
+    private val phone = "fedcba9876543210"
+
+    private fun en(t: UiText) = StringsXml.text(t)
+    private fun en(res: Int) = StringsXml.text(res)
+    private fun body(d: DialogText) = d.paragraphs.joinToString("\n\n") { en(it) }
+
+    @Test fun replacingThePhonesKeyNamesBothFingerprintsBeforeAnyPassphraseIsAsked() {
+        val local = replaceKeyText(RestorePlan.ReplaceLocal(phone, cloud))!!
+        assertEquals("Replace the signing key on this phone?", en(local.title))
+        assertEquals(
+            "This phone already has a signing key ($phone). The backup holds a different key ($cloud). " +
+                "Replace it only if the face on your watch was signed with the backed-up key. The key now on this phone is kept in a copy inside the app.",
+            body(local),
+        )
+        assertEquals("Replace", en(local.confirm))
+        assertEquals("Cancel", en(local.cancel))
+        val damaged = replaceKeyText(RestorePlan.ReplaceDamaged(cloud))!!
+        assertEquals("The signing key saved on this phone is damaged. Replace it with the backed-up key ($cloud)?", body(damaged))
+    }
+
+    @Test fun onlyThePlansThatReplaceAKeyAskForAConfirmation() {
+        assertNull(replaceKeyText(RestorePlan.NotSignedIn))
+        assertNull(replaceKeyText(RestorePlan.NoBackup))
+        assertNull(replaceKeyText(RestorePlan.Unknown(RemoteErrorKind.OTHER, "")))
+        assertNull(replaceKeyText(RestorePlan.InstallNew(cloud)))
+        assertNull(replaceKeyText(RestorePlan.AlreadyHaveThisKey(cloud)))
+    }
+
+    @Test fun replacingTheBackupNamesBothKeysInTheOrderCloudThenPhone() {
+        val d = replaceBackupText(cloud, phone)
+        assertEquals("Replace the backup in the cloud?", en(d.title))
+        val text = body(d)
+        assertTrue(text.startsWith("The backup in the cloud holds the key $cloud. This phone has the key $phone."))
+        assertEquals("Replace backup", en(d.confirm))
+    }
+
+    @Test fun theForgottenPassphraseVariantFollowsWhatThePhoneHolds() {
+        assertEquals(ForgotVariant.NEW_PASSPHRASE, forgotVariant(RestorePlan.AlreadyHaveThisKey(cloud)))
+        assertEquals(ForgotVariant.REPLACE_BACKUP, forgotVariant(RestorePlan.ReplaceLocal(phone, cloud)))
+        assertEquals(ForgotVariant.RESET, forgotVariant(RestorePlan.InstallNew(cloud)))
+        assertEquals(ForgotVariant.RESET, forgotVariant(RestorePlan.ReplaceDamaged(cloud)))
+        assertNull(forgotVariant(RestorePlan.NotSignedIn))
+        assertNull(forgotVariant(RestorePlan.NoBackup))
+        assertNull(forgotVariant(RestorePlan.Unknown(RemoteErrorKind.OFFLINE, "")))
+    }
+
+    @Test fun eachForgottenPassphraseVariantHasItsOwnWords() {
+        val a = forgotText(ForgotVariant.NEW_PASSPHRASE)
+        assertEquals("You do not need the old passphrase", en(a.title))
+        assertEquals("This phone still has your signing key. Choose a new passphrase and the backup is replaced.", body(a))
+        assertEquals("Choose a new passphrase", en(a.confirm))
+        assertEquals("Cancel", en(a.cancel))
+        val b = forgotText(ForgotVariant.REPLACE_BACKUP)
+        assertEquals("Delete the old backup?", en(b.title))
+        assertTrue(body(b).contains("delete it and back up the key that is on this phone instead"))
+        assertEquals("Delete old backup", en(b.confirm))
+        assertEquals("Keep it", en(b.cancel))
+        val c = forgotText(ForgotVariant.RESET)
+        assertEquals(KeyResetCopy.current(), c)
+        assertEquals(ForgotVariant.entries.size, listOf(a, b, c).map { en(it.title) }.toSet().size)
+    }
+
+    @Test fun theResetTextsDifferAndEachNamesWhatThePersonMustDo() {
+        val self = KeyResetCopy.copyFor(ResetPath.SELF_SERVICE)
+        val adb = KeyResetCopy.copyFor(ResetPath.NEEDS_ADB)
+        assertNotEquals(body(self), body(adb))
+        assertEquals("Start over without the passphrase?", en(self.title))
+        assertEquals("Delete backup and start over", en(self.confirm))
+        assertEquals("Delete backup anyway", en(adb.confirm))
+        assertEquals("Keep the backup", en(self.cancel))
+        assertEquals("Keep the backup", en(adb.cancel))
+    }
+
+    @Test fun deleteAndSetPassphraseAndEnterPassphraseDialogsKeepTheBriefsWords() {
+        val delete = deleteAccountText()
+        assertEquals("Delete your account?", en(delete.title))
+        assertTrue(body(delete).contains("You will be asked to choose your Google account again to confirm."))
+        assertEquals("Delete account", en(delete.confirm))
+        val set = setPassphraseText()
+        assertEquals("Back up your signing key", en(set.title))
+        assertTrue(body(set).contains("at least 12 characters"))
+        assertTrue(body(set).contains("nobody can recover it for you, not even us"))
+        assertEquals("Back up", en(set.confirm))
+        assertEquals("Restore your signing key", en(EnterPassphraseText.dialog.title))
+        assertEquals("Enter the recovery passphrase you chose when you backed the key up.", body(EnterPassphraseText.dialog))
+        assertEquals("Restore", en(EnterPassphraseText.dialog.confirm))
+        assertEquals("I forgot the passphrase", en(EnterPassphraseText.FORGOT))
+    }
+
+    @Test fun theOfferNamesTheDeviceAndTheDesign() {
+        val offer = offerText(CurrentOffer("Pixel 8", DesignSettings(name = "Night"), 5))
+        assertEquals("Use the design from Pixel 8?", en(offer.title))
+        assertEquals("Another device saved a different version of the design you are editing (\"Night\"). Use that one here, or keep the one on this phone?", en(offer.body))
+        assertEquals("Use theirs", en(offer.use))
+        assertEquals("Keep mine", en(offer.keep))
+    }
+
+    @Test fun anEmptyDeviceLabelAndAnEmptyDesignNameHaveWords() {
+        val offer = offerText(CurrentOffer("  ", DesignSettings(name = ""), 5))
+        assertEquals("Use the design from another device?", en(offer.title))
+        assertTrue(en(offer.body).contains("(\"(no name)\")"))
+        // a name the dialog cuts, like the link dialog does
+        val long = offerText(CurrentOffer("Pixel", DesignSettings(name = "x".repeat(60)), 5))
+        assertTrue(en(long.body).contains("\"" + "x".repeat(40) + "…\""))
+    }
+}
