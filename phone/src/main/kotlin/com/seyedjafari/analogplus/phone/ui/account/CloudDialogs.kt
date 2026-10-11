@@ -2,11 +2,15 @@ package com.seyedjafari.analogplus.phone.ui.account
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -15,18 +19,24 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import android.view.WindowManager
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import com.seyedjafari.analogplus.phone.R
@@ -69,6 +79,14 @@ private fun TextDialog(
  * The shape of every dialog of the account flows; [body] is what is said between the heading and the buttons. [onDismiss] is
  * what a tap outside or Back means (the cancel button's answer unless said otherwise). A dialog is a window of its own, so
  * the density of the place that shows it is given back to everything drawn inside (see [ProvideOuterDensity]).
+ *
+ * The window is edge to edge, is not panned for the keyboard ([SOFT_INPUT_ADJUST_RESIZE] with insets handled here), and the dialog
+ * keeps inside the room the system bars and the keyboard leave ([safeDrawingPadding]): with the keyboard open the dialog gets
+ * shorter and the part that scrolls gives way, so the buttons stay reachable at a large font too. (A dialog window left as it
+ * is gets panned up for the keyboard, which pushes the buttons under it, or in a short window the dialog off the screen.)
+ * A tap outside the dialog is the window's own: [onDismiss]. In an upright window the body scrolls and the buttons stay below it;
+ * in a short wide window the whole dialog is one page that scrolls, with a fade at its edges, buttons last. The title is the
+ * pane title, which a screen reader says when the dialog opens.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -78,48 +96,57 @@ private fun DialogFrame(
     destructive: Boolean = false, body: @Composable ColumnScope.() -> Unit,
 ) {
     val outer = LocalDensity.current
-    if (rememberScreenLayout() == ScreenLayout.SIDE_BY_SIDE) {
-        Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            ProvideOuterDensity(outer) {
+    val page = rememberScreenLayout() == ScreenLayout.SIDE_BY_SIDE
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        (LocalView.current.parent as? DialogWindowProvider)?.window?.let { window ->
+            SideEffect { window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING) }
+        }
+        ProvideOuterDensity(outer) {
+            Box(
+                // the tap handler is outermost, so the margin around the dialog counts as outside it
+                Modifier.fillMaxSize().pointerInput(onDismiss) { detectTapGestures { onDismiss() } }.safeDrawingPadding().padding(if (page) Spacing.xs else Spacing.lg),
+                contentAlignment = Alignment.Center,
+            ) {
                 Surface(
-                    modifier = Modifier.padding(Spacing.lg).widthIn(max = Dimens.DialogMaxWidth).fillMaxWidth(),
+                    // a tap on the dialog itself is not a tap outside it
+                    modifier = Modifier.widthIn(min = Dimens.DialogMinWidth, max = Dimens.DialogMaxWidth).pointerInput(Unit) { detectTapGestures { } }
+                        .semantics { paneTitle = title },
                     shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = Elevation.raised,
                 ) {
-                    // the page may be taller than the window: the fade at its edges says there is more
-                    Column(
-                        Modifier.verticalScrollWithFades(rememberScrollState(), AccountTags.DIALOG_SCROLL).padding(Spacing.xl),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.md),
-                    ) {
-                        Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
-                        body()
-                        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm, Alignment.End), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                            SecondaryButton(cancelLabel, onCancel, Modifier.testTag(cancelTag))
-                            PrimaryButton(confirmLabel, onConfirm, Modifier.testTag(confirmTag), enabled = confirmEnabled, destructive = destructive)
+                    if (page) {
+                        // the page may be taller than the window: the fade at its edges says there is more
+                        Column(
+                            // tighter than an upright dialog: sideways with the keyboard open there is little height to spare
+                            Modifier.verticalScrollWithFades(rememberScrollState(), AccountTags.DIALOG_SCROLL).padding(Spacing.md),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                        ) {
+                            Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+                            body()
+                            DialogButtons(cancelLabel, confirmLabel, cancelTag, confirmTag, onCancel, onConfirm, confirmEnabled, destructive)
+                        }
+                    } else {
+                        Column(Modifier.padding(Spacing.xl), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                            Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+                            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.md)) { body() }
+                            DialogButtons(cancelLabel, confirmLabel, cancelTag, confirmTag, onCancel, onConfirm, confirmEnabled, destructive)
                         }
                     }
                 }
             }
         }
-    } else {
-        // The M3 AlertDialog lays its buttons out one under the other when they are wide, and at a large font that row overlapped
-        // its own buttons; this is the same shape with a row that wraps: heading, a body that scrolls, buttons that stay below it.
-        Dialog(onDismissRequest = onDismiss) {
-            ProvideOuterDensity(outer) {
-                Surface(
-                    modifier = Modifier.widthIn(min = Dimens.DialogMinWidth, max = Dimens.DialogMaxWidth),
-                    shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = Elevation.raised,
-                ) {
-                    Column(Modifier.padding(Spacing.xl), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                        Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
-                        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.md)) { body() }
-                        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm, Alignment.End), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                            SecondaryButton(cancelLabel, onCancel, Modifier.testTag(cancelTag))
-                            PrimaryButton(confirmLabel, onConfirm, Modifier.testTag(confirmTag), enabled = confirmEnabled, destructive = destructive)
-                        }
-                    }
-                }
-            }
-        }
+    }
+}
+
+/** The two buttons, end aligned, wrapping instead of overlapping at a large font. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DialogButtons(
+    cancelLabel: String, confirmLabel: String, cancelTag: String, confirmTag: String,
+    onCancel: () -> Unit, onConfirm: () -> Unit, confirmEnabled: Boolean, destructive: Boolean,
+) {
+    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm, Alignment.End), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+        SecondaryButton(cancelLabel, onCancel, Modifier.testTag(cancelTag))
+        PrimaryButton(confirmLabel, onConfirm, Modifier.testTag(confirmTag), enabled = confirmEnabled, destructive = destructive)
     }
 }
 
@@ -160,6 +187,9 @@ fun EnterPassphraseDialog(
     }
     val remaining = until?.let { remainingWaitMs(it, now) } ?: 0L
     val line = enterLine(enter.error, enter.waitMs, remaining)
+    // a countdown changes every second: it is announced when it first shows and not again; any other line is news when it appears
+    val firstRemaining = remember(until) { remaining }
+    val lineIsNews = remaining == 0L || remaining == firstRemaining
     TextDialog(
         EnterPassphraseText.dialog, AccountTags.PASSPHRASE_SUBMIT, AccountTags.PASSPHRASE_CANCEL,
         onConfirm = { val typed = state.passphrase; state.clear(); onSubmit(typed) },
@@ -167,7 +197,7 @@ fun EnterPassphraseDialog(
         confirmEnabled = state.valid && !busy && until != null && remaining == 0L,
     ) {
         if (enter.afterChange) Text(stringResource(R.string.account_enter_changed), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag(AccountTags.ENTER_CHANGED))
-        PassphraseFields(state, error = line)
+        PassphraseFields(state, error = line, errorIsNews = lineIsNews)
         // while a restore runs, the delete of the backup it is opening must not be asked for: it would queue behind it
         TertiaryButton(stringResource(EnterPassphraseText.FORGOT), { state.clear(); onForgot() }, Modifier.testTag(AccountTags.FORGOT), enabled = !busy)
     }
@@ -180,7 +210,7 @@ fun ConfirmDialog(confirmation: CloudDialog.Confirm, onConfirm: () -> Unit, onCa
         ConfirmKind.REPLACE_KEY -> AccountTags.REPLACE_CONFIRM to AccountTags.REPLACE_CANCEL
         ConfirmKind.REPLACE_BACKUP -> AccountTags.REPLACE_BACKUP_CONFIRM to AccountTags.REPLACE_BACKUP_CANCEL
     }
-    TextDialog(confirmation.text, confirmTag, cancelTag, onConfirm, onCancel, destructive = true)
+    TextDialog(confirmation.text, confirmTag, cancelTag, onConfirm, onCancel, destructive = confirmation.destructive)
 }
 
 /** What a forgotten passphrase leads to. The words and the confirm button follow [forgotVariant] of the plan. */

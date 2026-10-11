@@ -3,6 +3,7 @@ package com.seyedjafari.analogplus.phone.ui.account
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.seyedjafari.analogplus.phone.accounts.AccountState
 import com.seyedjafari.analogplus.phone.accounts.AccountsController
 import com.seyedjafari.analogplus.phone.accounts.BackupExpectation
 
@@ -33,6 +34,19 @@ class CloudFlow(private val accounts: AccountsController) {
 
     fun close() { dialog = CloudDialog.None }
 
+    /** The signed-in account right now; null when nobody is. */
+    private fun uid(): String? = (accounts.ui.value.account as? AccountState.SignedIn)?.uid
+
+    /**
+     * Runs a step that asks the controller something and then shows the answer: if the account that asked has left while it
+     * waited (a sign-out, an expired session), the answer is dropped, so no dialog or note appears on the signed-out card.
+     */
+    private suspend fun <T> forTheSameAccount(ask: suspend () -> T, show: suspend (T) -> Unit) {
+        val who = uid()
+        val answer = ask()
+        if (uid() == who) show(answer)
+    }
+
     /** The account the dialogs and the note belong to; set by [resetIfAnother]. */
     private var owner: String? = null
 
@@ -62,13 +76,12 @@ class CloudFlow(private val accounts: AccountsController) {
     /** "Replace the backup with this phone's key": the plan of THIS tap names both keys. */
     suspend fun replaceBackup() {
         note = null
-        apply(replaceBackupStart(accounts.planRestore()))
+        forTheSameAccount({ accounts.planRestore() }) { apply(replaceBackupStart(it)) }
     }
 
     suspend fun submitPassphrase(passphrase: String, expecting: BackupExpectation) {
         dialog = CloudDialog.None
-        val next = afterUpload(accounts.upload(passphrase, expecting))
-        if (dialog == CloudDialog.None) dialog = next
+        forTheSameAccount({ afterUpload(accounts.upload(passphrase, expecting)) }) { next -> if (dialog == CloudDialog.None) dialog = next }
     }
 
     /** "Yes" to a confirmation: the dialog it leads to opens. */
@@ -78,13 +91,15 @@ class CloudFlow(private val accounts: AccountsController) {
 
     suspend fun restore() {
         note = null
-        apply(restoreStart(accounts.planRestore()))
+        forTheSameAccount({ accounts.planRestore() }) { apply(restoreStart(it)) }
     }
 
     /** Plans again; a passphrase dialog that opens is marked as asking for the backup that is there now. */
     private suspend fun planAgain() {
-        apply(restoreStart(accounts.planRestore()))
-        (dialog as? CloudDialog.Enter)?.let { dialog = it.copy(afterChange = true) }
+        forTheSameAccount({ accounts.planRestore() }) {
+            apply(restoreStart(it))
+            (dialog as? CloudDialog.Enter)?.let { enter -> dialog = enter.copy(afterChange = true) }
+        }
     }
 
     /**
@@ -92,8 +107,9 @@ class CloudFlow(private val accounts: AccountsController) {
      * restore ran, nothing is opened or closed on its account (the controller's notice carries the words).
      */
     suspend fun submitRestore(passphrase: String, enter: CloudDialog.Enter) {
+        val who = uid()
         val next = afterRestore(accounts.restore(passphrase, enter.plan))
-        if (dialog != enter) return
+        if (dialog != enter || uid() != who) return
         when (next) {
             RestoreFollowUp.Close -> dialog = CloudDialog.None
             RestoreFollowUp.PlanAgain -> {
@@ -149,12 +165,12 @@ class CloudFlow(private val accounts: AccountsController) {
 
     private suspend fun finishDeletion() {
         note = null
-        note = noteAfterDeletion(accounts.finishDeletion())
+        forTheSameAccount({ accounts.finishDeletion() }) { note = noteAfterDeletion(it) }
     }
 
     suspend fun keepAccount() {
         note = null
-        note = noteAfterKeep(accounts.keepAccount())
+        forTheSameAccount({ accounts.keepAccount() }) { note = noteAfterKeep(it) }
     }
 
     private suspend fun apply(start: FlowStart) {

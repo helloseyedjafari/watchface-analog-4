@@ -127,8 +127,11 @@ sealed interface CloudDialog {
     /** Choose a passphrase and upload. [expecting] is what the person confirmed. */
     data class SetPassphrase(val expecting: BackupExpectation) : CloudDialog
 
-    /** A yes/no that must be answered before [then] opens. */
-    data class Confirm(val kind: ConfirmKind, val text: DialogText, val then: CloudDialog) : CloudDialog
+    /**
+     * A yes/no that must be answered before [then] opens. [destructive]: the answer deletes or replaces something (the confirm
+     * button is drawn in the error colours); false for a question that only asks to go on.
+     */
+    data class Confirm(val kind: ConfirmKind, val text: DialogText, val then: CloudDialog, val destructive: Boolean = true) : CloudDialog
 
     /**
      * Type the passphrase of the backup the person confirmed with [plan]. [error] is the last wrong try; [waitMs] the wait
@@ -259,7 +262,8 @@ fun afterUpload(result: UploadResult): CloudDialog = when (result) {
 fun reAsk(diff: UploadResult.BackupDiffers): CloudDialog = when (val cloud = diff.cloud) {
     CloudBackup.Absent -> when (diff.phone) {
         is KeyOnPhone.Present ->
-            CloudDialog.Confirm(ConfirmKind.REPLACE_BACKUP, reAskGoneText(), CloudDialog.SetPassphrase(BackupExpectation.None))
+            // the backup is gone already: going on deletes and replaces nothing
+            CloudDialog.Confirm(ConfirmKind.REPLACE_BACKUP, reAskGoneText(), CloudDialog.SetPassphrase(BackupExpectation.None), destructive = false)
         // no usable key to back up (a damaged key would fail the upload, a missing one would be made silently): the notice and the
         // refreshed line say the rest, and Back up there starts it with honest words
         KeyOnPhone.None, KeyOnPhone.Damaged -> CloudDialog.None

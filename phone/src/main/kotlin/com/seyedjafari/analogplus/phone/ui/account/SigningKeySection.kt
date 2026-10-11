@@ -50,6 +50,7 @@ internal fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier:
         SecondaryButton(stringResource(R.string.signing_key_button_reset), { confirming = true }, Modifier.testTag(Tags.RESET_KEY_BUTTON), enabled = !busy)
         done?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag(Tags.RESET_KEY_NOTICE)) }
     }
+    HoldOffers(open = confirming)
     if (confirming) {
         val outer = LocalDensity.current   // the dialog is a window of its own: it gets the density of this place back
         AlertDialog(

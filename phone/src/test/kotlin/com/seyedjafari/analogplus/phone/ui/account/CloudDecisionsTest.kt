@@ -25,6 +25,7 @@ import com.seyedjafari.analogplus.phone.accounts.vault.PassphraseAssessment
 import com.seyedjafari.analogplus.phone.accounts.vault.PassphraseIssue
 import com.seyedjafari.analogplus.phone.accounts.vault.PassphraseStrength
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -318,6 +319,16 @@ class CloudDecisionsTest {
         assertEquals(CloudDialog.SetPassphrase(BackupExpectation.None), again.then)
         assertEquals("The backup changed", StringsXml.text(again.text.title))
         assertTrue(body(again).startsWith("While you were choosing a passphrase, the backup in the cloud was deleted."))
+        assertFalse("nothing is deleted or replaced by going on: not drawn as destructive", again.destructive)
+    }
+
+    @Test fun everyOtherConfirmationThatReplacesOrDeletesIsDestructive() {
+        val same = afterUpload(diff(CloudBackup.Present(phoneFp, "w9"), KeyOnPhone.Present(phoneFp))) as CloudDialog.Confirm
+        val other = afterUpload(diff(CloudBackup.Present(cloudFp, "w9"), KeyOnPhone.Present(phoneFp))) as CloudDialog.Confirm
+        assertTrue(same.destructive)
+        assertTrue(other.destructive)
+        assertTrue((restoreStart(RestorePlan.ReplaceLocal(phoneFp, cloudFp)).dialog as CloudDialog.Confirm).destructive)
+        assertTrue((replaceBackupStart(RestorePlan.ReplaceLocal(phoneFp, cloudFp)).dialog as CloudDialog.Confirm).destructive)
     }
 
     @Test fun ifTheBackupIsGoneAndThePhoneHasNoUsableKeyNothingIsAskedBecauseThereIsNothingToBackUp() {

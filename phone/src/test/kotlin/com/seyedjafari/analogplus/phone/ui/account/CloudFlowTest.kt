@@ -527,6 +527,47 @@ class CloudFlowTest {
         assertEquals(true, again.afterChange)
     }
 
+    // ---- a sign-out in the middle of a step ---------------------------------------------------------------------------------
+
+    @Test fun aSignOutWhileAPlanIsAskedForOpensNoDialogOnTheSignedOutCard() = runTest(UnconfinedTestDispatcher()) {
+        otherPhoneBacksUp(pemA)
+        val (c, flow) = phone(FakeKeySource(null))
+        c.signIn()
+        gate.hold()
+        val planning = launch { flow.restore() }
+        manager.signOut()                                           // an expired session lands while the step waits
+        gate.release()
+        planning.join()
+        assertEquals(CloudDialog.None, flow.dialog)
+        assertNull(flow.note)
+    }
+
+    @Test fun aSignOutWhileAReplacePlanIsAskedForOpensNothingEither() = runTest(UnconfinedTestDispatcher()) {
+        otherPhoneBacksUp(pemA)
+        val (c, flow) = phone(FakeKeySource(pemB))
+        c.signIn()
+        gate.hold()
+        val planning = launch { flow.replaceBackup() }
+        manager.signOut()
+        gate.release()
+        planning.join()
+        assertEquals(CloudDialog.None, flow.dialog)
+    }
+
+    @Test fun aSignOutWhileARestoreRunsLeavesTheDialogAloneForTheScreenToReset() = runTest(UnconfinedTestDispatcher()) {
+        otherPhoneBacksUp(pemA)
+        val (c, flow) = phone(FakeKeySource(null))
+        c.signIn()
+        flow.restore()
+        val enter = flow.dialog as CloudDialog.Enter
+        gate.hold()
+        val sending = launch { flow.submitRestore("not the passphrase", enter) }
+        manager.signOut()
+        gate.release()
+        sending.join()
+        assertEquals(enter, flow.dialog)          // no answer of the account that left is shown; the screen's reset closes the dialog
+    }
+
     // ---- leaving the card ------------------------------------------------------------------------------------------------------
 
     @Test fun resetClosesTheDialogAndForgetsTheNote() = runTest(UnconfinedTestDispatcher()) {

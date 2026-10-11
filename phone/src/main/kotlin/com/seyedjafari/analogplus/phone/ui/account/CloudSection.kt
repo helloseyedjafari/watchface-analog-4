@@ -112,10 +112,17 @@ fun rememberCloudFlow(accounts: AccountsController, ui: AccountsUi): CloudFlow {
  * lives in the controller, so a rotation shows it again, and the answer is the controller's.
  */
 @Composable
-fun AccountOfferHost(accounts: AccountsController = LocalAccounts.current) {
+fun AccountOfferHost(accounts: AccountsController = LocalAccounts.current, gate: OfferGate = LocalOfferGate.current) {
     val ui by accounts.ui.collectAsState()
+    // a dialog the person is busy with (a passphrase being typed) goes first; the question waits its turn
+    if (gate.holding) return
     ui.offer?.let { offer ->
-        OfferDialog(offer, onUse = { accounts.resolveOffer(OfferChoice.USE_REMOTE) }, onKeep = { accounts.resolveOffer(OfferChoice.KEEP_MINE) })
+        // the answer is for the offer shown: if a newer one replaced it meanwhile, a tap on the old words changes nothing
+        OfferDialog(
+            offer,
+            onUse = { accounts.resolveOffer(OfferChoice.USE_REMOTE, offer) },
+            onKeep = { accounts.resolveOffer(OfferChoice.KEEP_MINE, offer) },
+        )
     }
 }
 
@@ -124,6 +131,8 @@ fun AccountOfferHost(accounts: AccountsController = LocalAccounts.current) {
 fun CloudDialogHost(flow: CloudFlow, ui: AccountsUi, accounts: AccountsController) {
     val scope = rememberCoroutineScope()
     val busy = ui.busy != Busy.NONE
+    // the shell's question about a design from another device waits while one of these is open
+    HoldOffers(open = flow.dialog != CloudDialog.None)
     when (val d = flow.dialog) {
         CloudDialog.None -> Unit
         is CloudDialog.SetPassphrase -> SetPassphraseDialog(
@@ -169,7 +178,8 @@ fun CloudSectionContent(ui: AccountsUi, nowMs: Long, note: AccountMessage?, call
 @Composable
 internal fun NoticeRow(message: AccountMessage, onDismiss: () -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-        MessageLines(message, Modifier.testTag(AccountTags.NOTICE))
+        // the result of an action is read out when it appears
+        MessageLines(message, Modifier.testTag(AccountTags.NOTICE), live = true)
         val dismissDescription = stringResource(AccountText.NOTICE_DISMISS_DESCRIPTION)
         TertiaryButton(
             stringResource(AccountText.NOTICE_DISMISS), onDismiss,
@@ -226,7 +236,7 @@ private fun SignedInContent(ui: AccountsUi, nowMs: Long, message: AccountMessage
 internal fun SignInFailure(account: AccountState) {
     (account as? AccountState.Failed)?.let { failed ->
         val reason = AccountMessage(signInFailureText(failed.reason), NoticeKind.ERROR, failed.message.ifBlank { null })
-        MessageLines(reason, Modifier.testTag(AccountTags.SIGN_IN_ERROR))
+        MessageLines(reason, Modifier.testTag(AccountTags.SIGN_IN_ERROR), live = true)
     }
 }
 

@@ -164,6 +164,20 @@ class AccountsControllerTest {
         assertEquals(listOf(OfferChoice.USE_REMOTE), sync.choices)
     }
 
+    @Test fun anAnswerForAnOfferThatWasReplacedByANewerOneIsDropped() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        val first = CurrentOffer("Pixel 8", DesignSettings(name = "One"), 9)
+        val second = CurrentOffer("Pixel 8", DesignSettings(name = "Two"), 10)
+        sync.setOffer(first)
+        sync.setOffer(second)                              // the dialog's words changed under the finger
+        c.resolveOffer(OfferChoice.USE_REMOTE, shown = first)
+        assertEquals(second, c.ui.value.offer)             // still asked
+        assertTrue(sync.choices.isEmpty())
+        c.resolveOffer(OfferChoice.KEEP_MINE, shown = second)
+        assertNull(c.ui.value.offer)
+        assertEquals(listOf(OfferChoice.KEEP_MINE), sync.choices)
+    }
+
     @Test fun foregroundAndRefreshGoToTheSync() = runTest(UnconfinedTestDispatcher()) {
         val c = controller()
         c.setForeground(false); c.setForeground(true)

@@ -265,7 +265,14 @@ class AccountsController(
         _ui.update { it.copy(notice = null) }
     }
 
-    fun resolveOffer(choice: OfferChoice) = sync.resolveOffer(choice)
+    /**
+     * Answers the offer of another device's design. [shown] is the offer the person was looking at: when a newer one has
+     * replaced it meanwhile the answer is dropped (it was meant for other words), and the new one is asked in its turn.
+     */
+    fun resolveOffer(choice: OfferChoice, shown: CurrentOffer? = null) {
+        if (shown != null && sync.currentOffer.value != shown) return
+        sync.resolveOffer(choice)
+    }
 
     /**
      * The app came to the front (`true`) or went to the back (`false`); sync listens only in front. Wired in the

@@ -26,7 +26,7 @@ import com.seyedjafari.analogplus.phone.ui.theme.Spacing
  * words stay a detail line under it.
  */
 @Composable
-fun PassphraseFields(state: PassphraseState, error: AccountMessage?, modifier: Modifier = Modifier) {
+fun PassphraseFields(state: PassphraseState, error: AccountMessage?, modifier: Modifier = Modifier, errorIsNews: Boolean = true) {
     // a password field: the keyboard offers no suggestions and no autocorrect, and nothing is shown as typed
     val keyboard = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false)
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
@@ -49,7 +49,7 @@ fun PassphraseFields(state: PassphraseState, error: AccountMessage?, modifier: M
                 modifier = Modifier.fillMaxWidth().testTag(AccountTags.PASSPHRASE_CONFIRM),
             )
         }
-        if (error != null) MessageLines(error, Modifier.testTag(AccountTags.PASSPHRASE_ERROR))
+        if (error != null) MessageLines(error, Modifier.testTag(AccountTags.PASSPHRASE_ERROR), live = errorIsNews)
     }
 }
 
@@ -58,11 +58,20 @@ fun PassphraseFields(state: PassphraseState, error: AccountMessage?, modifier: M
  * reader and for a test, so the tag on it reads the whole message.
  */
 @Composable
-fun MessageLines(message: AccountMessage, modifier: Modifier = Modifier) {
-    // a live region: a screen reader says the result of an action when it appears
-    Column(modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }, verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+fun MessageLines(message: AccountMessage, modifier: Modifier = Modifier, live: Boolean = false) {
+    // [live]: a screen reader says the result of an action when it appears. Not for a line that changes by itself (a countdown):
+    // that would be read out again at every change.
+    Column(
+        modifier.semantics(mergeDescendants = true) { if (live) liveRegion = LiveRegionMode.Polite },
+        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+    ) {
         val words = uiTextResource(message.text)
-        if (message.kind == NoticeKind.ERROR) ErrorBanner(words) else Text(words, style = MaterialTheme.typography.bodyMedium)
+        when {
+            // ErrorBanner is itself a live region: a line that must not be one is the same words in the same colour without it
+            message.kind == NoticeKind.ERROR && live -> ErrorBanner(words)
+            message.kind == NoticeKind.ERROR -> Text(words, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            else -> Text(words, style = MaterialTheme.typography.bodyMedium)
+        }
         message.detail?.let {
             Text(stringResource(AccountText.DETAIL_LINE, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

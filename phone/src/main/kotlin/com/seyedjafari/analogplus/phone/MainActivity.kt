@@ -40,6 +40,8 @@ import com.seyedjafari.analogplus.phone.ui.account.AccountScreen
 import com.seyedjafari.analogplus.phone.ui.account.AccountOfferHost
 import com.seyedjafari.analogplus.phone.ui.account.BackupPage
 import com.seyedjafari.analogplus.phone.ui.account.LocalAccounts
+import com.seyedjafari.analogplus.phone.ui.account.LocalOfferGate
+import com.seyedjafari.analogplus.phone.ui.account.rememberOfferGate
 import com.seyedjafari.analogplus.phone.ui.components.LoadSharedDesignDialog
 import com.seyedjafari.analogplus.phone.ui.design.DesignScreen
 import com.seyedjafari.analogplus.phone.ui.library.LibraryScreen
@@ -237,24 +239,27 @@ fun AppShell(
     onboarding: OnboardingHost? = null,
     onPendingLinkResolved: () -> Unit,
 ) {
-    AnalogTheme {
-        // insets: edge-to-edge is enforced on Android 15, a camera cutout must not sit over the rail of a phone held sideways (the union is
-        // the larger of the two on each side, so the status bar is not padded twice), and the keyboard must not cover the field being edited
-        Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)).imePadding(), color = MaterialTheme.colorScheme.background) {
-            if (onboarding == null) {
-                MainContent(state, store, send, watch, controller = null)
-            } else {
-                val current by onboarding.controller.state.collectAsState()
-                if (current.isActive) OnboardingScreen(onboarding.controller, onboarding.backupPage, state, watch)
-                else MainContent(state, store, send, watch, onboarding.controller)
+    val offerGate = rememberOfferGate()
+    CompositionLocalProvider(LocalOfferGate provides offerGate) {
+        AnalogTheme {
+            // insets: edge-to-edge is enforced on Android 15, a camera cutout must not sit over the rail of a phone held sideways (the union is
+            // the larger of the two on each side, so the status bar is not padded twice), and the keyboard must not cover the field being edited
+            Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)).imePadding(), color = MaterialTheme.colorScheme.background) {
+                if (onboarding == null) {
+                    MainContent(state, store, send, watch, controller = null)
+                } else {
+                    val current by onboarding.controller.state.collectAsState()
+                    if (current.isActive) OnboardingScreen(onboarding.controller, onboarding.backupPage, state, watch)
+                    else MainContent(state, store, send, watch, onboarding.controller)
+                }
             }
-        }
-        // one question at a time, on top of whichever screen shows (onboarding too, like the link question): a tapped link first, then
-        // the design another device saved. The offer is the controller's (a rotation shows it again), so it waits its turn.
-        if (pendingLink != null) {
-            LoadSharedDesignDialog(pendingLink, onLoad = { state.replaceWholeDesign(pendingLink); onPendingLinkResolved() }, onKeep = onPendingLinkResolved)
-        } else {
-            AccountOfferHost()
+            // one question at a time, on top of whichever screen shows (onboarding too, like the link question): a tapped link first, then
+            // the design another device saved. The offer is the controller's (a rotation shows it again), so it waits its turn.
+            if (pendingLink != null) {
+                LoadSharedDesignDialog(pendingLink, onLoad = { state.replaceWholeDesign(pendingLink); onPendingLinkResolved() }, onKeep = onPendingLinkResolved)
+            } else {
+                AccountOfferHost()
+            }
         }
     }
 }
