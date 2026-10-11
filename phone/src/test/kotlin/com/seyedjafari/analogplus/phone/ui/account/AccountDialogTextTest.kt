@@ -27,7 +27,7 @@ class AccountDialogTextTest {
         assertEquals("Replace the signing key on this phone?", en(local.title))
         assertEquals(
             "This phone already has a signing key ($phone). The backup holds a different key ($cloud). " +
-                "Replace it only if the face on your watch was signed with the backed-up key. The key now on this phone is kept in a copy inside the app.",
+                "Replace it only if the face on your watch was signed with the backed-up key. Replacing cannot be undone from the app: the key now on this phone will be gone from it.",
             body(local),
         )
         assertEquals("Replace", en(local.confirm))

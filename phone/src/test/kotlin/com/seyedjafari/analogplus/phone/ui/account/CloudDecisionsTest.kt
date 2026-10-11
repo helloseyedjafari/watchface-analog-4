@@ -307,7 +307,7 @@ class CloudDecisionsTest {
         val assessment = PassphraseAssessment(PassphraseStrength.WEAK, PassphraseIssue.NONE)
         val others = listOf(
             UploadResult.Ok(cloudFp), UploadResult.NotSignedIn, UploadResult.PassphraseRefused(assessment), UploadResult.KeyUnreadable("x"),
-            UploadResult.SelfTestFailed, UploadResult.Failed(RemoteErrorKind.OFFLINE, "x"),
+            UploadResult.SelfTestFailed, UploadResult.Failed(RemoteErrorKind.OFFLINE, "x"), UploadResult.Unsettled, UploadResult.KeyNotMade("x"),
         )
         for (r in others) assertEquals("$r", CloudDialog.None, afterUpload(r))
         assertSealedCovered(UploadResult::class.java, others + diff(CloudBackup.Absent, KeyOnPhone.None))

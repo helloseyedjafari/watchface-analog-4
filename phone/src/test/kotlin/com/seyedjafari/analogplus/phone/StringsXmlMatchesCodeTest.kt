@@ -131,6 +131,8 @@ class StringsXmlMatchesCodeTest {
             Row("WatchRefused(null)", SendProblem.WatchRefused(null).english, "send_error_watch_refused", text("send_unknown_reason")),
             Row("KeyMismatch", SendProblem.KeyMismatch("code 7").english, "send_error_key_mismatch", "code 7"),
             Row("KeyMismatch(null)", SendProblem.KeyMismatch(null).english, "send_error_key_mismatch", text("send_unknown_reason")),
+            Row("KeyMismatch(restore first)", SendProblem.KeyMismatch("code 7", restoreBackupFirst = true).english, "send_error_key_mismatch_restore_first", "code 7"),
+            Row("KeyMismatch(null, restore first)", SendProblem.KeyMismatch(null, restoreBackupFirst = true).english, "send_error_key_mismatch_restore_first", text("send_unknown_reason")),
             Row("FaceChecksFailed", SendProblem.FaceChecksFailed("check A failed").english, "send_error_face_checks", "check A failed"),
             Row("FaceChecksFailed(blank)", SendProblem.FaceChecksFailed("").english, "send_error_face_checks", text("send_no_detail")),
             Row("DesignNotBuildable", SendProblem.DesignNotBuildable("accent: bad colour").english, "send_error_not_buildable", "accent: bad colour"),

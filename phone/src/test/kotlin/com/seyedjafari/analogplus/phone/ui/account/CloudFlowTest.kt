@@ -594,4 +594,37 @@ class CloudFlowTest {
     }
 
     private val staleWords = StringsXml.text(R.string.account_msg_status_stale)
+
+    // ---- nothing unexpected reaches the screen's coroutine scope (final review B2) -----------------------------------------
+
+    @Test fun anUnexpectedFailureOfAStepBecomesALineOnTheCardNotACrash() = runTest(UnconfinedTestDispatcher()) {
+        var armed = false
+        class Exploding(val inner: RemoteStore) : RemoteStore by inner {
+            override suspend fun getBackup(uid: String): RemoteBackup? = if (armed) throw IllegalStateException("boom") else inner.getBackup(uid)
+        }
+        val controller = AccountsController(
+            AccountsAvailability.AVAILABLE, manager, sync, service(FakeKeySource(pemA), Exploding(remote)),
+            AccountDeletion(manager, remote, sync, SyncJournal(MemoryKeyValueStore()), marks, Dispatchers.Unconfined), backgroundScope,
+        )
+        val flow = CloudFlow(controller)
+        controller.signIn()
+        flow.backUp(BackupButton.BACK_UP)
+        assertTrue(flow.dialog is CloudDialog.SetPassphrase)
+        armed = true
+        flow.submitPassphrase(passphrase, BackupExpectation.None)         // must not throw
+        assertEquals(CloudDialog.None, flow.dialog)
+        assertEquals(noticeMessage(Notice.ActionFailed("boom")), flow.note)
+    }
+
+    @Test fun aCancellationStillPassesThroughTheGuard() = runTest(UnconfinedTestDispatcher()) {
+        val (controller, flow) = phone(FakeKeySource(pemA))
+        controller.signIn()
+        gate.hold()
+        val job = launch { flow.restore() }
+        job.cancel()
+        job.join()
+        assertTrue(job.isCancelled)
+        assertNull(flow.note)
+        gate.release()
+    }
 }

@@ -6,6 +6,8 @@ import androidx.compose.runtime.setValue
 import com.seyedjafari.analogplus.phone.accounts.AccountState
 import com.seyedjafari.analogplus.phone.accounts.AccountsController
 import com.seyedjafari.analogplus.phone.accounts.BackupExpectation
+import com.seyedjafari.analogplus.phone.accounts.Notice
+import kotlinx.coroutines.CancellationException
 
 /**
  * The dialogs of the account flows and the steps between them. Every step is a decision made by the pure functions in
@@ -65,6 +67,22 @@ class CloudFlow(private val accounts: AccountsController) {
 
     fun dismissNote() { note = null }
 
+    /**
+     * Runs a step of the flow. The steps run in a coroutine scope of the screen that has no handler of its own, and the controller
+     * hands an unexpected failure of an action to a caller that is still waiting: here it becomes a line on the card, never a
+     * crash. (A cancellation, a rotation, passes through.) The dialog the step was in is closed: its answer will not come.
+     */
+    private suspend fun guarded(step: suspend () -> Unit) {
+        try {
+            step()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            dialog = CloudDialog.None
+            note = noticeMessage(Notice.ActionFailed(e.message ?: e.javaClass.simpleName))
+        }
+    }
+
     // ---- backing up -----------------------------------------------------------------------------------------------
 
     /** Back up (the cloud had no backup) or change the passphrase (the backup is of this phone's key). */
@@ -74,12 +92,12 @@ class CloudFlow(private val accounts: AccountsController) {
     }
 
     /** "Replace the backup with this phone's key": the plan of THIS tap names both keys. */
-    suspend fun replaceBackup() {
+    suspend fun replaceBackup() = guarded {
         note = null
         forTheSameAccount({ accounts.planRestore() }) { apply(replaceBackupStart(it)) }
     }
 
-    suspend fun submitPassphrase(passphrase: String, expecting: BackupExpectation) {
+    suspend fun submitPassphrase(passphrase: String, expecting: BackupExpectation) = guarded {
         dialog = CloudDialog.None
         forTheSameAccount({ afterUpload(accounts.upload(passphrase, expecting)) }) { next -> if (dialog == CloudDialog.None) dialog = next }
     }
@@ -89,13 +107,13 @@ class CloudFlow(private val accounts: AccountsController) {
 
     // ---- restoring ------------------------------------------------------------------------------------------------
 
-    suspend fun restore() {
+    suspend fun restore() = guarded {
         note = null
         forTheSameAccount({ accounts.planRestore() }) { apply(restoreStart(it)) }
     }
 
     /** Plans again; a passphrase dialog that opens is marked as asking for the backup that is there now. */
-    private suspend fun planAgain() {
+    private suspend fun planAgain() = guarded {
         forTheSameAccount({ accounts.planRestore() }) {
             apply(restoreStart(it))
             (dialog as? CloudDialog.Enter)?.let { enter -> dialog = enter.copy(afterChange = true) }
@@ -106,10 +124,10 @@ class CloudFlow(private val accounts: AccountsController) {
      * The answer belongs to the dialog the passphrase was typed in: if the person closed it or went on to another one while the
      * restore ran, nothing is opened or closed on its account (the controller's notice carries the words).
      */
-    suspend fun submitRestore(passphrase: String, enter: CloudDialog.Enter) {
+    suspend fun submitRestore(passphrase: String, enter: CloudDialog.Enter) = guarded {
         val who = uid()
         val next = afterRestore(accounts.restore(passphrase, enter.plan))
-        if (dialog != enter || uid() != who) return
+        if (dialog != enter || uid() != who) return@guarded
         when (next) {
             RestoreFollowUp.Close -> dialog = CloudDialog.None
             RestoreFollowUp.PlanAgain -> {
@@ -121,7 +139,7 @@ class CloudFlow(private val accounts: AccountsController) {
     }
 
     /** "I forgot the passphrase": the delete may only name the backup the plan was made for, as the status shows it now. */
-    suspend fun forgot(enter: CloudDialog.Enter) {
+    suspend fun forgot(enter: CloudDialog.Enter) = guarded {
         when (val start = forgotStart(enter.plan, accounts.ui.value.backup)) {
             is ForgotStart.Offer -> dialog = CloudDialog.Forgot(enter.plan, start.writeId)
             ForgotStart.Stale -> apply(FlowStart(CloudDialog.None, refresh = true, stale = true))
@@ -131,7 +149,7 @@ class CloudFlow(private val accounts: AccountsController) {
     /** Leaves the forgotten-passphrase dialog without doing anything: back to typing the passphrase. */
     fun backFromForgot(forgot: CloudDialog.Forgot) { dialog = CloudDialog.Enter(forgot.plan) }
 
-    suspend fun confirmForgot(forgot: CloudDialog.Forgot) {
+    suspend fun confirmForgot(forgot: CloudDialog.Forgot) = guarded {
         when (forgotVariant(forgot.plan)) {
             ForgotVariant.NEW_PASSPHRASE -> dialog = CloudDialog.SetPassphrase(BackupExpectation.SameKey)
             ForgotVariant.REPLACE_BACKUP, ForgotVariant.RESET, ForgotVariant.RESET_DAMAGED -> {
@@ -158,17 +176,17 @@ class CloudFlow(private val accounts: AccountsController) {
         dialog = CloudDialog.Delete(finish = true)
     }
 
-    suspend fun confirmDelete(finish: Boolean) {
+    suspend fun confirmDelete(finish: Boolean) = guarded {
         dialog = CloudDialog.None
         if (finish) finishDeletion() else accounts.deleteAccount()
     }
 
-    private suspend fun finishDeletion() {
+    private suspend fun finishDeletion() = guarded {
         note = null
         forTheSameAccount({ accounts.finishDeletion() }) { note = noteAfterDeletion(it) }
     }
 
-    suspend fun keepAccount() {
+    suspend fun keepAccount() = guarded {
         note = null
         forTheSameAccount({ accounts.keepAccount() }) { note = noteAfterKeep(it) }
     }

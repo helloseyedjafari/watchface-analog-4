@@ -54,6 +54,8 @@ fun noticeMessage(notice: Notice): AccountMessage = when (notice) {
     is Notice.PassphraseNotAccepted -> bad(R.string.account_msg_passphrase_not_accepted, refusalText(notice.assessment))
     is Notice.KeyUnreadable -> bad(R.string.account_msg_key_unreadable, detail = notice.detail)
     Notice.BackupNotVerified -> bad(R.string.account_msg_backup_not_verified)
+    is Notice.KeyNotMade -> bad(R.string.account_msg_key_not_made, detail = notice.detail)
+    Notice.BackupUnsettled -> bad(R.string.account_msg_backup_unsettled)
     Notice.BackupChanged -> bad(R.string.account_msg_backup_changed)
     is Notice.BackupFailed -> bad(R.string.account_msg_backup_failed, remoteReason(notice.cause), detail = notice.detail)
     is Notice.KeyRestored -> good(R.string.account_msg_key_restored, notice.fingerprint)
@@ -93,6 +95,8 @@ fun uploadMessage(result: UploadResult): AccountMessage = when (result) {
     is UploadResult.PassphraseRefused -> bad(R.string.account_msg_passphrase_not_accepted, refusalText(result.assessment))
     is UploadResult.BackupDiffers -> bad(R.string.account_msg_backup_changed)
     is UploadResult.KeyUnreadable -> bad(R.string.account_msg_key_unreadable, detail = result.message)
+    is UploadResult.KeyNotMade -> bad(R.string.account_msg_key_not_made, detail = result.message)
+    UploadResult.Unsettled -> bad(R.string.account_msg_backup_unsettled)
     UploadResult.SelfTestFailed -> bad(R.string.account_msg_backup_not_verified)
     is UploadResult.Failed -> bad(R.string.account_msg_backup_failed, remoteReason(result.kind), detail = result.message)
 }

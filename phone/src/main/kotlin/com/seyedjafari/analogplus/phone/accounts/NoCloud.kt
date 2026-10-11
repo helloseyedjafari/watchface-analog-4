@@ -32,6 +32,7 @@ class NoKeySource : KeySource {
     override fun state(): LocalKeyState = LocalKeyState.None
     override fun installPem(pem: String, onlyIf: (LocalKeyState) -> Boolean): InstallOutcome =
         throw SigningKeyException(NOT_CONFIGURED_DETAIL)
+    override fun isUsable(pem: String): Boolean = false
 }
 
 /** A [KeyValueStore] that keeps nothing, for the unavailable controller. */

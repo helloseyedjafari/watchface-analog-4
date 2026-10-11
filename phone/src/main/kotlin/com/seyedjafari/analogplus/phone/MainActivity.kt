@@ -86,7 +86,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     )
     /** A design from a tapped link, waiting for the user to confirm that it replaces the current one. */
     var pendingLinkDesign: DesignSettings? by mutableStateOf(null)
-    val send = SendController(lazy { FacePackager(app) }, DataLayerSender(app), store, viewModelScope, signingKeyFingerprintProvider(app))
+    val send = SendController(lazy { FacePackager(app) }, DataLayerSender(app), store, viewModelScope, signingKeyFingerprintProvider(app), restoreBackupFirst = { OnboardingConfig.accountsAvailable })
 
     init {
         // the photo (up to 25 MB) is read in the background and attached

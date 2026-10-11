@@ -76,6 +76,10 @@ fun AccountSection(modifier: Modifier = Modifier) {
     val flow = rememberCloudFlow(accounts, ui)
     val scope = rememberCoroutineScope()
     val nowMs = rememberNowMs()
+    // the key on this phone can change while the card is not on screen (the first Send makes one): when the card is shown the
+    // "same key / another key / no key" part of the backup line is read again (no cloud call, no "checking")
+    val signedInUid = (ui.account as? AccountState.SignedIn)?.uid
+    LaunchedEffect(signedInUid) { if (signedInUid != null) accounts.refreshKeyMatch() }
 
     val callbacks = CloudCallbacks(
         signIn = accounts::signIn,

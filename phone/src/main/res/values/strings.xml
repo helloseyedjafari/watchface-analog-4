@@ -250,6 +250,7 @@
     <string name="send_error_version_counter">Could not save the version counter; free some storage and try again.</string>
     <string name="send_error_watch_refused">The watch refused the face: %1$s</string>
     <string name="send_error_key_mismatch">This phone is signing with a different key than the face on your watch. The watch only accepts updates from the original key. Remove the old Analog Plus face from the watch, then send again. Uninstalling the watch app does not remove it: open Settings on the watch, go to its list of apps and uninstall the Analog Plus watch face (the list may show several entries named Analog Plus; the one to uninstall is the watch face).\n\n(The watch said: %1$s)</string>
+    <string name="send_error_key_mismatch_restore_first">This phone is signing with a different key than the face on your watch. The watch only accepts updates from the original key. Remove the old Analog Plus face from the watch, then send again. Uninstalling the watch app does not remove it: open Settings on the watch, go to its list of apps and uninstall the Analog Plus watch face (the list may show several entries named Analog Plus; the one to uninstall is the watch face).\n\nIf you backed up the signing key of the phone that sent the face before, restore that backup on the Account tab first and send again: then nothing has to be removed from the watch.\n\n(The watch said: %1$s)</string>
     <string name="send_error_face_checks">The face did not pass the watch checks: %1$s</string>
     <string name="send_error_not_buildable">The design cannot be built: %1$s</string>
     <string name="send_error_out_of_memory">Not enough memory to build the face. Try a smaller photo.</string>
@@ -420,6 +421,8 @@
     <string name="account_msg_key_unreadable">The signing key on this phone cannot be read, so it was not backed up. If a backup already exists, restore it; otherwise use Reset signing key.</string>
     <string name="account_msg_backup_not_verified">The new backup could not be checked, so it was taken back. A backup that was there before is unchanged.</string>
     <string name="account_msg_backup_changed">The backup in the cloud, or the key on this phone, is not what you confirmed. Nothing in the cloud was changed. Look at the backup line above, then start again.</string>
+    <string name="account_msg_key_not_made">This phone has no signing key yet and a new one could not be made, so nothing was backed up. Free some storage space on the phone and try again.</string>
+    <string name="account_msg_backup_unsettled">The backup did not finish and the connection was lost before it could be taken back, so it may already use the new passphrase. Back up again when you are online to be sure.</string>
     <string name="account_msg_backup_failed">The signing key could not be backed up. %1$s</string>
     <string name="account_msg_key_restored">Signing key restored (key %1$s).</string>
     <string name="account_msg_no_backup">There is no backup for this account.</string>
@@ -471,7 +474,7 @@
     <string name="account_enter_forgot">I forgot the passphrase</string>
     <string name="account_dialog_cancel">Cancel</string>
     <string name="account_replace_title">Replace the signing key on this phone?</string>
-    <string name="account_replace_local_body">This phone already has a signing key (%1$s). The backup holds a different key (%2$s). Replace it only if the face on your watch was signed with the backed-up key. The key now on this phone is kept in a copy inside the app.</string>
+    <string name="account_replace_local_body">This phone already has a signing key (%1$s). The backup holds a different key (%2$s). Replace it only if the face on your watch was signed with the backed-up key. Replacing cannot be undone from the app: the key now on this phone will be gone from it.</string>
     <string name="account_replace_damaged_body">The signing key saved on this phone is damaged. Replace it with the backed-up key (%1$s)?</string>
     <string name="account_replace_confirm">Replace</string>
     <string name="account_replace_backup_title">Replace the backup in the cloud?</string>

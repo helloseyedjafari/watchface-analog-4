@@ -37,6 +37,18 @@ class KeyVaultTest {
         assertEquals(OpenResult.WrongPassphraseOrDamaged, fast.open(sealed(), "correct horse battery stapl3"))
     }
 
+    @Test fun theOpenedKeyIsNotPrintedByToString() {
+        val pem = "-----BEGIN PRIVATE KEY-----\nSECRET-BODY\n-----END PRIVATE KEY-----\n"
+        val opened = OpenResult.Opened(pem)
+        assertTrue(!opened.toString().contains("SECRET"))
+        assertEquals(OpenResult.Opened(pem), opened)       // equality still compares the key
+        assertTrue(!"$opened".contains("BEGIN"))
+    }
+
+    @Test fun anEmptyPassphraseIsRefusedWhenSealing() {
+        assertThrows(IllegalArgumentException::class.java) { fast.seal("pem", "", "0123456789abcdef") }
+    }
+
     @Test fun emptyPassphraseDoesNotOpen() {
         assertEquals(OpenResult.WrongPassphraseOrDamaged, fast.open(sealed(), ""))
     }

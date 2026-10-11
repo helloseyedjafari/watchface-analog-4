@@ -97,8 +97,10 @@ class KeyStore(context: Context, val fileName: String = DEFAULT_FILE_NAME) {
      * Makes [pem] (restored from a backup) the signing key. It must hold a certificate that parses as X.509 and an RSA
      * PKCS#8 private key that parses and belongs to that certificate; nothing is touched otherwise. The key being
      * replaced, if there is one, is first copied to `<fileName>.bak` (one generation, copied to a temporary file and
-     * moved into place, so a failure keeps the previous copy) so a mistaken restore can be undone by hand; if that
-     * fails nothing is replaced. The new file is written atomically (the text is stored verbatim, so the key fingerprint,
+     * moved into place, so a failure keeps the previous copy); if that fails nothing is replaced. The copy is a safety net
+     * for a failed install and nothing more: the app has no way to put it back (and a release build gives nobody access to
+     * the app's private files), so replacing a key cannot be undone from the app, and the confirmation says so. The new
+     * file is written atomically (the text is stored verbatim, so the key fingerprint,
      * a hash of the PEM text, is the one the backup was taken with).
      *
      * [onlyIf] is asked inside the same lock as the install, with what the store holds at that moment, so a key that
@@ -125,7 +127,9 @@ class KeyStore(context: Context, val fileName: String = DEFAULT_FILE_NAME) {
                 }
                 writeAtomically(pem)
             } catch (e: IOException) {
-                // never leave a half-written temp file behind (the previous .bak and the live key are untouched)
+                // never leave a half-written temp file behind. If the failure came after the .bak was moved into place, the .bak
+                // already holds the key that was live (the older copy is gone: one generation, by design) and the live key is
+                // untouched; before that, both are untouched.
                 backupTmp.delete()
                 appContext.getFileStreamPath("$fileName.tmp").delete()
                 throw SigningKeyException("The restored key could not be saved (${e.message}).", e)
@@ -176,7 +180,7 @@ class KeyStore(context: Context, val fileName: String = DEFAULT_FILE_NAME) {
          * CERTIFICATE block is an X.509 certificate, the PRIVATE KEY block is an RSA PKCS#8 key (what PackNative generates)
          * and the key belongs to the certificate.
          */
-        internal fun isUsableKeyPem(text: String): Boolean {
+        fun isUsableKeyPem(text: String): Boolean {
             if (!looksLikeKeyPem(text)) return false
             return try {
                 val blocks = BLOCK.findAll(text).associate { it.groupValues[1] to it.groupValues[2] }

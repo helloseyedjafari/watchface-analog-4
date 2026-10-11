@@ -39,6 +39,7 @@ import com.seyedjafari.analogplus.phone.R
 @Composable
 internal fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier: Modifier = Modifier) {
     val context = LocalContext.current.applicationContext
+    val accounts = LocalAccounts.current
     val scope = rememberCoroutineScope()
     var confirming by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -77,6 +78,8 @@ internal fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier:
                             }
                             busy = false
                             done = problem ?: resetDone
+                            // the backup line must stop offering Change passphrase for a key this phone no longer has
+                            if (problem == null) accounts.refreshKeyMatch()
                         }
                     },
                     Modifier.testTag(Tags.RESET_KEY_CONFIRM),

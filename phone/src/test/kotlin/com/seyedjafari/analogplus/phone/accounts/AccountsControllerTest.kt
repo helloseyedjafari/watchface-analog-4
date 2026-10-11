@@ -50,7 +50,11 @@ class AccountsControllerTest {
         /** Each [getBackup] reads the cloud at once, then waits for the next gate in this list (if any) before it answers. */
         val getGates = ArrayDeque<CompletableDeferred<Unit>>()
 
+        /** How many times the backup was read, to show that a step asked the cloud nothing. */
+        var getBackupCalls = 0
+
         override suspend fun getBackup(uid: String): RemoteBackup? {
+            getBackupCalls++
             val seen = inner.getBackup(uid)
             getGates.removeFirstOrNull()?.await()
             return seen
@@ -1098,5 +1102,101 @@ class AccountsControllerTest {
         assertEquals(UploadResult.NotSignedIn, c.upload(passphrase, BackupExpectation.None))
         assertEquals(RestorePlan.NotSignedIn, c.planRestore())
         assertEquals(DeletionResult.NotSignedIn, c.deleteAccount())
+    }
+
+    // ---- final review: B3, B2, B4, B5, B14 ----------------------------------------------------------------------------
+
+    @Test fun duringTheCheckThatFollowsAnActionTheCardIsStillBusyNotOfferingButtonsOnAnUnsettledLine() = runTest(UnconfinedTestDispatcher()) {
+        val gate = CompletableDeferred<Unit>()
+        var reads = 0
+        class SlowCheck(val inner: RemoteStore) : RemoteStore by inner {
+            override suspend fun getBackup(uid: String): RemoteBackup? {
+                val seen = inner.getBackup(uid)
+                if (++reads == 4) gate.await()               // upload: look, re-check, read-back; then the status check
+                return seen
+            }
+        }
+        val slowRemote = SlowCheck(remote)
+        val slow = AccountsController(
+            AccountsAvailability.AVAILABLE, accounts, sync,
+            BackupService(slowRemote, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
+            AccountDeletion(accounts, slowRemote, sync, journal, marks, Dispatchers.Unconfined), backgroundScope,
+        )
+        slow.signIn()
+        reads = 0
+        val job = launch { slow.upload(passphrase, BackupExpectation.None) }
+        assertEquals("the line is being read", BackupStatus.Checking, slow.ui.value.backup)
+        assertEquals("and the card is still busy", Busy.BACKING_UP, slow.ui.value.busy)
+        gate.complete(Unit)
+        job.join()
+        assertEquals(Busy.NONE, slow.ui.value.busy)
+        assertTrue(slow.ui.value.backup is BackupStatus.BackedUp)
+    }
+
+    @Test fun aFullDiskWhileTheFirstKeyIsMadeBecomesANoticeNotAnException() = runTest(UnconfinedTestDispatcher()) {
+        val noKey = FakeKeySource(null).also { it.pemFailure = java.io.IOException("No space left on device") }
+        val c = AccountsController(
+            AccountsAvailability.AVAILABLE, accounts, sync,
+            BackupService(remote, vault, noKey, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
+            AccountDeletion(accounts, remote, sync, journal, marks, Dispatchers.Unconfined), backgroundScope,
+        )
+        c.signIn()
+        val r = c.upload(passphrase, BackupExpectation.None)
+        assertEquals(UploadResult.KeyNotMade("No space left on device"), r)
+        assertEquals(Notice.KeyNotMade("No space left on device"), c.ui.value.notice)
+    }
+
+    @Test fun anUnsettledUploadIsANoticeOfItsOwnAndTheLineIsReadAgain() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn(); c.upload(passphrase, BackupExpectation.None)
+        var puts = 0
+        class CutShort(val inner: RemoteStore) : RemoteStore by inner {
+            override suspend fun putBackup(uid: String, sealed: SealedKey, writeId: String, replacing: BackupPrecondition): BackupWrite {
+                if (++puts == 1) { inner.putBackup(uid, sealed, writeId, replacing); throw RemoteException(RemoteErrorKind.OFFLINE, "answer lost") }
+                throw RemoteException(RemoteErrorKind.OFFLINE, "still offline")
+            }
+        }
+        val cut = CutShort(remote)
+        val c2 = AccountsController(
+            AccountsAvailability.AVAILABLE, FakeAccountManager(AccountState.SignedIn("u1", null)), FakeCloudSync(),
+            BackupService(cut, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
+            AccountDeletion(accounts, cut, sync, journal, marks, Dispatchers.Unconfined), backgroundScope,
+        )
+        assertEquals(UploadResult.Unsettled, c2.upload("another passphrase 99", BackupExpectation.SameKey))
+        assertEquals(Notice.BackupUnsettled, c2.ui.value.notice)
+        assertTrue(c2.ui.value.backup is BackupStatus.BackedUp)
+    }
+
+    @Test fun theKeyPartOfTheBackupLineFollowsAKeyThatChangedOutsideTheControllerWithoutAskingTheCloud() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn(); c.upload(passphrase, BackupExpectation.None)
+        assertEquals(KeyMatch.SAME, backedUp(c).match)
+        val readsBefore = remote.getBackupCalls
+        keys.resetKey()                                   // "Reset signing key"
+        c.refreshKeyMatch()
+        assertEquals(KeyMatch.NO_LOCAL_KEY, backedUp(c).match)
+        keys.pem()                                        // the first Send makes a key
+        c.refreshKeyMatch()
+        assertEquals(KeyMatch.DIFFERENT, backedUp(c).match)
+        assertEquals("no cloud call, no 'checking'", readsBefore, remote.getBackupCalls)
+        assertTrue(c.ui.value.backup is BackupStatus.BackedUp)
+    }
+
+    @Test fun refreshingTheKeyMatchDoesNothingWithoutABackupOrAccountAndNeverInventsOne() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.refreshKeyMatch()                               // signed out
+        assertEquals(BackupStatus.SignedOut, c.ui.value.backup)
+        c.signIn()
+        c.refreshKeyMatch()                               // signed in, nothing backed up
+        assertEquals(BackupStatus.NotBackedUp, c.ui.value.backup)
+    }
+
+    @Test fun checkingTheBackupAgainReadsOnlyTheBackupNotAWholeSyncPass() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        c.checkBackup()
+        assertEquals(0, sync.syncNowCalls)
+        c.refresh()
+        assertEquals(1, sync.syncNowCalls)
     }
 }

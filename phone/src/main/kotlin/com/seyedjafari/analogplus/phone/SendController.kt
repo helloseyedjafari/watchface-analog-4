@@ -47,6 +47,14 @@ const val KEY_MISMATCH_TEXT =
         "may show several entries named Analog Plus; the one to uninstall is the watch face)."
 
 /**
+ * Added to [KEY_MISMATCH_TEXT] in builds with accounts, where the key of the other phone may be in the cloud backup: restoring
+ * it makes this phone sign like the first one, and then nothing has to be removed from the watch.
+ */
+const val KEY_MISMATCH_RESTORE_FIRST =
+    "If you backed up the signing key of the phone that sent the face before, restore that backup on the Account tab first and " +
+        "send again: then nothing has to be removed from the watch."
+
+/**
  * Runs "Send to watch": validate, then (off the main thread) take a fresh version number, build, and hand the face to
  * [sender]. One send at a time. Every failure ends as [SendUi.Error] with text a person can act on.
  *
@@ -62,12 +70,14 @@ class SendController(
     private val scope: CoroutineScope,
     private val buildDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val keyFingerprint: () -> String? = { null },
+    private val restoreBackupFirst: () -> Boolean = { false },
 ) {
     constructor(
         packager: Lazy<FacePackager>, sender: FaceSender, store: Store, scope: CoroutineScope,
         keyFingerprint: () -> String? = { null },
+        restoreBackupFirst: () -> Boolean = { false },
     ) : this(
-        FaceBuilder { d, v -> packager.value.build(d, v) }, sender, store, scope, Dispatchers.Default, keyFingerprint,
+        FaceBuilder { d, v -> packager.value.build(d, v) }, sender, store, scope, Dispatchers.Default, keyFingerprint, restoreBackupFirst,
     )
 
     private val _state = MutableStateFlow<SendUi>(SendUi.Idle)
@@ -137,7 +147,7 @@ class SendController(
         // error text ("UpdateWatchFace failed ...") and adds its own signing-key hint.
         val fromUpdate = error != null && (error.contains("UpdateWatchFace", ignoreCase = true) || error.contains("signing key", ignoreCase = true))
         if (!keyChanged || !fromUpdate) return SendProblem.WatchRefused(error)
-        return SendProblem.KeyMismatch(error)
+        return SendProblem.KeyMismatch(error, restoreBackupFirst())
     }
 
     private fun buildProblem(e: Throwable): SendProblem = when (e) {

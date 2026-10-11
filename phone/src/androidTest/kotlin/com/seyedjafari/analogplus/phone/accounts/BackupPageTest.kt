@@ -362,6 +362,7 @@ class BackupPageTest {
         click(AccountTags.PAGE_CHECK_AGAIN)                                      // still offline: it asks again and says the same
         rule.waitUntil(10_000) { f.controller.ui.value.busy == Busy.NONE && f.controller.ui.value.backup is BackupStatus.Unknown && f.gated.reads.get() > reads }
         waitForTag(AccountTags.PAGE_CHECK_AGAIN)
+        assertEquals("it asked about the backup only, not for a whole sync pass first", 0, f.sync.syncNowCalls)
         f.remote.failWith = null                                                 // the network is back
         click(AccountTags.PAGE_CHECK_AGAIN)
         waitForTag(AccountTags.PAGE_BACK_UP)

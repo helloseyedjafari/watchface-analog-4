@@ -255,7 +255,7 @@ fun discardNext(result: DiscardResult): DiscardNext = when (result) {
 fun afterUpload(result: UploadResult): CloudDialog = when (result) {
     is UploadResult.BackupDiffers -> reAsk(result)
     is UploadResult.Ok, UploadResult.NotSignedIn, is UploadResult.PassphraseRefused, is UploadResult.KeyUnreadable,
-    UploadResult.SelfTestFailed, is UploadResult.Failed -> CloudDialog.None
+    is UploadResult.KeyNotMade, UploadResult.Unsettled, UploadResult.SelfTestFailed, is UploadResult.Failed -> CloudDialog.None
 }
 
 /** The new confirmation after [UploadResult.BackupDiffers]; the passphrase was cleared on submit, so it is asked for again. */

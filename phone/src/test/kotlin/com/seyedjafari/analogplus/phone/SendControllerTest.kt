@@ -26,6 +26,7 @@ class SendControllerTest {
         val kv = FakeKeyValueStore()
         val store = Store(kv, File(dir, "background.jpg"), { 1_800_000_000_000L })
         var key: String? = "aaaaaaaaaaaaaaaa"
+        var accounts = false
         var refusal: String? = "UpdateWatchFace failed (code 7): bad signature"
         var senderFlow: (FaceBundle) -> Flow<SendState> = { b ->
             flow { emit(SendState.Done(ResultMessage(refusal == null, b.versionCode, refusal))) }
@@ -34,7 +35,7 @@ class SendControllerTest {
         val controller = SendController(
             FaceBuilder { _, v -> builds += v; FaceBundle(File(dir, "x.apk"), "t", v, "p") },
             FaceSender { senderFlow(it) },
-            store, scope, StandardTestDispatcher(scheduler), { key },
+            store, scope, StandardTestDispatcher(scheduler), { key }, { accounts },
         )
     }
 
@@ -62,6 +63,29 @@ class SendControllerTest {
         assertTrue(text, text.startsWith(KEY_MISMATCH_TEXT))
         assertTrue(text, text.contains("bad signature")) // the watch's own words stay visible
         assertEquals("the fingerprint of the last accepted face stays", "aaaaaaaaaaaaaaaa", h.store.lastSentKeyFingerprint())
+    }
+
+    @Test fun inABuildWithAccountsTheKeyMismatchAlsoSaysToRestoreTheBackupFirst() = runTest {
+        val h = Harness(this, testScheduler, tmp.root)
+        h.accounts = true
+        h.refusal = null
+        sendOnce(h)
+        h.key = "bbbbbbbbbbbbbbbb"
+        h.refusal = "UpdateWatchFace failed (code 7): bad signature"
+        val text = (sendOnce(h) as SendUi.Error).text
+        assertTrue(text, text.startsWith(KEY_MISMATCH_TEXT))
+        assertTrue(text, text.contains(KEY_MISMATCH_RESTORE_FIRST))
+        assertTrue(text, text.endsWith("(The watch said: UpdateWatchFace failed (code 7): bad signature)"))
+    }
+
+    @Test fun inABuildWithoutAccountsTheKeyMismatchDoesNotMentionABackup() = runTest {
+        val h = Harness(this, testScheduler, tmp.root)
+        h.refusal = null
+        sendOnce(h)
+        h.key = "bbbbbbbbbbbbbbbb"
+        h.refusal = "UpdateWatchFace failed (code 7): bad signature"
+        val text = (sendOnce(h) as SendUi.Error).text
+        assertTrue(text, !text.contains("backup"))
     }
 
     @Test fun differentKeyDoesNotBlameTheKeyForFailuresBeforeTheUpdateStep() = runTest {

@@ -76,7 +76,7 @@ fun BackupPage(onDone: () -> Unit) {
             BackupPageStep.CHECKING, BackupPageStep.UNKNOWN -> {
                 if (view.checkAgain != Show.HIDDEN) {
                     PrimaryButton(
-                        stringResource(BackupPageText.CHECK_AGAIN), accounts::refresh,
+                        stringResource(BackupPageText.CHECK_AGAIN), accounts::checkBackup,
                         Modifier.fillMaxWidth().testTag(AccountTags.PAGE_CHECK_AGAIN), enabled = view.checkAgain == Show.ENABLED,
                     )
                 }

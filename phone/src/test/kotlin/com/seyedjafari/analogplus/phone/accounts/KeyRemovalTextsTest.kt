@@ -30,6 +30,7 @@ class KeyRemovalTextsTest {
             "the Reset signing key question" to signingKeyDialogText().joinToString("\n") { StringsXml.text(it) },
             "the Send key-mismatch error" to KEY_MISMATCH_TEXT,
             "the Send key-mismatch string" to StringsXml.text("send_error_key_mismatch", "x"),
+            "the Send key-mismatch string with the backup sentence" to StringsXml.text("send_error_key_mismatch_restore_first", "x"),
             "the watch app's update hint" to watchHint,
         )
     }
@@ -52,6 +53,13 @@ class KeyRemovalTextsTest {
 
     @Test fun theSendTextAndItsStringStayTheSameSentence() {
         assertEquals(KEY_MISMATCH_TEXT + "\n\n(The watch said: x)", StringsXml.text("send_error_key_mismatch", "x"))
+    }
+
+    @Test fun theSendTextWithTheBackupSentenceIsTheSameTextPlusThatSentence() {
+        assertEquals(
+            KEY_MISMATCH_TEXT + "\n\n" + com.seyedjafari.analogplus.phone.KEY_MISMATCH_RESTORE_FIRST + "\n\n(The watch said: x)",
+            StringsXml.text("send_error_key_mismatch_restore_first", "x"),
+        )
     }
 
     @Test fun theResetQuestionLeadsWithWhatAResetCostsThenTheRemovalOfTheCurrentPath() {

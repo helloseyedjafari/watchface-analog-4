@@ -66,6 +66,8 @@ class AccountMessagesTest {
         ),
         Row(Notice.KeyUnreadable("EACCES"), NoticeKind.ERROR, unreadableWords, "EACCES"),
         Row(Notice.BackupNotVerified, NoticeKind.ERROR, "The new backup could not be checked, so it was taken back. A backup that was there before is unchanged."),
+        Row(Notice.BackupUnsettled, NoticeKind.ERROR, "The backup did not finish and the connection was lost before it could be taken back, so it may already use the new passphrase. Back up again when you are online to be sure."),
+        Row(Notice.KeyNotMade("ENOSPC"), NoticeKind.ERROR, "This phone has no signing key yet and a new one could not be made, so nothing was backed up. Free some storage space on the phone and try again.", "ENOSPC"),
         Row(Notice.BackupChanged, NoticeKind.ERROR, changedWords),
         Row(Notice.BackupFailed(offline, "unavailable"), NoticeKind.ERROR, "The signing key could not be backed up. $offlineWords", "unavailable"),
         Row(Notice.KeyRestored(fp), NoticeKind.INFO, "Signing key restored (key $fp)."),
@@ -162,6 +164,8 @@ class AccountMessagesTest {
         ),
         Row(UploadResult.KeyUnreadable("EACCES"), NoticeKind.ERROR, unreadableWords, "EACCES"),
         Row(UploadResult.SelfTestFailed, NoticeKind.ERROR, "The new backup could not be checked, so it was taken back. A backup that was there before is unchanged."),
+        Row(UploadResult.Unsettled, NoticeKind.ERROR, "The backup did not finish and the connection was lost before it could be taken back, so it may already use the new passphrase. Back up again when you are online to be sure."),
+        Row(UploadResult.KeyNotMade("ENOSPC"), NoticeKind.ERROR, "This phone has no signing key yet and a new one could not be made, so nothing was backed up. Free some storage space on the phone and try again.", "ENOSPC"),
         Row(UploadResult.Failed(offline, "x"), NoticeKind.ERROR, "The signing key could not be backed up. $offlineWords", "x"),
     )
 
@@ -173,6 +177,8 @@ class AccountMessagesTest {
         assertEquals(noticeMessage(Notice.KeyBackedUp(fp)), uploadMessage(UploadResult.Ok(fp)))
         assertEquals(noticeMessage(Notice.PassphraseNotAccepted(weak)), uploadMessage(UploadResult.PassphraseRefused(weak)))
         assertEquals(noticeMessage(Notice.BackupChanged), uploadMessage(UploadResult.BackupDiffers(CloudBackup.Absent, KeyOnPhone.Damaged)))
+        assertEquals(noticeMessage(Notice.BackupUnsettled), uploadMessage(UploadResult.Unsettled))
+        assertEquals(noticeMessage(Notice.KeyNotMade("x")), uploadMessage(UploadResult.KeyNotMade("x")))
         assertEquals(noticeMessage(Notice.BackupFailed(offline, "x")), uploadMessage(UploadResult.Failed(offline, "x")))
     }
 

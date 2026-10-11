@@ -60,6 +60,15 @@ sealed interface Notice {
     /** The phone's key file cannot be read. */
     data class KeyUnreadable(val detail: String) : Notice { override val kind = NoticeKind.ERROR }
 
+    /** This phone has no signing key and making one failed (a full disk, say); nothing was backed up. */
+    data class KeyNotMade(val detail: String) : Notice { override val kind = NoticeKind.ERROR }
+
+    /**
+     * The upload did not finish and its take-back could not reach the cloud: the backup there may already use the NEW
+     * passphrase. Back up again when online.
+     */
+    data object BackupUnsettled : Notice { override val kind = NoticeKind.ERROR }
+
     /** The new backup did not prove itself and was taken back. */
     data object BackupNotVerified : Notice { override val kind = NoticeKind.ERROR }
 
@@ -291,6 +300,28 @@ class AccountsController(
         }
     }
 
+    /**
+     * Re-reads the backup only (no sync pass first, unlike [refresh]), for the "Check again" button of the setup page: on a
+     * slow link with photo designs a whole pass can take long, and the button must answer about the backup.
+     */
+    fun checkBackup() { scope.launch { refreshBackup() } }
+
+    /**
+     * Brings the "this phone has the same key / another key / no key" part of the backup line up to date without asking the
+     * cloud (the line shows no "checking"): the key can change outside the controller, by "Reset signing key" or by the first
+     * Send making a key, and the card must not go on offering Change passphrase for a key the phone no longer has. Does nothing
+     * unless the line shows a backup, and drops its answer if the line changed meanwhile.
+     */
+    suspend fun refreshKeyMatch() {
+        val uid = uid() ?: return
+        val shown = _ui.value.backup as? BackupStatus.BackedUp ?: return
+        val match = backup.keyMatch(shown.fingerprint)
+        if (uid() != uid) return
+        fun BackupStatus.withMatch(): BackupStatus = if (this is BackupStatus.BackedUp && writeId == shown.writeId) copy(match = match) else this
+        lastSettled = lastSettled.withMatch()
+        _ui.update { it.copy(backup = it.backup.withMatch()) }
+    }
+
     /** Milliseconds a restore attempt would wait before trying (0: none), so the screen can say so before the person types. */
     suspend fun restoreWaitMs(): Long = backup.restoreWaitMs()
 
@@ -514,22 +545,26 @@ class AccountsController(
         _ui.update { it.copy(busy = busy, notice = if (clearNotice) null else it.notice) }
         if (clearNotice) noticeUid = null
         if (busy == Busy.DELETING || busy == Busy.KEEPING_ACCOUNT) deletingUid = uid
-        var outcome: ActionOutcome<R>? = null
+        // busy stays until the backup check that follows the action has answered too: between the action and that check the
+        // status is "checking", and the dialogs and buttons must not be offered as if the card were settled (a tap on "I forgot
+        // the passphrase" right after a restore try was answered with a false "the backup line was out of date")
         try {
-            outcome = block()
+            val done = try {
+                block()
+            } finally {
+                if (busy == Busy.DELETING || busy == Busy.KEEPING_ACCOUNT) deletingUid = null
+            }
+            val sameAccount = uid() == uid
+            val outlives = outlivesAccount(done.result)
+            if (done.notice != null && (sameAccount || outlives)) {
+                noticeUid = if (outlives) null else uid
+                _ui.update { it.copy(notice = done.notice) }
+            }
+            if (sameAccount && done.refresh) refreshBackup()
+            done.result
         } finally {
-            if (busy == Busy.DELETING || busy == Busy.KEEPING_ACCOUNT) deletingUid = null
             _ui.update { it.copy(busy = Busy.NONE) }
         }
-        val done = outcome
-        val sameAccount = uid() == uid
-        val outlives = outlivesAccount(done.result)
-        if (done.notice != null && (sameAccount || outlives)) {
-            noticeUid = if (outlives) null else uid
-            _ui.update { it.copy(notice = done.notice) }
-        }
-        if (sameAccount && done.refresh) refreshBackup()
-        done.result
     }
 
     private fun noticeFor(r: UploadResult): Notice = when (r) {
@@ -538,6 +573,8 @@ class AccountsController(
         is UploadResult.PassphraseRefused -> Notice.PassphraseNotAccepted(r.assessment)
         is UploadResult.BackupDiffers -> Notice.BackupChanged
         is UploadResult.KeyUnreadable -> Notice.KeyUnreadable(r.message)
+        is UploadResult.KeyNotMade -> Notice.KeyNotMade(r.message)
+        UploadResult.Unsettled -> Notice.BackupUnsettled
         UploadResult.SelfTestFailed -> Notice.BackupNotVerified
         is UploadResult.Failed -> Notice.BackupFailed(r.kind, r.message)
     }

@@ -31,6 +31,8 @@ class SendProblemResourcesTest {
         SendProblem.WatchRefused(null),
         SendProblem.KeyMismatch("UpdateWatchFace failed (code 7)"),
         SendProblem.KeyMismatch(null),
+        SendProblem.KeyMismatch("UpdateWatchFace failed (code 7)", restoreBackupFirst = true),
+        SendProblem.KeyMismatch(null, restoreBackupFirst = true),
         SendProblem.FaceChecksFailed("check A failed; check B failed"),
         SendProblem.FaceChecksFailed(""),
         SendProblem.DesignNotBuildable("accent: bad colour"),

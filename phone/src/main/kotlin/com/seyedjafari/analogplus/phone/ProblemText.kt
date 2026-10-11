@@ -28,7 +28,10 @@ fun SendProblem.text(r: Resources): String = when (this) {
     // the store's exception always carries this one sentence; the resource is its translatable form
     is SendProblem.VersionCounter -> r.getString(R.string.send_error_version_counter)
     is SendProblem.WatchRefused -> r.getString(R.string.send_error_watch_refused, reason ?: r.getString(R.string.send_unknown_reason))
-    is SendProblem.KeyMismatch -> r.getString(R.string.send_error_key_mismatch, reason ?: r.getString(R.string.send_unknown_reason))
+    is SendProblem.KeyMismatch -> r.getString(
+        if (restoreBackupFirst) R.string.send_error_key_mismatch_restore_first else R.string.send_error_key_mismatch,
+        reason ?: r.getString(R.string.send_unknown_reason),
+    )
     is SendProblem.FaceChecksFailed -> r.getString(R.string.send_error_face_checks, failures.ifBlank { r.getString(R.string.send_no_detail) })
     is SendProblem.DesignNotBuildable -> r.getString(R.string.send_error_not_buildable, reason ?: r.getString(R.string.send_invalid_design))
     SendProblem.OutOfMemory -> r.getString(R.string.send_error_out_of_memory)

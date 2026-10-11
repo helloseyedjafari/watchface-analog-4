@@ -12,7 +12,10 @@ import javax.crypto.spec.SecretKeySpec
 
 /** The result of opening a [SealedKey]. */
 sealed interface OpenResult {
-    data class Opened(val pem: String) : OpenResult
+    data class Opened(val pem: String) : OpenResult {
+        /** Never prints the key. */
+        override fun toString(): String = "Opened(${pem.length} characters)"
+    }
 
     /**
      * The authentication tag did not verify. AES-GCM cannot tell a wrong passphrase from a changed or damaged backup;
@@ -61,6 +64,7 @@ class KeyVault internal constructor(
     /** CPU-heavy (about a second at the default cost on the Pixel 8 API 33 emulator): call off the main thread. */
     fun seal(pem: String, passphrase: String, keyFingerprint: String): SealedKey {
         require(pem.isNotEmpty()) { "nothing to seal" }
+        require(passphrase.isNotEmpty()) { "an empty passphrase protects nothing (and the phone's PBKDF2 provider may refuse it)" }
         val salt = ByteArray(SALT_BYTES).also(random::nextBytes)
         val iv = ByteArray(IV_BYTES).also(random::nextBytes)
         val key = deriveKey(passphrase, salt, iterations)
@@ -77,7 +81,11 @@ class KeyVault internal constructor(
         }
     }
 
-    /** CPU-heavy: call off the main thread. Never throws for bad input; see [OpenResult]. */
+    /**
+     * CPU-heavy: call off the main thread. Never throws for bad input; see [OpenResult]. An empty passphrase opens nothing
+     * (it is not handed to the key derivation: Android's PBKDF2 provider is not the JDK's and may refuse an empty one), and a
+     * passphrase the provider refuses is a passphrase that does not open the backup.
+     */
     fun open(sealed: SealedKey, passphrase: String): OpenResult {
         if (sealed.version != VERSION) return OpenResult.Unsupported("backup version ${sealed.version}")
         if (sealed.kdf != KDF_PBKDF2) return OpenResult.Unsupported("key derivation '${sealed.kdf}'")
@@ -87,7 +95,14 @@ class KeyVault internal constructor(
         if (sealed.salt.size !in MIN_SALT_BYTES..MAX_SALT_BYTES) return OpenResult.Unsupported("salt length ${sealed.salt.size}")
         if (sealed.iv.size != IV_BYTES) return OpenResult.Unsupported("iv length ${sealed.iv.size}")
         if (sealed.ciphertext.size !in TAG_BYTES..MAX_CIPHERTEXT_BYTES) return OpenResult.Unsupported("ciphertext length ${sealed.ciphertext.size}")
-        val key = deriveKey(passphrase, sealed.salt, sealed.iterations)
+        if (passphrase.isEmpty()) return OpenResult.WrongPassphraseOrDamaged
+        val key = try {
+            deriveKey(passphrase, sealed.salt, sealed.iterations)
+        } catch (e: GeneralSecurityException) {
+            return OpenResult.WrongPassphraseOrDamaged
+        } catch (e: IllegalArgumentException) {
+            return OpenResult.WrongPassphraseOrDamaged
+        }
         return try {
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_BITS, sealed.iv))

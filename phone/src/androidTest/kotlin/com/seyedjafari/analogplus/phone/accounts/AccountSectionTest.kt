@@ -632,4 +632,49 @@ class AccountSectionTest {
         rule.onNodeWithText("The backup line above was out of date", substring = true).assertDoesNotExist()
         gone(AccountTags.NOTICE)
     }
+
+    /** The line is read by the controller on its own thread too: wait until it shows a backup (not "checking") before looking at it. */
+    private fun waitUntilBackedUp(f: AccountUiFixture) {
+        val deadline = System.currentTimeMillis() + 10_000
+        while (f.controller.ui.value.backup !is BackupStatus.BackedUp) {
+            check(System.currentTimeMillis() < deadline) { "the line never showed a backup: ${f.controller.ui.value.backup}" }
+            Thread.sleep(20)
+        }
+    }
+
+    // ---- the key changes outside the card (final review B5) ----------------------------------------------------------
+
+    @Test fun theLineFollowsAKeyThatWasResetWhileTheCardWasNotOnScreen() {
+        val f = fixture()
+        kotlinx.coroutines.runBlocking { f.controller.upload(f.passphrase, BackupExpectation.None) }
+        waitUntilBackedUp(f)
+        assertEquals(KeyMatch.SAME, (f.controller.ui.value.backup as BackupStatus.BackedUp).match)
+        f.keys.resetKey()                                 // "Reset signing key" happened, or the key was lost, before the card was shown
+        f.show(rule)
+        waitForText("A backup exists; this phone has no key yet")
+        assertEquals(KeyMatch.NO_LOCAL_KEY, (f.controller.ui.value.backup as BackupStatus.BackedUp).match)
+    }
+
+    @Test fun theLineFollowsAKeyTheFirstSendMadeWhileTheCardWasNotOnScreen() {
+        val f = fixture(FakeKeySource(null))
+        f.otherPhoneBacksUp(pemB)                         // this phone read the line: a backup exists and it has no key yet
+        waitUntilBackedUp(f)
+        assertEquals(KeyMatch.NO_LOCAL_KEY, (f.controller.ui.value.backup as BackupStatus.BackedUp).match)
+        f.keys.pem()                                      // Send made a key
+        f.show(rule)
+        waitForText("The backup holds another key than this phone")
+    }
+
+    @Test fun resettingTheSigningKeyBringsTheBackupLineUpToDate() {
+        val f = fixture()
+        kotlinx.coroutines.runBlocking { f.controller.upload(f.passphrase, BackupExpectation.None) }
+        f.show(rule, scrolls = false) {
+            com.seyedjafari.analogplus.phone.ui.account.AccountScreen(keyStoreFactory = { com.seyedjafari.analogplus.facegen.KeyStore(it, "reset-line-test.pem") })
+        }
+        waitForText("Signing key backed up")
+        f.keys.resetKey()                                 // what the confirmed reset does to the key the backup code looks at
+        rule.onNodeWithTag(com.seyedjafari.analogplus.phone.Tags.RESET_KEY_BUTTON).performScrollTo().performClick()
+        rule.onNodeWithTag(com.seyedjafari.analogplus.phone.Tags.RESET_KEY_CONFIRM).performClick()
+        waitForText("A backup exists; this phone has no key yet")
+    }
 }

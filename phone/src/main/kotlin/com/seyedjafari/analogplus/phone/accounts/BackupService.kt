@@ -116,6 +116,20 @@ sealed interface UploadResult {
      */
     data object SelfTestFailed : UploadResult
 
+    /**
+     * This phone has no key yet and making one failed (a full disk, a failed native generator): nothing was backed up and no
+     * key exists. [message] is the system's text, for a detail line only; the UI says "could not make a key, free some space".
+     */
+    data class KeyNotMade(val message: String) : UploadResult
+
+    /**
+     * The upload did not finish (the connection broke after it began, or the answer to the write was lost) and taking it
+     * back did not reach the cloud either, so the cloud may already hold the new backup, sealed with the NEW passphrase,
+     * although the upload was not proven. The UI says so and asks the person to back up again when online. Not the same
+     * as [Failed], which means nothing of this upload is in the cloud.
+     */
+    data object Unsettled : UploadResult
+
     /** [kind] separates offline from an expired sign-in ([RemoteErrorKind.AUTH]) from refused ([RemoteErrorKind.PERMISSION]). */
     data class Failed(val kind: RemoteErrorKind, val message: String) : UploadResult
 }
@@ -136,7 +150,7 @@ sealed interface RestorePlan {
 
     /**
      * This phone has another key. Replacing it needs the user's confirmation, which names both fingerprints; the
-     * replaced key stays on the phone as a copy.
+     * replaced key is gone from the app: a safety file is left in its private storage, but the app cannot put it back.
      */
     data class ReplaceLocal(val localFingerprint: String, val backupFingerprint: String) : RestorePlan
 
@@ -174,7 +188,7 @@ sealed interface RestoreResult {
 
     /**
      * The install returned, but the key now on this phone is not the restored one. The user action: open Signing key
-     * to see which key this phone has, and restore again. (A copy of any replaced key is kept on the phone.)
+     * to see which key this phone has, and restore again. (A replaced key cannot be put back from the app.)
      */
     data object InstallNotVerified : RestoreResult
 
@@ -192,6 +206,9 @@ sealed interface DiscardResult {
     data class BackupChanged(val current: CloudBackup) : DiscardResult
     data class Failed(val kind: RemoteErrorKind, val message: String) : DiscardResult
 }
+
+/** The detail (data, never shown as it is) of a key that has the shape of a key file but is not a real key. */
+private const val NOT_A_USABLE_KEY = "not a usable signing key"
 
 /**
  * Backs the signing key up (encrypted by [KeyVault]) and restores it. The plain key never leaves [KeySource] except
@@ -220,15 +237,23 @@ class BackupService(
     suspend fun status(uid: String): BackupStatus = try {
         val backup = remote.getBackup(uid)
         if (backup == null) BackupStatus.NotBackedUp else {
-            val match = when (val local = withContext(cpu) { keyOnPhone() }) {
-                is KeyOnPhone.None -> KeyMatch.NO_LOCAL_KEY
-                is KeyOnPhone.Damaged -> KeyMatch.LOCAL_DAMAGED
-                is KeyOnPhone.Present -> if (local.fingerprint == backup.sealed.keyFingerprint) KeyMatch.SAME else KeyMatch.DIFFERENT
-            }
+            val match = keyMatch(backup.sealed.keyFingerprint)
             BackupStatus.BackedUp(backup.sealed.keyFingerprint, backup.createdAtMs, match, backup.writeId)
         }
     } catch (e: RemoteException) {
         BackupStatus.Unknown(e.kind, e.message.orEmpty())
+    }
+
+    /**
+     * How the key on this phone relates to a backup of the key [backupFingerprint], read now and without asking the cloud:
+     * the line of the Account card must follow a key that changed outside the backup (a reset, the first Send making a key).
+     */
+    suspend fun keyMatch(backupFingerprint: String): KeyMatch = withContext(cpu) {
+        when (val local = keyOnPhone()) {
+            is KeyOnPhone.None -> KeyMatch.NO_LOCAL_KEY
+            is KeyOnPhone.Damaged -> KeyMatch.LOCAL_DAMAGED
+            is KeyOnPhone.Present -> if (local.fingerprint == backupFingerprint) KeyMatch.SAME else KeyMatch.DIFFERENT
+        }
     }
 
     /**
@@ -262,7 +287,10 @@ class BackupService(
             is KeyRead.Got -> read.pem
             is KeyRead.Differs -> return UploadResult.BackupDiffers(cloudOf(first), read.phone)
             is KeyRead.Unreadable -> return UploadResult.KeyUnreadable(read.message)
+            is KeyRead.NotMade -> return UploadResult.KeyNotMade(read.message)
         }
+        // text of the right shape that is no real key would be sealed and "proven" (the proof is of bytes) and then never restore
+        if (!withContext(cpu) { keys.isUsable(pem) }) return UploadResult.KeyUnreadable(NOT_A_USABLE_KEY)
         val fingerprint = keyFingerprint(pem)
         val sealed = withContext(cpu) { vault.seal(pem, passphrase, fingerprint) }
         if (withContext(cpu) { vault.open(sealed, passphrase) } != OpenResult.Opened(pem)) return UploadResult.SelfTestFailed
@@ -304,6 +332,8 @@ class BackupService(
             if (!proven && attempted) {
                 val undone = withContext(NonCancellable) { undo(uid, previous, writeId) }
                 if (undone is Undo.Overtaken) outcome = UploadResult.BackupDiffers(undone.current, phoneNow)
+                // the write may have landed and the take-back did not get through: "failed" would be untrue
+                if (undone is Undo.Unreachable) outcome = UploadResult.Unsettled
             }
         }
         return outcome
@@ -331,8 +361,8 @@ class BackupService(
      *
      * Nothing is installed unless both halves of the plan still hold: the backup fetched now has the fingerprint the
      * plan named ([RestoreResult.BackupChanged] otherwise) and the key store, asked inside the install step itself, still
-     * holds what the plan expected ([RestoreResult.LocalKeyChanged] otherwise). The replaced key stays on the phone as a
-     * copy. A wrong passphrase is a typed result and grows the delay; unlimited tries, never a lockout.
+     * holds what the plan expected ([RestoreResult.LocalKeyChanged] otherwise). A replaced key cannot be put back from
+     * the app (a safety file stays in its private storage). A wrong passphrase is a typed result and grows the delay; unlimited tries, never a lockout.
      */
     suspend fun restore(uid: String, passphrase: String, plan: RestorePlan): RestoreResult =
         restoreLock.withLock { restoreSerially(uid, passphrase, plan) }
@@ -394,8 +424,11 @@ class BackupService(
     }
 
     private sealed interface Undo {
-        /** Put back, found nothing of ours to undo, or nothing could be done (unreachable): the next status check shows what the cloud holds. */
+        /** Put back, or found nothing of ours to undo. */
         data object Finished : Undo
+
+        /** The cloud could not be reached: whether our write is in place is not known (the next status check shows what it holds). */
+        data object Unreachable : Undo
 
         /** Another phone wrote since: its backup is left as it is. */
         data class Overtaken(val current: CloudBackup) : Undo
@@ -416,7 +449,7 @@ class BackupService(
             BackupRemoval.Removed -> Undo.Finished
         }
     } catch (e: RemoteException) {
-        Undo.Finished
+        Undo.Unreachable
     }
 
     /** The cloud does not hold our write: that is fine if it holds what was there before our call, otherwise someone else wrote. */
@@ -429,9 +462,13 @@ class BackupService(
     private fun isOurs(current: CloudBackup, writeId: String): Boolean = current is CloudBackup.Present && current.writeId == writeId
 
     private sealed interface KeyRead {
-        data class Got(val pem: String) : KeyRead
+        data class Got(val pem: String) : KeyRead {
+            /** Never prints the key. */
+            override fun toString(): String = "Got(${pem.length} characters)"
+        }
         data class Differs(val phone: KeyOnPhone) : KeyRead
         data class Unreadable(val message: String) : KeyRead
+        data class NotMade(val message: String) : KeyRead
     }
 
     /**
@@ -447,6 +484,10 @@ class BackupService(
             KeyRead.Got(keys.pem())
         } catch (e: SigningKeyException) {
             KeyRead.Unreadable(e.message.orEmpty())
+        } catch (e: Exception) {
+            // what making the first key can hit: a full disk (IOException), a failed native generator (IllegalStateException).
+            // Nothing may escape to a screen that cannot catch it.
+            KeyRead.NotMade(e.message ?: e.javaClass.simpleName)
         }
 
     private fun allows(expecting: BackupExpectation, backup: RemoteBackup?, phone: KeyOnPhone): Boolean = when (expecting) {

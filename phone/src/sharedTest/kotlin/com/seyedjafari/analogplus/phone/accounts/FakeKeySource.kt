@@ -7,12 +7,24 @@ import com.seyedjafari.analogplus.facegen.SigningKeyException
 /** An in-memory [KeySource]. [pem] creates [generated] on first use like the real key store. */
 class FakeKeySource(private var stored: String? = null, private val generated: String = samplePem("generated")) : KeySource {
     var damaged = false
+
+    /** When set, [pem] throws it (a full disk while the key is generated, a native failure). */
+    var pemFailure: Exception? = null
+
+    /** The PEMs [isUsable] refuses (text of the right shape that is not a real key). */
+    val unusable = HashSet<String>()
     var installs = 0
     var previousKey: String? = null
 
     override fun hasKey(): Boolean = stored != null || damaged
 
+    override fun isUsable(pem: String): Boolean = pem !in unusable
+
+    /** What "Reset signing key" does: the key file is gone (the next [pem] makes a new one). */
+    fun resetKey() { stored = null; damaged = false }
+
     override fun pem(): String {
+        pemFailure?.let { throw it }
         if (damaged) throw SigningKeyException("The saved signing key is damaged.")
         return stored ?: generated.also { stored = it }
     }
