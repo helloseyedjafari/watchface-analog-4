@@ -39,6 +39,13 @@ class AccountLayoutTest(private val window: WindowDp, private val fontScale: Flo
     private fun waitForTag(tag: String) = rule.waitUntil(10_000) { rule.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
     private fun waitForText(text: String) = rule.waitUntil(10_000) { rule.onAllNodes(hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty() }
 
+    /** A control of a dialog is reachable: in a short wide window the whole dialog is one scrolling page, otherwise the buttons stay below the text. */
+    private fun reach(tag: String) {
+        val node = rule.onNodeWithTag(tag)
+        runCatching { node.performScrollTo() }
+        node.assertIsDisplayed()
+    }
+
     private fun backedUpOnAnotherKey(): AccountUiFixture =
         AccountUiFixture(FakeKeySource(FakeKeySource.samplePem("B"))).also { fixture = it; it.otherPhoneBacksUp(FakeKeySource.samplePem("A")) }
 
@@ -68,8 +75,9 @@ class AccountLayoutTest(private val window: WindowDp, private val fontScale: Flo
         waitForTag(AccountTags.PASSPHRASE)
         rule.onNodeWithTag(AccountTags.PASSPHRASE).performTextInput(f.passphrase)
         rule.onNodeWithTag(AccountTags.PASSPHRASE_CONFIRM).performScrollTo().assertIsDisplayed().performTextInput(f.passphrase)
-        rule.onNodeWithTag(AccountTags.PASSPHRASE_SUBMIT).assertIsDisplayed().assertIsEnabled()
-        rule.onNodeWithTag(AccountTags.PASSPHRASE_CANCEL).assertIsDisplayed()
+        reach(AccountTags.PASSPHRASE_SUBMIT)
+        rule.onNodeWithTag(AccountTags.PASSPHRASE_SUBMIT).assertIsEnabled()
+        reach(AccountTags.PASSPHRASE_CANCEL)
     }
 
     @Test fun theReplaceAndForgottenDialogsKeepBothAnswersInView() {
@@ -78,14 +86,15 @@ class AccountLayoutTest(private val window: WindowDp, private val fontScale: Flo
         waitForText("The backup holds another key")
         rule.onNodeWithTag(AccountTags.RESTORE).performScrollTo().performClick()
         waitForTag(AccountTags.REPLACE_CONFIRM)
-        rule.onNodeWithTag(AccountTags.REPLACE_CONFIRM).assertIsDisplayed()
-        rule.onNodeWithTag(AccountTags.REPLACE_CANCEL).assertIsDisplayed()
+        reach(AccountTags.REPLACE_CONFIRM)
+        reach(AccountTags.REPLACE_CANCEL)
         rule.onNodeWithTag(AccountTags.REPLACE_CONFIRM).performClick()
         waitForTag(AccountTags.FORGOT)
-        rule.onNodeWithTag(AccountTags.FORGOT).performScrollTo().performClick()
+        reach(AccountTags.FORGOT)
+        rule.onNodeWithTag(AccountTags.FORGOT).performClick()
         waitForTag(AccountTags.RESET_CONFIRM)
-        rule.onNodeWithTag(AccountTags.RESET_CONFIRM).assertIsDisplayed()
-        rule.onNodeWithTag(AccountTags.RESET_CANCEL).assertIsDisplayed()
+        reach(AccountTags.RESET_CONFIRM)
+        reach(AccountTags.RESET_CANCEL)
     }
 
     companion object {

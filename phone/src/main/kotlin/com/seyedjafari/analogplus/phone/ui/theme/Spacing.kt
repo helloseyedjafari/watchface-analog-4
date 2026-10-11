@@ -42,6 +42,8 @@ object Dimens {
     val OnboardingContentMax = 640.dp
     /** The outline of the selected template on the onboarding template page (the word "Selected" says it too). */
     val SelectedBorder = 2.dp
+    /** A dialog of the account flows in a short wide window is one scrolling page this wide at most. */
+    val DialogMaxWidth = 560.dp
     /** The slot drag canvas never grows past this. */
     val SlotEditorMaxWidth = 360.dp
     /** Width of a four-digit number field at font scale 1; the field grows with the font scale. */

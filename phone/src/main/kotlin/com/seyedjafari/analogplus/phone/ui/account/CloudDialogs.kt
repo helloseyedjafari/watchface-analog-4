@@ -3,10 +3,16 @@ package com.seyedjafari.analogplus.phone.ui.account
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -15,7 +21,12 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import com.seyedjafari.analogplus.phone.accounts.CurrentOffer
@@ -23,30 +34,65 @@ import com.seyedjafari.analogplus.phone.accounts.NoticeKind
 import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.components.TertiaryButton
+import com.seyedjafari.analogplus.phone.ui.theme.Dimens
+import com.seyedjafari.analogplus.phone.ui.theme.Elevation
+import com.seyedjafari.analogplus.phone.ui.theme.ScreenLayout
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
+import com.seyedjafari.analogplus.phone.ui.theme.rememberScreenLayout
 import kotlinx.coroutines.delay
 
 /**
- * A dialog made of a [DialogText]: heading, paragraphs (and [extra] below them) and two buttons. The body scrolls, so a
- * large font or an open keyboard never hides the buttons, which stay below it.
+ * A dialog made of a [DialogText]: heading, paragraphs (and [extra] below them) and two buttons. In an upright window the
+ * body scrolls and the buttons stay below it, so a large font or an open keyboard never hides them. In a short wide window
+ * (a phone held sideways) there is no room for that: the whole dialog is one page that scrolls, buttons last, and it gives way
+ * to the keyboard (see [DialogFrame]).
  */
 @Composable
 private fun TextDialog(
     text: DialogText, confirmTag: String, cancelTag: String, onConfirm: () -> Unit, onCancel: () -> Unit,
     confirmEnabled: Boolean = true, extra: @Composable ColumnScope.() -> Unit = {},
 ) {
-    AlertDialog(
-        onDismissRequest = onCancel,
-        title = { Text(stringResource(text.title)) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                text.paragraphs.forEach { Text(uiTextResource(it), style = MaterialTheme.typography.bodyMedium) }
-                extra()
+    DialogFrame(
+        title = stringResource(text.title), confirmLabel = stringResource(text.confirm), cancelLabel = stringResource(text.cancel),
+        confirmTag = confirmTag, cancelTag = cancelTag, onConfirm = onConfirm, onCancel = onCancel, confirmEnabled = confirmEnabled,
+    ) {
+        text.paragraphs.forEach { Text(uiTextResource(it), style = MaterialTheme.typography.bodyMedium) }
+        extra()
+    }
+}
+
+/** The shape of every dialog of the account flows; [body] is what is said between the heading and the buttons. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DialogFrame(
+    title: String, confirmLabel: String, cancelLabel: String, confirmTag: String, cancelTag: String,
+    onConfirm: () -> Unit, onCancel: () -> Unit, confirmEnabled: Boolean = true, body: @Composable ColumnScope.() -> Unit,
+) {
+    if (rememberScreenLayout() == ScreenLayout.SIDE_BY_SIDE) {
+        Dialog(onDismissRequest = onCancel, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(
+                modifier = Modifier.padding(Spacing.lg).widthIn(max = Dimens.DialogMaxWidth).fillMaxWidth(),
+                shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = Elevation.raised,
+            ) {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(Spacing.xl), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                    Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+                    body()
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm, Alignment.End), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        SecondaryButton(cancelLabel, onCancel, Modifier.testTag(cancelTag))
+                        PrimaryButton(confirmLabel, onConfirm, Modifier.testTag(confirmTag), enabled = confirmEnabled)
+                    }
+                }
             }
-        },
-        confirmButton = { PrimaryButton(stringResource(text.confirm), onConfirm, Modifier.testTag(confirmTag), enabled = confirmEnabled) },
-        dismissButton = { SecondaryButton(stringResource(text.cancel), onCancel, Modifier.testTag(cancelTag)) },
-    )
+        }
+    } else {
+        AlertDialog(
+            onDismissRequest = onCancel,
+            title = { Text(title) },
+            text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.md)) { body() } },
+            confirmButton = { PrimaryButton(confirmLabel, onConfirm, Modifier.testTag(confirmTag), enabled = confirmEnabled) },
+            dismissButton = { SecondaryButton(cancelLabel, onCancel, Modifier.testTag(cancelTag)) },
+        )
+    }
 }
 
 /** Choose a passphrase and back the signing key up (also to change the passphrase). */
@@ -124,11 +170,8 @@ fun DeleteAccountDialog(busy: Boolean, onConfirm: () -> Unit, onDismiss: () -> U
 @Composable
 fun OfferDialog(offer: CurrentOffer, onUse: () -> Unit, onKeep: () -> Unit) {
     val words = offerText(offer)
-    AlertDialog(
-        onDismissRequest = onKeep,
-        title = { Text(uiTextResource(words.title)) },
-        text = { Column(Modifier.verticalScroll(rememberScrollState())) { Text(uiTextResource(words.body), style = MaterialTheme.typography.bodyMedium) } },
-        confirmButton = { PrimaryButton(stringResource(words.use), onUse, Modifier.testTag(AccountTags.OFFER_USE)) },
-        dismissButton = { SecondaryButton(stringResource(words.keep), onKeep, Modifier.testTag(AccountTags.OFFER_KEEP)) },
-    )
+    DialogFrame(
+        title = uiTextResource(words.title), confirmLabel = stringResource(words.use), cancelLabel = stringResource(words.keep),
+        confirmTag = AccountTags.OFFER_USE, cancelTag = AccountTags.OFFER_KEEP, onConfirm = onUse, onCancel = onKeep,
+    ) { Text(uiTextResource(words.body), style = MaterialTheme.typography.bodyMedium) }
 }
