@@ -230,8 +230,8 @@ class SendFlowTest {
         awaitStatus("This phone is signing with a different key", whole = false)
         listOf(
             "The watch only accepts updates from the original key.",
-            "Remove the old Analog Plus face from the watch (uninstalling the watch app does not remove it",
-            "pm uninstall com.seyedjafari.analogplus.watchfacepush.analog",
+            "Remove the old Analog Plus face from the watch, then send again. Uninstalling the watch app does not remove it",
+            "uninstall the Analog Plus watch face",
             "(The watch said: UpdateWatchFace failed: signature differs from the installed face)",
         ).forEach { rule.onNodeWithTag(Tags.SEND_STATUS).assertTextContains(it, substring = true) }
         rule.onNodeWithTag(Tags.SEND_BUTTON).assertIsEnabled()

@@ -23,7 +23,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The Account destination: app info, the "sign-in is coming" state, and the signing-key reset with its question. The reset runs on a
+ * The Account destination: app info, the Backup and sync card of a build without accounts, and the signing-key reset with its question. The reset runs on a
  * key file of the test's own, never the app's real signing key (which may have signed a face that is on a watch).
  */
 @RunWith(AndroidJUnit4::class)
@@ -53,11 +53,10 @@ class AccountFlowTest {
         rule.onNodeWithText("Version $installed").assertIsDisplayed()
     }
 
-    @Test fun signInIsSaidToBeComingAndTheDesignsAreSaidToStayOnThePhone() {
+    @Test fun withoutAnAccountsControllerTheCardSaysSignInIsNotSetUpAndTheDesignsStayOnThePhone() {
         show()
         rule.onNodeWithText("Backup and sync").assertIsDisplayed()
-        rule.onNode(hasText("Sign-in is coming", substring = true)).assertIsDisplayed()
-        rule.onNodeWithText("Your designs are saved on this phone.").assertIsDisplayed()
+        rule.onNodeWithText("Sign-in is not set up in this build. Your designs are saved on this phone only.").assertIsDisplayed()
     }
 
     @Test fun theResetQuestionSaysWhatItCostsAndCancelKeepsTheKey() {
@@ -66,6 +65,9 @@ class AccountFlowTest {
         rule.onNodeWithTag(Tags.RESET_KEY_BUTTON).performScrollTo().performClick()
         rule.onNodeWithText("Reset the signing key?").assertIsDisplayed()
         rule.onNode(hasText("the watch will refuse new faces until the old Analog Plus face is removed from the watch", substring = true)).assertIsDisplayed()
+        // how the face leaves the watch is the self-service path the spike found, not a command for a computer
+        rule.onNode(hasText("uninstall the Analog Plus watch face", substring = true)).assertExists()
+        rule.onNode(hasText("adb", substring = true)).assertDoesNotExist()
         rule.onNodeWithText("Cancel").performClick()
         rule.waitForIdle()
         rule.onNodeWithText("Reset the signing key?").assertDoesNotExist()
