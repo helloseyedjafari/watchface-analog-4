@@ -10,6 +10,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -23,7 +24,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.EditorState
+import com.seyedjafari.analogplus.phone.ChangeOrigin
+import com.seyedjafari.analogplus.phone.SavedChange
 import com.seyedjafari.analogplus.phone.SavedDesign
+import com.seyedjafari.analogplus.phone.StoreObserver
 import com.seyedjafari.analogplus.phone.Store
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.canonicalDesignName
@@ -41,6 +45,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -78,6 +83,20 @@ internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (S
     var loaded by remember { mutableStateOf(readNow) }
     LaunchedEffect(Unit) {
         if (!loaded) { show(saved, onDisk { store.savedDesigns() }); loaded = true }
+    }
+    // A design that arrives from the cloud (or any change not made on this screen) is stored while the list is open: the store
+    // says so, and the list is read again behind whatever write is queued. The observer only posts a note (it is called on the
+    // thread that wrote, outside the store's lock); the read happens in the screen's own coroutine, off the main thread.
+    val changes = remember { Channel<Unit>(Channel.CONFLATED) }
+    DisposableEffect(store) {
+        val observer = object : StoreObserver {
+            override fun onSavedDesignChanged(change: SavedChange, origin: ChangeOrigin) { changes.trySend(Unit) }
+        }
+        store.addObserver(observer)
+        onDispose { store.removeObserver(observer) }
+    }
+    LaunchedEffect(store) {
+        for (change in changes) { show(saved, onDisk { store.savedDesigns() }); loaded = true }
     }
     var saving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()

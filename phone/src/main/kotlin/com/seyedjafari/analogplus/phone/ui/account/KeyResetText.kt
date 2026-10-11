@@ -39,3 +39,11 @@ fun KeyResetCopy.damagedCopyFor(path: ResetPath): ResetCopy = DialogText(
 fun KeyResetCopy.current(): ResetCopy = copyFor(CURRENT)
 
 fun KeyResetCopy.damagedCurrent(): ResetCopy = damagedCopyFor(CURRENT)
+
+/**
+ * The paragraphs of the "Reset the signing key?" question in the Signing key card: what a reset costs, then how the old face
+ * leaves the watch, in the words of the path in force ([KeyResetCopy.CURRENT]), so this card never says something else than
+ * the forgotten-passphrase dialog does.
+ */
+fun signingKeyDialogText(): List<UiText> =
+    listOf(uiText(R.string.signing_key_dialog_message)) + removalParagraphs(KeyResetCopy.CURRENT)

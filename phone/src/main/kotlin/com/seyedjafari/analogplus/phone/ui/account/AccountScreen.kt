@@ -19,8 +19,6 @@ import androidx.compose.ui.platform.testTag
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SectionCard
-import com.seyedjafari.analogplus.phone.ui.components.StatusKind
-import com.seyedjafari.analogplus.phone.ui.components.StatusPill
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import androidx.compose.ui.res.stringResource
 import com.seyedjafari.analogplus.phone.R
@@ -34,7 +32,7 @@ private fun versionName(context: Context): String? =
     }
 
 /**
- * App details, backup and sync (sign-in is not built yet), and the signing-key recovery. [keyStoreFactory] makes the
+ * App details, backup and sync ([AccountSection]), and the signing-key recovery. [keyStoreFactory] makes the
  * [KeyStore] that "Reset signing key" deletes; tests pass one of their own. [onRunSetupAgain] (null: no Setup card) restarts first-run
  * setup from its first page; it works after a completed and after a skipped setup.
  */
@@ -53,10 +51,7 @@ fun AccountScreen(
         SectionCard(stringResource(R.string.account_app_title)) {
             Text(stringResource(R.string.account_version, version ?: stringResource(R.string.account_version_unknown)), style = MaterialTheme.typography.bodyMedium)
         }
-        SectionCard(stringResource(R.string.account_backup_title)) {
-            StatusPill(stringResource(R.string.account_signin_coming), StatusKind.NEUTRAL)
-            Text(stringResource(R.string.account_saved_on_phone), style = MaterialTheme.typography.bodyMedium)
-        }
+        AccountSection()
         if (onRunSetupAgain != null) {
             SectionCard(stringResource(R.string.account_run_setup_title)) {
                 Text(stringResource(R.string.account_run_setup_body), style = MaterialTheme.typography.bodyMedium)

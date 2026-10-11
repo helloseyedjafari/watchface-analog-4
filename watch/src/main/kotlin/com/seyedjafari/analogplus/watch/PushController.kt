@@ -139,6 +139,6 @@ class PushController internal constructor(
          */
         const val UPDATE_KEY_HINT = " If this phone was reinstalled or its signing key was reset, the watch only accepts updates " +
             "signed with the original key: remove the old Analog Plus face from the watch (uninstalling the watch app does not " +
-            "remove it; with adb: pm uninstall com.seyedjafari.analogplus.watchfacepush.analog) and send again."
+            "remove it; open Settings on the watch, go to its list of apps and uninstall the Analog Plus watch face) and send again."
     }
 }

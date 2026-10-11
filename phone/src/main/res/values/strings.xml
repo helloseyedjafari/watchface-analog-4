@@ -245,7 +245,7 @@
     <string name="send_error_fix_design">Fix the design first: %1$s</string>
     <string name="send_error_version_counter">Could not save the version counter; free some storage and try again.</string>
     <string name="send_error_watch_refused">The watch refused the face: %1$s</string>
-    <string name="send_error_key_mismatch">This phone is signing with a different key than the face on your watch. The watch only accepts updates from the original key. Remove the old Analog Plus face from the watch (uninstalling the watch app does not remove it; with adb: pm uninstall com.seyedjafari.analogplus.watchfacepush.analog on the watch), then send again.\n\n(The watch said: %1$s)</string>
+    <string name="send_error_key_mismatch">This phone is signing with a different key than the face on your watch. The watch only accepts updates from the original key. Remove the old Analog Plus face from the watch, then send again. Uninstalling the watch app does not remove it: open Settings on the watch, go to its list of apps and uninstall the Analog Plus watch face (the list may show several entries named Analog Plus; the one to uninstall is the watch face).\n\n(The watch said: %1$s)</string>
     <string name="send_error_face_checks">The face did not pass the watch checks: %1$s</string>
     <string name="send_error_not_buildable">The design cannot be built: %1$s</string>
     <string name="send_error_out_of_memory">Not enough memory to build the face. Try a smaller photo.</string>
@@ -297,8 +297,6 @@
     <string name="account_version">Version %1$s</string>
     <string name="account_version_unknown">unknown</string>
     <string name="account_backup_title">Backup and sync</string>
-    <string name="account_signin_coming">Sign-in is coming</string>
-    <string name="account_saved_on_phone">Your designs are saved on this phone.</string>
     <string name="account_run_setup_title">Setup</string>
     <string name="account_run_setup_body">Go through the welcome steps again: pair your watch, the permission and a starting template.</string>
     <string name="account_run_setup_button">Run setup again</string>
@@ -510,7 +508,7 @@
     <string name="signing_key_explanation">Every face is signed with a key stored in this app. If the app complains that the key is damaged, or the watch rejects updates after a reinstall, you can make a new key here.</string>
     <string name="signing_key_button_reset">Reset signing key</string>
     <string name="signing_key_dialog_title">Reset the signing key?</string>
-    <string name="signing_key_dialog_message">The watch only accepts updates signed with the key it first saw. After a reset the watch will refuse new faces until the old Analog Plus face is removed from the watch (uninstalling the watch app does not remove it; with adb: pm uninstall com.seyedjafari.analogplus.watchfacepush.analog).</string>
+    <string name="signing_key_dialog_message">The watch only accepts updates signed with the key it first saw. After a reset the watch will refuse new faces until the old Analog Plus face is removed from the watch. Uninstalling the watch app does not remove it.</string>
     <string name="signing_key_button_confirm">Reset</string>
     <string name="signing_key_reset_failed">The key could not be reset.</string>
     <string name="signing_key_reset_done">Signing key reset. A new key is made on the next send.</string>

@@ -3,6 +3,8 @@ package com.seyedjafari.analogplus.phone.ui.account
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -51,7 +53,9 @@ internal fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier:
             onDismissRequest = { confirming = false },
             title = { Text(stringResource(R.string.signing_key_dialog_title)) },
             text = {
-                Text(stringResource(R.string.signing_key_dialog_message))
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                    signingKeyDialogText().forEach { Text(uiTextResource(it)) }
+                }
             },
             confirmButton = {
                 PrimaryButton(

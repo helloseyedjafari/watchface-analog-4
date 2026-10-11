@@ -51,6 +51,8 @@ tasks.withType<Test>().configureEach {
     inputs.dir("src/debug/kotlin").withPropertyName("debugSourcesRead")
     inputs.dir("src/release/kotlin").withPropertyName("releaseSourcesRead")
     inputs.dir("src/main/res/values").withPropertyName("stringsRead")
+    // KeyRemovalTextsTest reads the hint the watch app adds to a failed update
+    inputs.dir("../watch/src/main/kotlin").withPropertyName("watchSourcesRead")
 }
 
 // Firebase brings the lite protobuf runtime (protobuf-javalite + protolite-well-known-types) and the face validator brings the

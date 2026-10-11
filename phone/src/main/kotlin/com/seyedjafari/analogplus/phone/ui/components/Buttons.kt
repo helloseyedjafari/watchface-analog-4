@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -63,10 +64,16 @@ fun SecondaryButton(
     }
 }
 
-/** A quiet text-only action (no outline, no fill) for something the user can do but is not asked to: "Skip". */
+/**
+ * A quiet text-only action (no outline, no fill) for something the user can do but is not asked to: "Skip". [destructive]
+ * draws it in the error colour, for an action that deletes something.
+ */
 @Composable
-fun TertiaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    TextButton(onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = Spacing.minTouch), shape = MaterialTheme.shapes.large) {
+fun TertiaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, destructive: Boolean = false) {
+    TextButton(
+        onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = Spacing.minTouch), shape = MaterialTheme.shapes.large,
+        colors = if (destructive) ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error) else ButtonDefaults.textButtonColors(),
+    ) {
         Text(text, style = MaterialTheme.typography.labelLarge)
     }
 }
@@ -80,5 +87,6 @@ private fun ButtonsPreview() = PreviewFrame {
         PrimaryButton(stringResource(R.string.design_button_send_to_watch), {}, enabled = false)
         SecondaryButton(stringResource(R.string.common_cancel), {})
         TertiaryButton(stringResource(R.string.onboarding_screen_skip), {})
+        TertiaryButton(stringResource(R.string.account_button_delete), {}, destructive = true)
     }
 }
