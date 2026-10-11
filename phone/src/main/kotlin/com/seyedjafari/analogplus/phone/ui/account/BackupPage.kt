@@ -35,12 +35,8 @@ fun BackupPage(onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
     val view = backupPageView(ui)
     val buttons = view.buttons
-    val message = ui.notice?.let(::noticeMessage) ?: flow.note
-    val callbacks = CloudCallbacks(
-        signIn = accounts::signIn, syncNow = {}, signOut = {}, backUp = {}, replaceBackup = {}, restore = {}, askToDelete = {},
-        finishDeletion = flow::askToFinishDeletion, keepAccount = { scope.launch { flow.keepAccount() } },
-        dismissMessage = { accounts.dismissNotice(); flow.dismissNote() },
-    )
+    val message = cloudMessage(ui, flow.note)
+    val dismissMessage = { accounts.dismissNotice(); flow.dismissNote() }
 
     PageLayout(stringResource(OnboardingText.BACKUP_TITLE)) {
         val account = ui.account as? AccountState.SignedIn
@@ -58,7 +54,7 @@ fun BackupPage(onDone: () -> Unit) {
             )
             Pill(backupPill(ui.backup), AccountTags.BACKUP_STATUS)
         }
-        message?.let { NoticeRow(it, callbacks.dismissMessage) }
+        message?.let { NoticeRow(it, dismissMessage) }
         BusyLine(ui.busy)
 
         when (view.step) {
@@ -68,10 +64,10 @@ fun BackupPage(onDone: () -> Unit) {
             )
             BackupPageStep.SIGN_IN -> {
                 SignInFailure(ui.account)
-                PrimaryButton(stringResource(AccountText.SIGN_IN), callbacks.signIn, Modifier.fillMaxWidth().testTag(AccountTags.PAGE_SIGN_IN))
+                PrimaryButton(stringResource(AccountText.SIGN_IN), accounts::signIn, Modifier.fillMaxWidth().testTag(AccountTags.PAGE_SIGN_IN))
             }
             BackupPageStep.SIGNING_IN -> SigningInLine()
-            BackupPageStep.DELETION_PENDING -> pendingDeletionText(ui.deletion)?.let { PendingDeletionCard(it, buttons, callbacks) }
+            BackupPageStep.DELETION_PENDING -> pendingDeletionText(ui.deletion)?.let { PendingDeletionCard(it, buttons, onFinish = flow::askToFinishDeletion, onKeep = { scope.launch { flow.keepAccount() } }) }
             // the pill above says what is known; where the cloud could not be asked, asking again is offered (and the way out of an expired sign-in)
             BackupPageStep.CHECKING, BackupPageStep.UNKNOWN -> {
                 if (view.checkAgain != Show.HIDDEN) {

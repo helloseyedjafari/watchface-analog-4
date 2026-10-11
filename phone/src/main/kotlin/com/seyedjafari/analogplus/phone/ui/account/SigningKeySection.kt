@@ -23,6 +23,7 @@ import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.theme.ProvideOuterDensity
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import com.seyedjafari.analogplus.facegen.KeyStore
+import com.seyedjafari.analogplus.phone.OnboardingConfig
 import com.seyedjafari.analogplus.phone.Tags
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -47,7 +48,7 @@ internal fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier:
     val resetFailed = stringResource(R.string.signing_key_reset_failed)
     val resetDone = stringResource(R.string.signing_key_reset_done)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        Text(stringResource(R.string.signing_key_explanation), style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(signingKeyExplanation(OnboardingConfig.accountsAvailable)), style = MaterialTheme.typography.bodySmall)
         SecondaryButton(stringResource(R.string.signing_key_button_reset), { confirming = true }, Modifier.testTag(Tags.RESET_KEY_BUTTON), enabled = !busy)
         done?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag(Tags.RESET_KEY_NOTICE)) }
     }
@@ -60,7 +61,7 @@ internal fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier:
             text = {
                 ProvideOuterDensity(outer) {
                     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                        signingKeyDialogText().forEach { Text(uiTextResource(it)) }
+                        signingKeyDialogText(restoreFirst = OnboardingConfig.accountsAvailable).forEach { Text(uiTextResource(it)) }
                     }
                 }
             },

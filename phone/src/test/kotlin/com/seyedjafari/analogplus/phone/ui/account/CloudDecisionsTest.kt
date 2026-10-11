@@ -257,6 +257,23 @@ class CloudDecisionsTest {
         for (r in listOf(RestoreResult.Restored(cloudFp), RestoreResult.NoBackup, RestoreResult.BackupChanged, RestoreResult.Failed(RemoteErrorKind.OTHER, ""))) assertNull("$r", waitAfter(r))
     }
 
+    @Test fun aCountdownIsAnnouncedWhenItFirstShowsForAWholeSecondAndThenOnlyAtCoarseSteps() {
+        // the first showing stays news while its whole seconds do not change (a few milliseconds later it is still the same line)
+        assertTrue(countdownIsNews(firstRemainingMs = 5_000, remainingMs = 5_000))
+        assertTrue(countdownIsNews(firstRemainingMs = 5_000, remainingMs = 4_990))
+        // then every second is not news
+        assertFalse(countdownIsNews(5_000, 3_700))
+        assertFalse(countdownIsNews(5_000, 1_200))
+        // a long wait is announced at every ten seconds
+        assertTrue(countdownIsNews(45_000, 45_000))
+        assertFalse(countdownIsNews(45_000, 43_000))
+        assertTrue(countdownIsNews(45_000, 40_000))
+        assertFalse(countdownIsNews(45_000, 38_000))
+        assertTrue(countdownIsNews(45_000, 30_000))
+        // nothing left to wait for: the line is an ordinary answer
+        assertTrue(countdownIsNews(5_000, 0))
+    }
+
     @Test fun theRemainingWaitCountsDownAndNeverGoesNegative() {
         assertEquals(5_000L, remainingWaitMs(15_000, 10_000))
         assertEquals(0L, remainingWaitMs(10_000, 10_000))

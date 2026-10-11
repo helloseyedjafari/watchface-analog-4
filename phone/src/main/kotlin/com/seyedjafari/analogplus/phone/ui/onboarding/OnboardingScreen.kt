@@ -80,6 +80,8 @@ fun OnboardingScreen(
 
     val compact = rememberScreenLayout() == ScreenLayout.SIDE_BY_SIDE
     val skip = controller::skip
+    // the backup page brings its own ways out (Not now / Skip for now, Done): a second "Skip" beside them would be one more word for the same act
+    val hasSkip = page != OnboardingPage.BACKUP
     val label = OnboardingText.primaryLabel(page, isLast = index == pages.lastIndex)
 
     Box(modifier.fillMaxSize().testTag(Tags.ONBOARDING_ROOT), contentAlignment = Alignment.TopCenter) {
@@ -89,7 +91,7 @@ fun OnboardingScreen(
             if (!compact) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.lg), horizontalArrangement = Arrangement.spacedBy(Spacing.md), verticalAlignment = Alignment.CenterVertically) {
                     Progress(index, pages.size, Modifier.weight(1f))
-                    SkipButton(skip)
+                    if (hasSkip) SkipButton(skip)
                 }
             }
 
@@ -115,7 +117,7 @@ fun OnboardingScreen(
                 if (index > 0) SecondaryButton(stringResource(OnboardingText.SCREEN_BACK), controller::back, Modifier.testTag(Tags.ONBOARDING_BACK))
                 if (compact) {
                     Progress(index, pages.size, Modifier.weight(1f))
-                    SkipButton(skip)
+                    if (hasSkip) SkipButton(skip)
                 }
                 if (label != null) {
                     PrimaryButton(stringResource(label), controller::advance, (if (compact) Modifier else Modifier.weight(1f)).testTag(Tags.ONBOARDING_NEXT))

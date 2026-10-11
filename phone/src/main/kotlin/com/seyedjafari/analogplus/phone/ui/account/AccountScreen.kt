@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.seyedjafari.analogplus.facegen.KeyStore
 import androidx.compose.ui.platform.testTag
+import com.seyedjafari.analogplus.phone.OnboardingConfig
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SectionCard
@@ -54,7 +55,7 @@ fun AccountScreen(
         AccountSection()
         if (onRunSetupAgain != null) {
             SectionCard(stringResource(R.string.account_run_setup_title)) {
-                Text(stringResource(R.string.account_run_setup_body), style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(if (OnboardingConfig.accountsAvailable) R.string.account_run_setup_body_accounts else R.string.account_run_setup_body), style = MaterialTheme.typography.bodyMedium)
                 SecondaryButton(stringResource(R.string.account_run_setup_button), onRunSetupAgain, Modifier.testTag(Tags.RUN_SETUP_AGAIN))
             }
         }

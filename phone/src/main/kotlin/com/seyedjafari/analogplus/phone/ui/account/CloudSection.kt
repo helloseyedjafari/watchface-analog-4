@@ -116,14 +116,14 @@ fun rememberCloudFlow(accounts: AccountsController, ui: AccountsUi): CloudFlow {
  * lives in the controller, so a rotation shows it again, and the answer is the controller's.
  */
 @Composable
-fun AccountOfferHost(accounts: AccountsController = LocalAccounts.current, gate: OfferGate = LocalOfferGate.current) {
+fun AccountOfferHost(localDesignName: String = "", accounts: AccountsController = LocalAccounts.current, gate: OfferGate = LocalOfferGate.current) {
     val ui by accounts.ui.collectAsState()
     // a dialog the person is busy with (a passphrase being typed) goes first; the question waits its turn
     if (gate.holding) return
     ui.offer?.let { offer ->
         // the answer is for the offer shown: if a newer one replaced it meanwhile, a tap on the old words changes nothing
         OfferDialog(
-            offer,
+            offer, localDesignName,
             onUse = { accounts.resolveOffer(OfferChoice.USE_REMOTE, offer) },
             onKeep = { accounts.resolveOffer(OfferChoice.KEEP_MINE, offer) },
         )
@@ -164,7 +164,7 @@ fun CloudDialogHost(flow: CloudFlow, ui: AccountsUi, accounts: AccountsControlle
 @Composable
 fun CloudSectionContent(ui: AccountsUi, nowMs: Long, note: AccountMessage?, callbacks: CloudCallbacks, modifier: Modifier = Modifier) {
     val card = cloudCard(ui)
-    val message = ui.notice?.let(::noticeMessage) ?: note
+    val message = cloudMessage(ui, note)
     SectionCard(stringResource(AccountText.SECTION_TITLE), modifier) {
         when (card) {
             CloudCard.NOT_CONFIGURED -> Text(
@@ -177,6 +177,9 @@ fun CloudSectionContent(ui: AccountsUi, nowMs: Long, note: AccountMessage?, call
         }
     }
 }
+
+/** What the card says about the last action: the controller's notice wins over the screen's own [note]. Shared with the setup page. */
+internal fun cloudMessage(ui: AccountsUi, note: AccountMessage?): AccountMessage? = ui.notice?.let(::noticeMessage) ?: note
 
 /** The message under the card's heading; the person dismisses it. */
 @Composable
@@ -204,7 +207,7 @@ private fun SignedOutContent(ui: AccountsUi, message: AccountMessage?, callbacks
 @Composable
 private fun SignedInContent(ui: AccountsUi, nowMs: Long, message: AccountMessage?, callbacks: CloudCallbacks) {
     val buttons = cloudButtons(ui)
-    pendingDeletionText(ui.deletion)?.let { PendingDeletionCard(it, buttons, callbacks) }
+    pendingDeletionText(ui.deletion)?.let { PendingDeletionCard(it, buttons, callbacks.finishDeletion, callbacks.keepAccount) }
     val account = ui.account as? AccountState.SignedIn
     Text(uiTextResource(signedInAsText(account?.email)), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag(AccountTags.EMAIL))
     Pill(syncPill(ui.sync, nowMs), AccountTags.SYNC_STATUS)
@@ -285,7 +288,7 @@ internal fun Pill(pill: PillText, tag: String) {
 
 /** A deletion that was started and not finished: the person decides, and nothing syncs until then. */
 @Composable
-internal fun PendingDeletionCard(text: PendingDeletionText, buttons: CloudButtons, callbacks: CloudCallbacks) {
+internal fun PendingDeletionCard(text: PendingDeletionText, buttons: CloudButtons, onFinish: () -> Unit, onKeep: () -> Unit) {
     Surface(
         shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer,
         modifier = Modifier.fillMaxWidth().testTag(AccountTags.DELETION_PENDING),
@@ -293,8 +296,14 @@ internal fun PendingDeletionCard(text: PendingDeletionText, buttons: CloudButton
         Column(Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             Text(stringResource(text.title), style = MaterialTheme.typography.titleSmall)
             Text(stringResource(text.body), style = MaterialTheme.typography.bodyMedium)
-            Shown(buttons.finishDeletion) { PrimaryButton(stringResource(text.finish), callbacks.finishDeletion, Modifier.fillMaxWidth().testTag(AccountTags.FINISH_DELETION), enabled = it) }
-            Shown(buttons.keepAccount) { SecondaryButton(stringResource(text.keep), callbacks.keepAccount, Modifier.fillMaxWidth().testTag(AccountTags.KEEP_ACCOUNT), enabled = it) }
+            Shown(buttons.finishDeletion) { PrimaryButton(stringResource(text.finish), onFinish, Modifier.fillMaxWidth().testTag(AccountTags.FINISH_DELETION), enabled = it) }
+            // the label is drawn in the colour made for text on this container: the default primary blue was only 4.2:1 on it in the dark theme
+            Shown(buttons.keepAccount) {
+                SecondaryButton(
+                    stringResource(text.keep), onKeep, Modifier.fillMaxWidth().testTag(AccountTags.KEEP_ACCOUNT), enabled = it,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
             Text(stringResource(text.keepHint), style = MaterialTheme.typography.bodySmall)
         }
     }

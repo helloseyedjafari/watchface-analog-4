@@ -65,11 +65,11 @@ class AccountMessagesTest {
             "That passphrase was not accepted. Estimate: weak, add more words or characters. It looks like a common password.",
         ),
         Row(Notice.KeyUnreadable("EACCES"), NoticeKind.ERROR, unreadableWords, "EACCES"),
-        Row(Notice.BackupNotVerified, NoticeKind.ERROR, "The new backup could not be checked, so it was taken back. A backup that was there before is unchanged."),
+        Row(Notice.BackupNotVerified, NoticeKind.ERROR, "The new backup did not pass its check. It was taken back where the cloud could be reached; the backup line above shows what the cloud holds now."),
         Row(Notice.BackupUnsettled, NoticeKind.ERROR, "The backup did not finish and the connection was lost before it could be taken back, so it may already use the new passphrase. Back up again when you are online to be sure."),
         Row(Notice.KeyNotMade("ENOSPC"), NoticeKind.ERROR, "This phone has no signing key yet and a new one could not be made, so nothing was backed up. Free some storage space on the phone and try again.", "ENOSPC"),
         Row(Notice.BackupChanged, NoticeKind.ERROR, changedWords),
-        Row(Notice.BackupFailed(offline, "unavailable"), NoticeKind.ERROR, "The signing key could not be backed up. $offlineWords", "unavailable"),
+        Row(Notice.BackupFailed(offline, "unavailable"), NoticeKind.ERROR, "The backup was not saved. $offlineWords", "unavailable"),
         Row(Notice.KeyRestored(fp), NoticeKind.INFO, "Signing key restored (key $fp)."),
         Row(Notice.NoBackup, NoticeKind.ERROR, "There is no backup for this account."),
         Row(Notice.WrongPassphrase(0), NoticeKind.ERROR, "That passphrase did not open the backup. Check it and try again."),
@@ -147,39 +147,6 @@ class AccountMessagesTest {
         assertNull(waitBeforeTypingText(-5))
         assertEquals("There were too many wrong tries. You can try again in 30 seconds.", StringsXml.text(waitBeforeTypingText(30_000)!!))
         assertEquals("There were too many wrong tries. You can try again in 1 second.", StringsXml.text(waitBeforeTypingText(1)!!))
-    }
-
-    // ---- upload -------------------------------------------------------------------------------------------------------
-
-    private val uploadRows = listOf(
-        Row(UploadResult.Ok(fp), NoticeKind.INFO, "Signing key backed up (key $fp)."),
-        Row(UploadResult.NotSignedIn, NoticeKind.ERROR, "Sign in first."),
-        Row(
-            UploadResult.PassphraseRefused(PassphraseAssessment(PassphraseStrength.TOO_SHORT, PassphraseIssue.NONE)), NoticeKind.ERROR,
-            "That passphrase was not accepted. A passphrase needs at least 12 characters.",
-        ),
-        Row(
-            UploadResult.BackupDiffers(CloudBackup.Present(fp, "w"), KeyOnPhone.None), NoticeKind.ERROR,
-            changedWords,
-        ),
-        Row(UploadResult.KeyUnreadable("EACCES"), NoticeKind.ERROR, unreadableWords, "EACCES"),
-        Row(UploadResult.SelfTestFailed, NoticeKind.ERROR, "The new backup could not be checked, so it was taken back. A backup that was there before is unchanged."),
-        Row(UploadResult.Unsettled, NoticeKind.ERROR, "The backup did not finish and the connection was lost before it could be taken back, so it may already use the new passphrase. Back up again when you are online to be sure."),
-        Row(UploadResult.KeyNotMade("ENOSPC"), NoticeKind.ERROR, "This phone has no signing key yet and a new one could not be made, so nothing was backed up. Free some storage space on the phone and try again.", "ENOSPC"),
-        Row(UploadResult.Failed(offline, "x"), NoticeKind.ERROR, "The signing key could not be backed up. $offlineWords", "x"),
-    )
-
-    @Test fun everyUploadResultHasWords() = check(uploadRows) { uploadMessage(it as UploadResult) }
-
-    @Test fun everyUploadResultCaseHasARow() = assertSealedCovered(UploadResult::class.java, uploadRows.map { it.case })
-
-    @Test fun anUploadAndItsNoticeSayTheSameThing() {
-        assertEquals(noticeMessage(Notice.KeyBackedUp(fp)), uploadMessage(UploadResult.Ok(fp)))
-        assertEquals(noticeMessage(Notice.PassphraseNotAccepted(weak)), uploadMessage(UploadResult.PassphraseRefused(weak)))
-        assertEquals(noticeMessage(Notice.BackupChanged), uploadMessage(UploadResult.BackupDiffers(CloudBackup.Absent, KeyOnPhone.Damaged)))
-        assertEquals(noticeMessage(Notice.BackupUnsettled), uploadMessage(UploadResult.Unsettled))
-        assertEquals(noticeMessage(Notice.KeyNotMade("x")), uploadMessage(UploadResult.KeyNotMade("x")))
-        assertEquals(noticeMessage(Notice.BackupFailed(offline, "x")), uploadMessage(UploadResult.Failed(offline, "x")))
     }
 
     // ---- restore ------------------------------------------------------------------------------------------------------
@@ -264,21 +231,7 @@ class AccountMessagesTest {
         assertEquals(noticeMessage(Notice.BackupChanged), restoreMessage(RestoreResult.BackupChanged))
     }
 
-    // ---- discard, deletion, keep, plan --------------------------------------------------------------------------------
-
-    private val discardRows = listOf(
-        Row(DiscardResult.Deleted, NoticeKind.INFO, "The backup was deleted."),
-        Row(DiscardResult.NotSignedIn, NoticeKind.ERROR, "Sign in first."),
-        Row(
-            DiscardResult.BackupChanged(CloudBackup.Absent), NoticeKind.ERROR,
-            changedWords,
-        ),
-        Row(DiscardResult.Failed(offline, "x"), NoticeKind.ERROR, "The backup could not be deleted. $offlineWords", "x"),
-    )
-
-    @Test fun everyDiscardResultHasWords() = check(discardRows) { discardMessage(it as DiscardResult) }
-
-    @Test fun everyDiscardResultCaseHasARow() = assertSealedCovered(DiscardResult::class.java, discardRows.map { it.case })
+    // ---- deletion, keep --------------------------------------------------------------------------------
 
     private val deletionRows = listOf(
         Row(DeletionResult.Done, NoticeKind.INFO, "Your account and its cloud data were deleted. Designs and the signing key on this phone are untouched."),
@@ -324,25 +277,5 @@ class AccountMessagesTest {
         assertEquals(noticeMessage(Notice.KeepNotSaved), keepMessage(KeepResult.NOT_SAVED))
         assertEquals(KeepResult.entries.size, KeepResult.entries.map { en(keepMessage(it)) }.toSet().size)
         assertEquals(noticeMessage(Notice.AccountKept), keepMessage(KeepResult.KEPT))
-    }
-
-    @Test fun plansThatCannotStartSayWhyAndTheOthersSayNothing() {
-        assertEquals("Sign in first.", en(planProblem(RestorePlan.NotSignedIn)!!))
-        assertEquals("There is no backup for this account.", en(planProblem(RestorePlan.NoBackup)!!))
-        val unknown = planProblem(RestorePlan.Unknown(offline, "x"))!!
-        assertEquals("Could not check whether a backup exists. $offlineWords", en(unknown))
-        assertEquals("x", unknown.detail)
-        assertEquals(noticeMessage(Notice.BackupCheckFailed(offline, "x")), unknown)
-        for (plan in askingPlans) assertNull("$plan", planProblem(plan))
-    }
-
-    private val askingPlans = listOf(
-        RestorePlan.InstallNew(fp), RestorePlan.AlreadyHaveThisKey(fp), RestorePlan.ReplaceLocal("1111111111111111", fp), RestorePlan.ReplaceDamaged(fp),
-    )
-
-    @Test fun everyRestorePlanCaseIsEitherAProblemOrAnAsk() {
-        val problems = listOf(RestorePlan.NotSignedIn, RestorePlan.NoBackup, RestorePlan.Unknown(offline, ""))
-        assertSealedCovered(RestorePlan::class.java, problems + askingPlans)
-        for (p in problems) assertNotEquals("$p", null, planProblem(p))
     }
 }

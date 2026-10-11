@@ -304,12 +304,13 @@
     <string name="account_backup_title">Backup and sync</string>
     <string name="account_run_setup_title">Setup</string>
     <string name="account_run_setup_body">Go through the welcome steps again: pair your watch, the permission and a starting template.</string>
+    <string name="account_run_setup_body_accounts">Go through the welcome steps again: pair your watch, the permission, a starting template and, if you like, signing in and backing up your signing key.</string>
     <string name="account_run_setup_button">Run setup again</string>
     <string name="account_signing_key_title">Signing key</string>
     <!-- Account: the Backup and sync card (keys account_<purpose>; AccountText.kt, AccountMessages.kt, AccountDialogText.kt and KeyResetText.kt list the ids) -->
     <string name="account_not_configured">Sign-in is not set up in this build. Your designs are saved on this phone only.</string>
     <string name="account_signed_out_benefit">Sign in with Google to keep your saved designs on all your devices and to back up your signing key, so a new phone can keep updating the face on your watch. Everything works without signing in.</string>
-    <string name="account_signed_out_privacy">The cloud stores your email address, your designs, an encrypted copy of your signing key if you back it up, and the model name of your phone with a random device ID. You can delete all of it at any time.</string>
+    <string name="account_signed_out_privacy">The cloud stores your email address, your name and profile picture from your Google account, your designs (the names of designs you delete or rename are kept until you delete your account), the encrypted backup of your signing key, the model of your phone and a random device ID. You can delete all of it at any time.</string>
     <string name="account_sign_in">Sign in with Google</string>
     <string name="account_signing_in">Signing in...</string>
     <string name="account_signed_in_as">Signed in as %1$s</string>
@@ -388,7 +389,7 @@
     <string name="account_backup_none">Signing key is not backed up</string>
     <string name="account_backup_unknown">Could not check the backup</string>
     <string name="account_backup_same">Signing key backed up (key %1$s)</string>
-    <string name="account_backup_different">The backup holds another key than this phone (%1$s)</string>
+    <string name="account_backup_different">The backup holds another key than this phone (backup key %1$s)</string>
     <string name="account_backup_no_local_key">A backup exists; this phone has no key yet</string>
     <string name="account_backup_local_damaged">A backup exists; the signing key on this phone is damaged</string>
 
@@ -419,11 +420,11 @@
     <string name="account_msg_key_backed_up">Signing key backed up (key %1$s).</string>
     <string name="account_msg_passphrase_not_accepted">That passphrase was not accepted. %1$s.</string>
     <string name="account_msg_key_unreadable">The signing key on this phone cannot be read, so it was not backed up. If a backup already exists, restore it; otherwise use Reset signing key.</string>
-    <string name="account_msg_backup_not_verified">The new backup could not be checked, so it was taken back. A backup that was there before is unchanged.</string>
+    <string name="account_msg_backup_not_verified">The new backup did not pass its check. It was taken back where the cloud could be reached; the backup line above shows what the cloud holds now.</string>
     <string name="account_msg_backup_changed">The backup in the cloud, or the key on this phone, is not what you confirmed. Nothing in the cloud was changed. Look at the backup line above, then start again.</string>
     <string name="account_msg_key_not_made">This phone has no signing key yet and a new one could not be made, so nothing was backed up. Free some storage space on the phone and try again.</string>
     <string name="account_msg_backup_unsettled">The backup did not finish and the connection was lost before it could be taken back, so it may already use the new passphrase. Back up again when you are online to be sure.</string>
-    <string name="account_msg_backup_failed">The signing key could not be backed up. %1$s</string>
+    <string name="account_msg_backup_failed">The backup was not saved. %1$s</string>
     <string name="account_msg_key_restored">Signing key restored (key %1$s).</string>
     <string name="account_msg_no_backup">There is no backup for this account.</string>
     <string name="account_msg_unsupported">This version of Analog Plus cannot open this backup. If an update is available, install it. Otherwise the backup cannot be used here, and you can delete it with the I forgot the passphrase button.</string>
@@ -468,7 +469,7 @@
     <string name="account_set_title">Back up your signing key</string>
     <string name="account_set_confirm">Back up</string>
     <string name="account_enter_title">Restore your signing key</string>
-    <string name="account_enter_body">Enter the recovery passphrase you chose when you backed the key up.</string>
+    <string name="account_enter_body">Enter the passphrase you chose when you backed the key up.</string>
     <string name="account_enter_confirm">Restore</string>
     <string name="account_enter_changed">The backup in the cloud changed. This asks for the passphrase of the backup that is there now.</string>
     <string name="account_enter_forgot">I forgot the passphrase</string>
@@ -496,7 +497,9 @@
     <string name="account_delete_confirm">Delete account</string>
     <string name="account_offer_title">Use the design from %1$s?</string>
     <string name="account_offer_other_device">another device</string>
-    <string name="account_offer_body">Another device saved a different version of the design you are editing (\"%1$s\"). Use that one here, or keep the one on this phone?</string>
+    <string name="account_offer_other_device_capital">Another device</string>
+    <string name="account_offer_body">%1$s saved \"%2$s\". This phone is editing \"%3$s\". Use theirs replaces \"%3$s\" here, and no copy of it is kept unless you saved it in My designs. Keep mine changes nothing here.</string>
+    <string name="account_offer_body_same_name">%1$s saved a different version of the design you are editing (\"%2$s\"). Use theirs replaces your version here, and no copy of it is kept unless you saved it in My designs. Keep mine changes nothing here.</string>
     <string name="account_offer_use">Use theirs</string>
     <string name="account_offer_keep">Keep mine</string>
 
@@ -511,10 +514,15 @@
     <string name="account_reset_adb_confirm">Delete backup anyway</string>
     <string name="account_reset_cancel">Keep the backup</string>
     <string name="account_reset_damaged_backup">Without the passphrase the backup can never be opened, so it will be deleted. Your saved designs are not affected.</string>
-    <string name="account_reset_damaged_key">The signing key saved on this phone is damaged, so sending a face fails until you use Reset signing key in the Signing key card. Deleting the backup does not do that for you.</string>
-    <string name="account_forgot_replace_watch">If the face on your watch was signed with the backed-up key, the watch will refuse faces from this phone\'s key until that face is removed from the watch.</string>
+    <string name="account_reset_damaged_title">Delete the backup you cannot open?</string>
+    <string name="account_reset_damaged_confirm">Delete backup</string>
+    <string name="account_reset_damaged_key">The signing key saved on this phone is damaged, so sending a face fails until you use Reset signing key in the Signing key card. Deleting the backup does not do that for you: delete it here first, then use Reset signing key.</string>
+    <string name="account_forgot_replace_watch">If the face on your watch was signed with the backed-up key, the watch will refuse faces signed with this phone\'s key until that face is removed from the watch.</string>
     <string name="account_refusal_too_short">A passphrase needs at least %1$d characters</string>
     <string name="signing_key_explanation">Every face is signed with a key stored in this app. If the app complains that the key is damaged, or the watch rejects updates after a reinstall, you can make a new key here.</string>
+    <string name="signing_key_explanation_accounts">Every face is signed with a key stored in this app. If the app complains that the key is damaged, you can make a new key here. If the watch rejects updates after a reinstall or on a new phone, first try Restore signing key from backup in Backup and sync above, and make a new key only if you have no backup.</string>
+    <string name="signing_key_dialog_restore_first">If you backed up the signing key that signed the face on your watch, restore it with Restore signing key from backup in Backup and sync above instead of making a new one: then nothing has to be removed from the watch.</string>
+    <string name="key_damaged_restore_first">If you backed up your signing key, restore it first (Account tab, Backup and sync, Restore signing key from backup).</string>
     <string name="signing_key_button_reset">Reset signing key</string>
     <string name="signing_key_dialog_title">Reset the signing key?</string>
     <string name="signing_key_dialog_message">The watch only accepts updates signed with the key it first saw. After a reset the watch will refuse new faces until the old Analog Plus face is removed from the watch. Uninstalling the watch app does not remove it.</string>
@@ -543,7 +551,7 @@
     <string name="onboarding_permission_step_deny">It asks only once. If you tap Deny nothing breaks: press and hold the watch face and pick Analog Plus.</string>
     <string name="onboarding_permission_step_later">After that, new designs change the face in place and never ask again.</string>
     <!-- Onboarding: backup page (the placeholder text is only the default of the slot, for previews and tests) -->
-    <string name="onboarding_backup_placeholder_body">Sign-in is coming. Your designs are saved on this phone.</string>
+    <string name="onboarding_backup_placeholder_body">Optional. You can sign in and back up your signing key later, in Account.</string>
     <string name="onboarding_backup_not_now">Not now</string>
     <!-- Onboarding: backup page (the real one, once accounts ship; the sign-in and card words are the Account card's own) -->
     <string name="onboarding_backup_intro">Optional. Sign in with Google to keep your designs on every device, then back up your signing key with a passphrase only you know.</string>

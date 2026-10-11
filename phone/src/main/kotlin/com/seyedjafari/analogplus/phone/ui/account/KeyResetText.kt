@@ -29,10 +29,11 @@ fun KeyResetCopy.copyFor(path: ResetPath): ResetCopy =
  * uses "Reset signing key", and only then does the watch refuse the face signed with the old key.
  */
 fun KeyResetCopy.damagedCopyFor(path: ResetPath): ResetCopy = DialogText(
-    R.string.account_reset_title,
+    // its own heading and button: "start over" and "makes a new key" would be false here, and the removal steps come after Reset signing key
+    R.string.account_reset_damaged_title,
     listOf(uiText(R.string.account_reset_damaged_backup), uiText(R.string.account_reset_damaged_key), uiText(R.string.account_reset_common_watch)) +
         removalParagraphs(path),
-    confirmOf(path), R.string.account_reset_cancel,
+    R.string.account_reset_damaged_confirm, R.string.account_reset_cancel,
 )
 
 /** The words the screen shows: those of [KeyResetCopy.CURRENT]. */
@@ -45,5 +46,11 @@ fun KeyResetCopy.damagedCurrent(): ResetCopy = damagedCopyFor(CURRENT)
  * leaves the watch, in the words of the path in force ([KeyResetCopy.CURRENT]), so this card never says something else than
  * the forgotten-passphrase dialog does.
  */
-fun signingKeyDialogText(): List<UiText> =
-    listOf(uiText(R.string.signing_key_dialog_message)) + removalParagraphs(KeyResetCopy.CURRENT)
+fun signingKeyDialogText(restoreFirst: Boolean = false): List<UiText> =
+    // in a build with accounts the backup is the better way out, and is said first
+    (if (restoreFirst) listOf(uiText(R.string.signing_key_dialog_restore_first)) else emptyList()) +
+        listOf(uiText(R.string.signing_key_dialog_message)) + removalParagraphs(KeyResetCopy.CURRENT)
+
+/** The words under the Signing key heading; in a build with accounts they point to the backup before the reset. */
+fun signingKeyExplanation(accountsAvailable: Boolean): Int =
+    if (accountsAvailable) R.string.signing_key_explanation_accounts else R.string.signing_key_explanation

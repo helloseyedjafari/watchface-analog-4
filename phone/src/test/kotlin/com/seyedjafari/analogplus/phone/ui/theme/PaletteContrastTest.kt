@@ -19,6 +19,20 @@ class PaletteContrastTest {
         assertEquals(21.0, contrastRatio(0xFF000000.toInt(), 0xFFFFFFFF.toInt()), 0.01)
     }
 
+    /** The pending-deletion card draws its quiet button's label in onErrorContainer: the default (primary on the container) was 4.2:1 in the dark theme. */
+    @Test fun theLabelsOnTheErrorContainerMeetAaInBothThemes() {
+        assertAa("light onErrorContainer/errorContainer", Palette.lightOnErrorContainer, Palette.lightErrorContainer)
+        assertAa("dark onErrorContainer/errorContainer", Palette.darkOnErrorContainer, Palette.darkErrorContainer)
+        assertAa("light onError/error (the red confirm buttons)", Palette.lightOnError, Palette.lightError)
+        assertAa("dark onError/error (the red confirm buttons)", Palette.darkOnError, Palette.darkError)
+    }
+
+    @Test fun thePrimaryLabelOnTheDarkErrorContainerWasTheDefectAndIsNoLongerUsedThere() {
+        // documents the measurement behind the fix: the old pairing is below 4.5, the new one above
+        assertTrue(contrastRatio(Palette.darkPrimary, Palette.darkErrorContainer) < 4.5)
+        assertTrue(contrastRatio(Palette.darkOnErrorContainer, Palette.darkErrorContainer) >= 4.5)
+    }
+
     @Test fun lightPairsMeetAa() {
         assertAa("onSurface/surface", Palette.lightOnSurface, Palette.lightSurface)
         assertAa("onSurfaceVariant/surface", Palette.lightOnSurfaceVariant, Palette.lightSurface)

@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.seyedjafari.analogplus.facegen.FacePackager
+import com.seyedjafari.analogplus.facegen.KeyStore
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.accounts.AccountsController
 import com.seyedjafari.analogplus.phone.accounts.AccountsFactory
@@ -67,7 +68,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     val store = Store(app)
     // Whether the build has accounts decides how many pages setup has, and the controller below reads that when it is built: so the flag is set
     // first. (FirebaseProvider decides once per process; the accounts below ask it again and get the same answer.)
-    init { OnboardingConfig.setAccountsFrom(AccountsFactory.availability(app)) }
+    init {
+        OnboardingConfig.setAccountsFrom(AccountsFactory.availability(app))
+        // a damaged key's error says to restore the backup first, but only in a build that has one
+        KeyStore.restoreFirstHint = if (OnboardingConfig.accountsAvailable) app.getString(R.string.key_damaged_restore_first) else null
+    }
     // Decides first run vs existing user and stores it NOW, before the autosave of the default design below can make a new install look used.
     val onboarding = OnboardingController(store)
     // the photo (up to 25 MB) is read in the background and attached by the first init block below
@@ -258,7 +263,7 @@ fun AppShell(
             if (pendingLink != null) {
                 LoadSharedDesignDialog(pendingLink, onLoad = { state.replaceWholeDesign(pendingLink); onPendingLinkResolved() }, onKeep = onPendingLinkResolved)
             } else {
-                AccountOfferHost()
+                AccountOfferHost(localDesignName = state.design.name)
             }
         }
     }

@@ -82,8 +82,8 @@ Texts below are the English texts of the app (`phone/src/main/res/values/strings
   without `google-services.json` keeps four pages. Ways out of the page, and what each one does (write down which buttons you
   see on each step; the page's own buttons and the screen's own **Skip** are different buttons and may not all be shown):
   the page's own button before signing in ("Not now") and after signing in ("Skip for now") ends setup as **completed**, and
-  **Done** after a backup does too; the screen's own **Skip**, if it is shown on this page, ends setup as **skipped**. Either
-  way the app opens on Design with the design untouched, and Account, **Run setup again** starts the flow again.
+  **Done** after a backup does too; the screen's own **Skip** is not drawn on this page (the page's buttons are the ways out).
+  The app opens on Design with the design untouched, and Account, **Run setup again** starts the flow again.
 - [ ] **NOT RUN** D3. (From the onboarding plan, earlier skipped) On the owner's paired phone and watch: Account, **Run setup
   again**, page 2 "Connect your watch": both rows "OK" within a few seconds; the animation switches to the tick. Note how long
   the check took. Turn Bluetooth off on the phone and come back: the rows change (Found becomes Not found or Could not check);

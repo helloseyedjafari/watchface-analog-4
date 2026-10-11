@@ -106,24 +106,44 @@ class AccountDialogTextTest {
         assertTrue(body(set).contains("nobody can recover it for you, not even us"))
         assertEquals("Back up", en(set.confirm))
         assertEquals("Restore your signing key", en(EnterPassphraseText.dialog.title))
-        assertEquals("Enter the recovery passphrase you chose when you backed the key up.", body(EnterPassphraseText.dialog))
+        assertEquals("Enter the passphrase you chose when you backed the key up.", body(EnterPassphraseText.dialog))
         assertEquals("Restore", en(EnterPassphraseText.dialog.confirm))
         assertEquals("I forgot the passphrase", en(EnterPassphraseText.FORGOT))
     }
 
-    @Test fun theOfferNamesTheDeviceAndTheDesign() {
-        val offer = offerText(CurrentOffer("Pixel 8", DesignSettings(name = "Night"), 5))
+    @Test fun theOfferNamesBothDesignsAndSaysWhatUseTheirsCosts() {
+        val offer = offerText(CurrentOffer("Pixel 8", DesignSettings(name = "Sunset"), 5), localName = "Ocean")
         assertEquals("Use the design from Pixel 8?", en(offer.title))
-        assertEquals("Another device saved a different version of the design you are editing (\"Night\"). Use that one here, or keep the one on this phone?", en(offer.body))
+        assertEquals(
+            "Pixel 8 saved \"Sunset\". This phone is editing \"Ocean\". Use theirs replaces \"Ocean\" here, and no copy of it is kept " +
+                "unless you saved it in My designs. Keep mine changes nothing here.",
+            en(offer.body),
+        )
         assertEquals("Use theirs", en(offer.use))
         assertEquals("Keep mine", en(offer.keep))
+    }
+
+    @Test fun onlyWhenTheNamesReallyMatchItIsADifferentVersionOfTheDesignBeingEdited() {
+        val same = offerText(CurrentOffer("Pixel 8", DesignSettings(name = "Night"), 5), localName = "Night")
+        assertEquals(
+            "Pixel 8 saved a different version of the design you are editing (\"Night\"). Use theirs replaces your version here, and no copy of it " +
+                "is kept unless you saved it in My designs. Keep mine changes nothing here.",
+            en(same.body),
+        )
+        // the same words with another spelling of the same name (spaces around it) still match
+        assertEquals(en(same.body), en(offerText(CurrentOffer("Pixel 8", DesignSettings(name = " Night "), 5), localName = "Night").body))
+        // a different name is never called a version of the design being edited
+        assertFalse(en(offerText(CurrentOffer("Pixel 8", DesignSettings(name = "Night 2"), 5), localName = "Night").body).contains("a different version"))
     }
 
     @Test fun aDamagedKeyGetsATextThatSaysTheTruth() {
         for (path in ResetPath.entries) {
             val text = body(KeyResetCopy.damagedCopyFor(path))
             assertTrue(path.name, text.contains("is damaged, so sending a face fails until you use Reset signing key"))
-            assertTrue(path.name, text.contains("Deleting the backup does not do that for you"))
+            assertTrue(path.name, text.contains("Deleting the backup does not do that for you: delete it here first, then use Reset signing key."))
+            // its heading and button say what it does: no "start over" for a dialog that only deletes the backup
+            assertEquals("Delete the backup you cannot open?", en(KeyResetCopy.damagedCopyFor(path).title))
+            assertEquals("Delete backup", en(KeyResetCopy.damagedCopyFor(path).confirm))
             // a damaged key file is never replaced by itself: no promise of an automatic new key
             assertFalse(path.name, text.contains("makes a new signing key", ignoreCase = true))
             assertFalse(path.name, text.contains("new key is made", ignoreCase = true))
@@ -136,19 +156,21 @@ class AccountDialogTextTest {
     }
 
     @Test fun aDeviceLabelFromTheCloudIsCleanedAndCut() {
-        val dirty = offerText(CurrentOffer("Pi\u202Exel\u0007 8", DesignSettings(name = "Night"), 5))
+        val dirty = offerText(CurrentOffer("Pi\u202Exel\u0007 8", DesignSettings(name = "Night"), 5), "Day")
         assertEquals("Use the design from Pixel 8?", en(dirty.title))
-        val long = offerText(CurrentOffer("d".repeat(80), DesignSettings(name = "Night"), 5))
+        val long = offerText(CurrentOffer("d".repeat(80), DesignSettings(name = "Night"), 5), "Day")
         assertEquals("Use the design from " + "d".repeat(40) + "…?", en(long.title))
-        assertEquals("Use the design from another device?", en(offerText(CurrentOffer("\u202E\u0007", DesignSettings(name = "Night"), 5)).title))
+        assertEquals("Use the design from another device?", en(offerText(CurrentOffer("\u202E\u0007", DesignSettings(name = "Night"), 5), "Day").title))
     }
 
     @Test fun anEmptyDeviceLabelAndAnEmptyDesignNameHaveWords() {
-        val offer = offerText(CurrentOffer("  ", DesignSettings(name = ""), 5))
+        val offer = offerText(CurrentOffer("  ", DesignSettings(name = ""), 5), localName = "Day")
         assertEquals("Use the design from another device?", en(offer.title))
-        assertTrue(en(offer.body).contains("(\"(no name)\")"))
+        assertTrue(en(offer.body).startsWith("Another device saved \"(no name)\". This phone is editing \"Day\"."))
+        // both without a visible name: the same name, said as a version of the design being edited
+        assertTrue(en(offerText(CurrentOffer("Pixel", DesignSettings(name = ""), 5), localName = "").body).contains("a different version of the design you are editing (\"(no name)\")"))
         // a name the dialog cuts, like the link dialog does
-        val long = offerText(CurrentOffer("Pixel", DesignSettings(name = "x".repeat(60)), 5))
+        val long = offerText(CurrentOffer("Pixel", DesignSettings(name = "x".repeat(60)), 5), "Day")
         assertTrue(en(long.body).contains("\"" + "x".repeat(40) + "…\""))
     }
 }

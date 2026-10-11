@@ -17,6 +17,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -47,7 +49,7 @@ fun PrimaryButton(
             CircularProgressIndicator(Modifier.size(Spacing.lg).testTag(LOADING_INDICATOR_TAG), strokeWidth = Spacing.xs / 2, color = MaterialTheme.colorScheme.onPrimary)
             Spacer(Modifier.width(Spacing.sm))
         }
-        Text(text, style = MaterialTheme.typography.labelLarge, modifier = Modifier)
+        Text(text, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center, modifier = Modifier)
     }
 }
 
@@ -56,15 +58,18 @@ fun SecondaryButton(
     text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
     /** For a button whose [text] is only a symbol (an arrow): what a screen reader says instead of the symbol. */
     contentDescription: String? = null,
+    /** The label colour when it must differ from the primary one (a button on a coloured container); unspecified keeps the default. */
+    contentColor: Color = Color.Unspecified,
 ) {
     OutlinedButton(
         onClick = onClick, enabled = enabled,
         modifier = modifier.heightIn(min = Spacing.minTouch)
             .then(if (contentDescription != null) Modifier.semantics { this.contentDescription = contentDescription } else Modifier),
         shape = MaterialTheme.shapes.large,
+        colors = if (contentColor == Color.Unspecified) ButtonDefaults.outlinedButtonColors() else ButtonDefaults.outlinedButtonColors(contentColor = contentColor),
     ) {
         Text(
-            text, style = MaterialTheme.typography.labelLarge,
+            text, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center,
             modifier = if (contentDescription != null) Modifier.clearAndSetSemantics {} else Modifier,
         )
     }

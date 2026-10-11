@@ -153,9 +153,9 @@ class KeyStore(context: Context, val fileName: String = DEFAULT_FILE_NAME) {
     }
 
     private fun damaged(why: String, cause: Throwable?) = SigningKeyException(
-        "The saved signing key is damaged ($why). A new key would not be accepted by the watch for updates of the " +
-            "face that is already installed: you could only install the new face after removing the old one on the watch. " +
-            "Reset the key only if you accept that.",
+        "The saved signing key is damaged ($why). " + (restoreFirstHint?.let { "$it " } ?: "") +
+            "A new key would not be accepted by the watch for updates of the face that is already installed: the old face would " +
+            "have to be removed from the watch first. Use Reset signing key (Account tab) only if you accept that.",
         cause,
     )
 
@@ -171,6 +171,12 @@ class KeyStore(context: Context, val fileName: String = DEFAULT_FILE_NAME) {
     }
 
     companion object {
+        /**
+         * A sentence the damaged-key error carries before its explanation (null: none). The app sets it in a build whose
+         * cloud backup can hold the key, to say "restore it first"; this library knows nothing of accounts and its default is none.
+         */
+        @Volatile var restoreFirstHint: String? = null
+
         const val DEFAULT_FILE_NAME = "signing-key.pem"
         private val LOCK = Any()
         private val BLOCK = Regex("-----BEGIN ([A-Z ]+)-----([^-]*)-----END \\1-----")

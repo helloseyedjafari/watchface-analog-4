@@ -5,6 +5,7 @@ import com.seyedjafari.analogplus.phone.R
 import com.seyedjafari.analogplus.phone.accounts.CurrentOffer
 import com.seyedjafari.analogplus.phone.accounts.KeyResetCopy
 import com.seyedjafari.analogplus.phone.accounts.RestorePlan
+import com.seyedjafari.analogplus.phone.canonicalDesignName
 import com.seyedjafari.analogplus.phone.dialogName
 
 /** The words of a dialog: its heading, its paragraphs and the two buttons (ids; the cancel button reads [cancel]). */
@@ -94,13 +95,23 @@ class OfferText(val title: UiText, val body: UiText, @StringRes val use: Int, @S
 
 private const val OFFER_NAME_MAX = 40
 
-/** An empty device label reads "another device"; a design without a visible name reads "(no name)". */
-fun offerText(offer: CurrentOffer): OfferText {
+/**
+ * The question about a design another device saved. It names both designs (the other device's and the one being edited here,
+ * [localName]) and says what "Use theirs" costs: the design here is replaced and no copy is kept unless it was saved in My
+ * designs. When the two names are the same it says "a different version of the design you are editing" instead, which is
+ * then true. An empty device label reads "another device"; a design without a visible name reads "(no name)".
+ */
+fun offerText(offer: CurrentOffer, localName: String): OfferText {
     // the label comes from the cloud: control and invisible formatting characters are removed, like in a design name
-    val device = dialogName(offer.fromDevice, OFFER_NAME_MAX, noName = "").ifEmpty { null } ?: uiText(R.string.account_offer_other_device)
-    val name = dialogName(offer.design.name, OFFER_NAME_MAX, noName = "").ifEmpty { null } ?: uiText(R.string.common_no_name)
-    return OfferText(
-        uiText(R.string.account_offer_title, device), uiText(R.string.account_offer_body, name),
-        R.string.account_offer_use, R.string.account_offer_keep,
-    )
+    val device = dialogName(offer.fromDevice, OFFER_NAME_MAX, noName = "").ifEmpty { null }
+    val theirs = dialogName(offer.design.name, OFFER_NAME_MAX, noName = "")
+    val mine = dialogName(localName, OFFER_NAME_MAX, noName = "")
+    val sameName = canonicalDesignName(theirs) == canonicalDesignName(mine)
+    val theirsText = theirs.ifEmpty { null } ?: uiText(R.string.common_no_name)
+    val mineText = mine.ifEmpty { null } ?: uiText(R.string.common_no_name)
+    val title = uiText(R.string.account_offer_title, device ?: uiText(R.string.account_offer_other_device))
+    val who = device ?: uiText(R.string.account_offer_other_device_capital)
+    val body = if (sameName) uiText(R.string.account_offer_body_same_name, who, theirsText)
+    else uiText(R.string.account_offer_body, who, theirsText, mineText)
+    return OfferText(title, body, R.string.account_offer_use, R.string.account_offer_keep)
 }

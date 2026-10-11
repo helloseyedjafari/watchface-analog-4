@@ -3,6 +3,7 @@ package com.seyedjafari.analogplus.phone.accounts
 import com.seyedjafari.analogplus.phone.KEY_MISMATCH_TEXT
 import com.seyedjafari.analogplus.phone.StringsXml
 import com.seyedjafari.analogplus.phone.ui.account.signingKeyDialogText
+import com.seyedjafari.analogplus.phone.ui.account.signingKeyExplanation
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,6 +29,7 @@ class KeyRemovalTextsTest {
     private val texts: Map<String, String> by lazy {
         mapOf(
             "the Reset signing key question" to signingKeyDialogText().joinToString("\n") { StringsXml.text(it) },
+            "the Reset signing key question with the backup first" to signingKeyDialogText(restoreFirst = true).joinToString("\n") { StringsXml.text(it) },
             "the Send key-mismatch error" to KEY_MISMATCH_TEXT,
             "the Send key-mismatch string" to StringsXml.text("send_error_key_mismatch", "x"),
             "the Send key-mismatch string with the backup sentence" to StringsXml.text("send_error_key_mismatch_restore_first", "x"),
@@ -60,6 +62,24 @@ class KeyRemovalTextsTest {
             KEY_MISMATCH_TEXT + "\n\n" + com.seyedjafari.analogplus.phone.KEY_MISMATCH_RESTORE_FIRST + "\n\n(The watch said: x)",
             StringsXml.text("send_error_key_mismatch_restore_first", "x"),
         )
+    }
+
+    @Test fun inABuildWithAccountsTheBackupIsSaidFirstAndOnlyThere() {
+        val with = signingKeyDialogText(restoreFirst = true).map { StringsXml.text(it) }
+        assertTrue(with.first().contains("Restore signing key from backup"))
+        assertTrue(with.first().contains("nothing has to be removed from the watch"))
+        assertEquals(signingKeyDialogText().map { StringsXml.text(it) }, with.drop(1))
+        // without accounts there is no backup to point to
+        assertFalse(signingKeyDialogText().joinToString(" ") { StringsXml.text(it) }.contains("backup", ignoreCase = true))
+        assertFalse(StringsXml.text(signingKeyExplanation(false)).contains("backup", ignoreCase = true))
+        val explanation = StringsXml.text(signingKeyExplanation(true))
+        assertTrue(explanation.contains("first try Restore signing key from backup"))
+        assertTrue("a new key only without a backup", explanation.contains("only if you have no backup"))
+    }
+
+    @Test fun theDamagedKeyErrorOfTheKeyStoreHasItsHintInTheStringsOfABuildWithAccounts() {
+        val hint = StringsXml.text("key_damaged_restore_first")
+        assertTrue(hint.contains("Restore signing key from backup"))
     }
 
     @Test fun theResetQuestionLeadsWithWhatAResetCostsThenTheRemovalOfTheCurrentPath() {

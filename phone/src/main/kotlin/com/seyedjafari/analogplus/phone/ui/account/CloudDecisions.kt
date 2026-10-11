@@ -306,6 +306,20 @@ fun noteAfterKeep(result: KeepResult): AccountMessage? = when (result) {
     KeepResult.NOT_PENDING, KeepResult.NOT_SIGNED_IN -> keepMessage(result)
 }
 
+/** A countdown is announced to a screen reader at most every this many seconds (and when it first shows). */
+const val COUNTDOWN_ANNOUNCE_STEP_SECONDS = 10
+
+/**
+ * Whether the line of a wait with [remainingMs] left is news for a screen reader: any line that is no countdown (nothing
+ * left to wait for), the countdown as it first shows (by its whole seconds: it must stay announced for a second, not one frame),
+ * and then only when the seconds reach a multiple of [COUNTDOWN_ANNOUNCE_STEP_SECONDS].
+ */
+fun countdownIsNews(firstRemainingMs: Long, remainingMs: Long): Boolean {
+    if (remainingMs <= 0) return true
+    val seconds = secondsToWait(remainingMs)
+    return seconds == secondsToWait(firstRemainingMs) || seconds % COUNTDOWN_ANNOUNCE_STEP_SECONDS == 0
+}
+
 /** Milliseconds still to wait at [nowMs] for a wait that ends at [untilMs]; never negative. */
 fun remainingWaitMs(untilMs: Long, nowMs: Long): Long = (untilMs - nowMs).coerceAtLeast(0)
 

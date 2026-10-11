@@ -88,19 +88,6 @@ private fun deleteAccountProblemRes(problem: AccountDeleteProblem): Int = when (
     AccountDeleteProblem.FAILED -> R.string.account_msg_delete_account_failed
 }
 
-/** The words for the answer of a backup upload (the same as the notice the controller puts on screen for it). */
-fun uploadMessage(result: UploadResult): AccountMessage = when (result) {
-    is UploadResult.Ok -> good(R.string.account_msg_key_backed_up, result.fingerprint)
-    UploadResult.NotSignedIn -> bad(R.string.account_msg_sign_in_first)
-    is UploadResult.PassphraseRefused -> bad(R.string.account_msg_passphrase_not_accepted, refusalText(result.assessment))
-    is UploadResult.BackupDiffers -> bad(R.string.account_msg_backup_changed)
-    is UploadResult.KeyUnreadable -> bad(R.string.account_msg_key_unreadable, detail = result.message)
-    is UploadResult.KeyNotMade -> bad(R.string.account_msg_key_not_made, detail = result.message)
-    UploadResult.Unsettled -> bad(R.string.account_msg_backup_unsettled)
-    UploadResult.SelfTestFailed -> bad(R.string.account_msg_backup_not_verified)
-    is UploadResult.Failed -> bad(R.string.account_msg_backup_failed, remoteReason(result.kind), detail = result.message)
-}
-
 /** The words for every answer of a restore, the good one included. */
 fun restoreMessage(result: RestoreResult): AccountMessage = when (result) {
     is RestoreResult.Restored -> good(R.string.account_msg_key_restored, result.fingerprint)
@@ -151,13 +138,6 @@ fun restoreNext(result: RestoreResult): RestoreNext = when (result) {
 fun restoreErrorText(result: RestoreResult): AccountMessage? =
     if (restoreNext(result) == RestoreNext.TRY_AGAIN_HERE) restoreMessage(result) else null
 
-fun discardMessage(result: DiscardResult): AccountMessage = when (result) {
-    DiscardResult.Deleted -> good(R.string.account_msg_backup_deleted)
-    DiscardResult.NotSignedIn -> bad(R.string.account_msg_sign_in_first)
-    is DiscardResult.BackupChanged -> bad(R.string.account_msg_backup_changed)
-    is DiscardResult.Failed -> bad(R.string.account_msg_backup_delete_failed, remoteReason(result.kind), detail = result.message)
-}
-
 /** Null where the controller shows no notice either: the person backed out of the Google prompt, or nobody was signed in. */
 fun deletionMessage(result: DeletionResult): AccountMessage? = when (result) {
     DeletionResult.Done -> good(R.string.account_msg_account_deleted)
@@ -178,11 +158,3 @@ fun keepMessage(result: KeepResult): AccountMessage = when (result) {
 
 /** The backup line on screen was out of date (the cloud or this phone changed since it was read): it is read again, nothing was changed. */
 fun staleStatusMessage(): AccountMessage = bad(R.string.account_msg_status_stale)
-
-/** Why a restore cannot start; null for the plans that ask for a passphrase (possibly after a confirmation). */
-fun planProblem(plan: RestorePlan): AccountMessage? = when (plan) {
-    RestorePlan.NotSignedIn -> bad(R.string.account_msg_sign_in_first)
-    RestorePlan.NoBackup -> bad(R.string.account_msg_no_backup)
-    is RestorePlan.Unknown -> bad(R.string.account_msg_backup_check_failed, remoteReason(plan.kind), detail = plan.detail)
-    is RestorePlan.InstallNew, is RestorePlan.AlreadyHaveThisKey, is RestorePlan.ReplaceLocal, is RestorePlan.ReplaceDamaged -> null
-}

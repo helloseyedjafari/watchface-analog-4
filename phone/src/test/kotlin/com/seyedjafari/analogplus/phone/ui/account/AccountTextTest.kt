@@ -121,7 +121,7 @@ class AccountTextTest {
     @Test fun backupPillsNameTheKeyMatch() {
         fun backedUp(match: KeyMatch) = backupPill(BackupStatus.BackedUp("0123456789abcdef", 1, match, "w1"))
         assertEquals("Signing key backed up (key 0123456789abcdef)" to StatusKind.OK, pill(backedUp(KeyMatch.SAME)))
-        assertEquals("The backup holds another key than this phone (0123456789abcdef)" to StatusKind.WARNING, pill(backedUp(KeyMatch.DIFFERENT)))
+        assertEquals("The backup holds another key than this phone (backup key 0123456789abcdef)" to StatusKind.WARNING, pill(backedUp(KeyMatch.DIFFERENT)))
         assertEquals("A backup exists; this phone has no key yet" to StatusKind.WARNING, pill(backedUp(KeyMatch.NO_LOCAL_KEY)))
         assertEquals("A backup exists; the signing key on this phone is damaged" to StatusKind.WARNING, pill(backedUp(KeyMatch.LOCAL_DAMAGED)))
         assertEquals("every KeyMatch is covered above", 4, KeyMatch.entries.size)
@@ -188,9 +188,14 @@ class AccountTextTest {
         assertEquals("Backup and sync", en(AccountText.SECTION_TITLE))
         assertEquals(R.string.account_backup_title, AccountText.SECTION_TITLE)
         assertTrue(en(AccountText.SIGNED_OUT_BENEFIT).contains("Everything works without signing in."))
-        // what the cloud really holds: email, designs, the encrypted key backup, the phone model and a random device ID
+        // what the cloud really holds (the privacy policy draft lists the same): email, the name and picture Google sends, the designs
+        // and the names of deleted or renamed ones, the encrypted key backup, the phone model and a random device ID
         val privacy = en(AccountText.SIGNED_OUT_PRIVACY)
-        for (word in listOf("email address", "designs", "encrypted copy of your signing key", "model name", "device ID")) assertTrue(word, privacy.contains(word))
+        for (word in listOf(
+            "email address", "name and profile picture from your Google account", "your designs", "names of designs you delete or rename are kept until you delete your account",
+            "encrypted backup of your signing key", "model of your phone", "random device ID",
+        )) assertTrue(word, privacy.contains(word))
+        assertTrue("short enough to read at a glance", privacy.length < 330)
         assertFalse("no more 'only'", privacy.contains("Only", ignoreCase = true))
         assertEquals("Details: x", en(uiText(AccountText.DETAIL_LINE, "x")))
     }

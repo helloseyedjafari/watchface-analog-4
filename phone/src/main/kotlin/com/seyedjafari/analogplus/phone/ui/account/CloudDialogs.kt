@@ -80,7 +80,7 @@ private fun TextDialog(
  * what a tap outside or Back means (the cancel button's answer unless said otherwise). A dialog is a window of its own, so
  * the density of the place that shows it is given back to everything drawn inside (see [ProvideOuterDensity]).
  *
- * The window is edge to edge, is not panned for the keyboard ([SOFT_INPUT_ADJUST_RESIZE] with insets handled here), and the dialog
+ * The window is edge to edge, is not panned for the keyboard ([SOFT_INPUT_ADJUST_NOTHING] with insets handled here), and the dialog
  * keeps inside the room the system bars and the keyboard leave ([safeDrawingPadding]): with the keyboard open the dialog gets
  * shorter and the part that scrolls gives way, so the buttons stay reachable at a large font too. (A dialog window left as it
  * is gets panned up for the keyboard, which pushes the buttons under it, or in a short window the dialog off the screen.)
@@ -127,7 +127,11 @@ private fun DialogFrame(
                     } else {
                         Column(Modifier.padding(Spacing.xl), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
                             Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
-                            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.md)) { body() }
+                            // the fade at its edges says there is more: at a large font the instructions above the red button are cut off
+                            Column(
+                                Modifier.weight(1f, fill = false).verticalScrollWithFades(rememberScrollState(), AccountTags.DIALOG_SCROLL),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                            ) { body() }
                             DialogButtons(cancelLabel, confirmLabel, cancelTag, confirmTag, onCancel, onConfirm, confirmEnabled, destructive)
                         }
                     }
@@ -187,9 +191,9 @@ fun EnterPassphraseDialog(
     }
     val remaining = until?.let { remainingWaitMs(it, now) } ?: 0L
     val line = enterLine(enter.error, enter.waitMs, remaining)
-    // a countdown changes every second: it is announced when it first shows and not again; any other line is news when it appears
+    // a countdown changes every second: a screen reader hears it when it first shows and then at coarse steps, never every second
     val firstRemaining = remember(until) { remaining }
-    val lineIsNews = remaining == 0L || remaining == firstRemaining
+    val lineIsNews = countdownIsNews(firstRemaining, remaining)
     TextDialog(
         EnterPassphraseText.dialog, AccountTags.PASSPHRASE_SUBMIT, AccountTags.PASSPHRASE_CANCEL,
         onConfirm = { val typed = state.passphrase; state.clear(); onSubmit(typed) },
@@ -235,8 +239,8 @@ fun DeleteAccountDialog(busy: Boolean, onConfirm: () -> Unit, onDismiss: () -> U
  * nothing here) and "Use theirs" the quiet one (it replaces the design being edited); a tap outside or Back means Keep mine.
  */
 @Composable
-fun OfferDialog(offer: CurrentOffer, onUse: () -> Unit, onKeep: () -> Unit) {
-    val words = offerText(offer)
+fun OfferDialog(offer: CurrentOffer, localDesignName: String, onUse: () -> Unit, onKeep: () -> Unit) {
+    val words = offerText(offer, localDesignName)
     DialogFrame(
         title = uiTextResource(words.title), confirmLabel = stringResource(words.keep), cancelLabel = stringResource(words.use),
         confirmTag = AccountTags.OFFER_KEEP, cancelTag = AccountTags.OFFER_USE, onConfirm = onKeep, onCancel = onUse, onDismiss = onKeep,

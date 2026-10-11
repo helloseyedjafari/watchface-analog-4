@@ -76,7 +76,7 @@ class OnboardingTextTest {
         assertEquals("Choose colours, move the complications, and put it on your watch in a minute.", StringsXml.text(OnboardingText.WELCOME_BODY))
         assertEquals("Allow the face once", StringsXml.text(OnboardingText.PERMISSION_TITLE))
         assertEquals("Backup and sync", StringsXml.text(OnboardingText.BACKUP_TITLE))
-        assertEquals("Sign-in is coming. Your designs are saved on this phone.", StringsXml.text(OnboardingText.BACKUP_PLACEHOLDER_BODY))
+        assertEquals("Optional. You can sign in and back up your signing key later, in Account.", StringsXml.text(OnboardingText.BACKUP_PLACEHOLDER_BODY))
         assertEquals("Not now", StringsXml.text(OnboardingText.BACKUP_NOT_NOW))
     }
 }
