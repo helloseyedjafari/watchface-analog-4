@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import {
@@ -32,6 +33,12 @@ before(async () => {
 after(async () => { await env.cleanup(); });
 beforeEach(async () => { await env.clearFirestore(); });
 
+// The account marker (the kill switch): seeded with the rules switched off, live (`deleted: false`) unless told otherwise.
+const seedMarker = (uid = 'alice', deleted = false) => env.withSecurityRulesDisabled((c) =>
+  setDoc(doc(c.firestore(), `users/${uid}/meta/account`), { deleted, updatedAt: Timestamp.now(), schema: 1 }));
+const marker = (over = {}) => ({ deleted: false, updatedAt: serverTimestamp(), schema: 1, ...over });
+const live = () => seedMarker('alice', false);
+
 const alice = () => env.authenticatedContext('alice').firestore();
 const bob = () => env.authenticatedContext('bob').firestore();
 const anon = () => env.unauthenticatedContext().firestore();
@@ -47,6 +54,7 @@ const seedAlice = () => env.withSecurityRulesDisabled(async (c) => {
 });
 
 describe('designs', () => {
+  beforeEach(live);
   it('lets the owner create, read, update and delete', async () => {
     const ref = doc(alice(), `users/alice/designs/${ID}`);
     await assertSucceeds(setDoc(ref, design()));
@@ -123,6 +131,7 @@ describe('designs', () => {
 });
 
 describe('current design', () => {
+  beforeEach(live);
   it('lets the owner write and read state/current only', async () => {
     const ref = doc(alice(), 'users/alice/state/current');
     await assertSucceeds(setDoc(ref, current()));
@@ -167,6 +176,7 @@ describe('current design', () => {
 });
 
 describe('signing key backup', () => {
+  beforeEach(live);
   it('lets the owner write and read backup/signingKey only', async () => {
     const ref = doc(alice(), 'users/alice/backup/signingKey');
     await assertSucceeds(setDoc(ref, backup()));
@@ -245,5 +255,104 @@ describe('everything else', () => {
     await assertFails(setDoc(doc(alice(), 'public/x'), { a: 1 }));
     await assertFails(getDoc(doc(alice(), 'public/x')));
     await assertFails(getDocs(collection(alice(), 'users')));
+  });
+});
+
+describe('account marker and the kill switch', () => {
+  const markerRef = () => doc(alice(), 'users/alice/meta/account');
+  const designRef = () => doc(alice(), `users/alice/designs/${ID}`);
+  const currentRef = () => doc(alice(), 'users/alice/state/current');
+  const backupRef = () => doc(alice(), 'users/alice/backup/signingKey');
+
+  it('refuses writes of designs, the current design and the backup while no marker exists', async () => {
+    await assertFails(setDoc(designRef(), design()));
+    await assertFails(setDoc(currentRef(), current()));
+    await assertFails(setDoc(backupRef(), backup()));
+  });
+  it('allows them once the marker exists and is live', async () => {
+    await assertSucceeds(setDoc(markerRef(), marker()));
+    await assertSucceeds(setDoc(designRef(), design()));
+    await assertSucceeds(setDoc(currentRef(), current()));
+    await assertSucceeds(setDoc(backupRef(), backup()));
+  });
+  it('refuses writes (creates and updates) while the marker says deleted', async () => {
+    await seedMarker('alice', false);
+    await assertSucceeds(setDoc(designRef(), design()));
+    await assertSucceeds(setDoc(markerRef(), marker({ deleted: true })));
+    await assertFails(setDoc(designRef(), design({ name: 'Renamed' })));
+    await assertFails(setDoc(doc(alice(), `users/alice/designs/${'f'.repeat(32)}`), design()));
+    await assertFails(setDoc(currentRef(), current()));
+    await assertFails(setDoc(backupRef(), backup()));
+  });
+  it('still lets the owner read and delete everything while the marker says deleted (the wipe needs it)', async () => {
+    await seedAlice();
+    await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), `users/alice/designs/${ID}`), { name: 'x', design: '{}', updatedAt: Timestamp.now(), deleted: false, schema: 1 }));
+    await seedMarker('alice', true);
+    await assertSucceeds(getDoc(designRef()));
+    await assertSucceeds(getDocs(collection(alice(), 'users/alice/designs')));
+    await assertSucceeds(getDoc(markerRef()));
+    await assertSucceeds(deleteDoc(designRef()));
+    await assertSucceeds(deleteDoc(currentRef()));
+    await assertSucceeds(deleteDoc(backupRef()));
+    await assertSucceeds(deleteDoc(markerRef()));
+  });
+  it('lets a kept account write again: the marker goes back to live', async () => {
+    await seedMarker('alice', true);
+    await assertFails(setDoc(designRef(), design()));
+    await assertSucceeds(setDoc(markerRef(), marker({ deleted: false })));
+    await assertSucceeds(setDoc(designRef(), design()));
+  });
+  it('refuses writes again after the marker is deleted (a wiped account)', async () => {
+    await seedMarker('alice', false);
+    await assertSucceeds(deleteDoc(markerRef()));
+    await assertFails(setDoc(designRef(), design()));
+  });
+  it('lets a phone create the marker only live, and never as deleted', async () => {
+    await assertFails(setDoc(markerRef(), marker({ deleted: true })));
+    await assertSucceeds(setDoc(markerRef(), marker({ deleted: false })));
+  });
+  it('lets the owner mark a live account deleted and read it back', async () => {
+    await seedMarker('alice', false);
+    await assertSucceeds(setDoc(markerRef(), marker({ deleted: true })));
+    const snap = await assertSucceeds(getDoc(markerRef()));
+    assert.equal(snap.data().deleted, true);
+  });
+  it('checks the shape of the marker', async () => {
+    await assertFails(setDoc(markerRef(), marker({ extra: 1 })));
+    await assertFails(setDoc(markerRef(), marker({ deleted: 'no' })));
+    await assertFails(setDoc(markerRef(), marker({ deleted: null })));
+    await assertFails(setDoc(markerRef(), marker({ schema: '1' })));
+    await assertFails(setDoc(markerRef(), marker({ schema: 0 })));
+    await assertFails(setDoc(markerRef(), marker({ schema: 1001 })));
+    await assertFails(setDoc(markerRef(), marker({ updatedAt: Timestamp.fromMillis(1) })));
+    const { schema, ...missing } = marker();
+    await assertFails(setDoc(markerRef(), missing));
+    await assertFails(setDoc(doc(alice(), 'users/alice/meta/other'), marker()));
+  });
+  it('checks the shape of an update of the marker too', async () => {
+    await seedMarker('alice', false);
+    await assertFails(setDoc(markerRef(), marker({ deleted: true, extra: 1 })));
+    await assertFails(setDoc(markerRef(), marker({ deleted: true, updatedAt: Timestamp.fromMillis(1) })));
+  });
+  it('lets another user nowhere near the marker, and the marker of another user never opens a gate', async () => {
+    await seedMarker('alice', false);
+    await assertFails(getDoc(doc(bob(), 'users/alice/meta/account')));
+    await assertFails(setDoc(doc(bob(), 'users/alice/meta/account'), marker({ deleted: true })));
+    await assertFails(deleteDoc(doc(bob(), 'users/alice/meta/account')));
+    // bob has a live marker of his own: that does not let him write into alice's documents
+    await seedMarker('bob', false);
+    await assertFails(setDoc(doc(bob(), `users/alice/designs/${ID}`), design()));
+    await assertSucceeds(setDoc(doc(bob(), `users/bob/designs/${ID}`), design()));
+  });
+  it('gates each user by their own marker', async () => {
+    await seedMarker('alice', true);
+    await seedMarker('bob', false);
+    await assertFails(setDoc(designRef(), design()));
+    await assertSucceeds(setDoc(doc(bob(), `users/bob/designs/${ID}`), design()));
+  });
+  it('denies unauthenticated access to the marker', async () => {
+    await seedMarker('alice', false);
+    await assertFails(getDoc(doc(anon(), 'users/alice/meta/account')));
+    await assertFails(setDoc(doc(anon(), 'users/alice/meta/account'), marker()));
   });
 });

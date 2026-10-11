@@ -1,7 +1,14 @@
 rules_version = '2';
 
 // Analog Plus: each signed-in user reads and writes only users/{their uid}/**.
-// Three document shapes exist; anything else is denied, including every other top-level path.
+// Four document shapes exist; anything else is denied, including every other top-level path.
+//
+// Kill switch for a deleted account: users/{uid}/meta/account is a marker `{ deleted, updatedAt, schema }`. Creating or
+// changing a design, the current design or the backup is allowed only while the marker exists and says `deleted == false`.
+// A phone that deletes the account sets `deleted` to true first, so every other phone signed in to that account is refused
+// from then on (it cannot write; it can still read and delete, which the wipe needs). The check is one extra document read
+// per gated write (`exists` and `get` on the same path are one read in a request). The marker itself is not gated by itself,
+// otherwise a deleted account could never be kept again.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -11,6 +18,15 @@ service cloud.firestore {
 
     function isText(v, minLen, maxLen) {
       return v is string && v.size() >= minLen && v.size() <= maxLen;
+    }
+
+    function markerPath(uid) {
+      return /databases/$(database)/documents/users/$(uid)/meta/account;
+    }
+
+    // The account is live: its marker exists and does not say deleted.
+    function accountActive(uid) {
+      return exists(markerPath(uid)) && get(markerPath(uid)).data.deleted == false;
     }
 
     // `updatedAt` must be the server's clock: a client cannot forge last-write-wins ordering.
@@ -59,9 +75,30 @@ service cloud.firestore {
         && data.createdAt is timestamp && data.createdAt == request.time;
     }
 
+    function validMarker(data) {
+      return data.keys().hasOnly(['deleted', 'updatedAt', 'schema'])
+        && data.keys().hasAll(['deleted', 'updatedAt', 'schema'])
+        && data.deleted is bool
+        && data.schema is int && data.schema >= 1 && data.schema <= 1000
+        && stampedNow(data);
+    }
+
+    match /users/{uid}/meta/{docId} {
+      allow read, delete: if isOwner(uid);
+      // a phone starting to sync creates it, live; only a deletion (or a kept deletion) changes `deleted` afterwards
+      allow create: if isOwner(uid)
+        && docId == 'account'
+        && validMarker(request.resource.data)
+        && request.resource.data.deleted == false;
+      allow update: if isOwner(uid)
+        && docId == 'account'
+        && validMarker(request.resource.data);
+    }
+
     match /users/{uid}/designs/{designId} {
       allow read, delete: if isOwner(uid);
       allow create, update: if isOwner(uid)
+        && accountActive(uid)
         && designId.matches('[0-9a-f]{32}')
         && validDesign(request.resource.data);
     }
@@ -69,6 +106,7 @@ service cloud.firestore {
     match /users/{uid}/state/{docId} {
       allow read, delete: if isOwner(uid);
       allow create, update: if isOwner(uid)
+        && accountActive(uid)
         && docId == 'current'
         && validCurrent(request.resource.data);
     }
@@ -76,6 +114,7 @@ service cloud.firestore {
     match /users/{uid}/backup/{docId} {
       allow read, delete: if isOwner(uid);
       allow create, update: if isOwner(uid)
+        && accountActive(uid)
         && docId == 'signingKey'
         && validBackup(request.resource.data);
     }
