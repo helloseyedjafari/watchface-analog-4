@@ -88,6 +88,48 @@ class BackupPageDecisionsTest {
         }
     }
 
+    // ---- the way on where the cloud could not be asked ----------------------------------------------------------------
+
+    @Test fun whereTheBackupCouldNotBeCheckedCheckAgainIsTheCardsSyncNow() {
+        for (kind in RemoteErrorKind.entries) {
+            val view = backupPageView(ui(BackupStatus.Unknown(kind, "detail")))
+            assertEquals("$kind", Show.ENABLED, view.checkAgain)
+        }
+        assertEquals(Show.DISABLED, backupPageView(ui(BackupStatus.Unknown(RemoteErrorKind.OFFLINE, ""), busy = Busy.CHECKING_BACKUP)).checkAgain)
+    }
+
+    @Test fun checkAgainIsAlsoOfferedWhenTheCheckWasNeverMadeAndNothingRuns() {
+        assertEquals(Show.ENABLED, backupPageView(ui(BackupStatus.NotChecked)).checkAgain)
+        assertEquals(Show.DISABLED, backupPageView(ui(BackupStatus.NotChecked, busy = Busy.CHECKING_BACKUP)).checkAgain)
+    }
+
+    @Test fun checkAgainIsNotOfferedWhereAnAnswerIsThereOrOnItsWay() {
+        for (status in listOf(BackupStatus.SignedOut, BackupStatus.Checking, BackupStatus.NotBackedUp, backedUp(KeyMatch.SAME), backedUp(KeyMatch.DIFFERENT), backedUp(KeyMatch.NO_LOCAL_KEY))) {
+            assertEquals("$status", Show.HIDDEN, backupPageView(ui(status)).checkAgain)
+        }
+        assertEquals(Show.HIDDEN, backupPageView(ui(BackupStatus.NotBackedUp, account = AccountState.SignedOut)).checkAgain)
+    }
+
+    @Test fun signOutIsOfferedOnlyWhereTheReasonIsAnExpiredSignIn() {
+        assertEquals(Show.ENABLED, backupPageView(ui(BackupStatus.Unknown(RemoteErrorKind.AUTH, "expired"))).signOut)
+        for (kind in RemoteErrorKind.entries - RemoteErrorKind.AUTH) {
+            assertEquals("$kind", Show.HIDDEN, backupPageView(ui(BackupStatus.Unknown(kind, ""))).signOut)
+        }
+        assertEquals(Show.HIDDEN, backupPageView(ui(BackupStatus.NotBackedUp)).signOut)
+    }
+
+    @Test fun signOutAndCheckAgainFollowTheCardsOwnGates() {
+        val running = backupPageView(ui(BackupStatus.Unknown(RemoteErrorKind.AUTH, ""), busy = Busy.RESTORING))
+        assertEquals(cloudButtons(ui(BackupStatus.Unknown(RemoteErrorKind.AUTH, ""), busy = Busy.RESTORING)).signOut, running.signOut)
+        assertEquals(Show.DISABLED, running.signOut)
+    }
+
+    // ---- the introduction ------------------------------------------------------------------------------------------------
+
+    @Test fun theIntroductionIsOnlyForBeforeSigningIn() {
+        assertEquals(setOf(BackupPageStep.SIGN_IN, BackupPageStep.SIGNING_IN), BackupPageStep.entries.filter { showsIntro(it) }.toSet())
+    }
+
     // ---- the words ---------------------------------------------------------------------------------------------------
 
     @Test fun theSkipButtonSaysNotNowUntilThePersonHasSignedIn() {
@@ -104,5 +146,13 @@ class BackupPageDecisionsTest {
         assertEquals("Done", StringsXml.text(BackupPageText.DONE))
         assertEquals("Not now", StringsXml.text(BackupPageText.NOT_NOW))
         assertEquals("Skip for now", StringsXml.text(BackupPageText.SKIP))
+        assertEquals("Check again", StringsXml.text(BackupPageText.CHECK_AGAIN))
+    }
+
+    @Test fun theIntroductionDoesNotSayThatSigningInBacksTheKeyUpByItself() {
+        val intro = StringsXml.text(BackupPageText.INTRO)
+        assertEquals(false, intro.contains("is backed up"))
+        assertEquals(true, intro.contains("then back up your signing key"))
+        assertEquals("Optional. With a backup, a new phone can keep updating the face on your watch.", StringsXml.text(BackupPageText.WHY))
     }
 }

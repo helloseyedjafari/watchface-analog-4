@@ -535,12 +535,13 @@
     <string name="onboarding_permission_step_allow">The first time a face arrives, your watch asks for permission to switch to it. Tap Allow.</string>
     <string name="onboarding_permission_step_deny">It asks only once. If you tap Deny nothing breaks: press and hold the watch face and pick Analog Plus.</string>
     <string name="onboarding_permission_step_later">After that, new designs change the face in place and never ask again.</string>
-    <!-- Onboarding: backup page (hidden until accounts ship) -->
+    <!-- Onboarding: backup page (the placeholder text is only the default of the slot, for previews and tests) -->
     <string name="onboarding_backup_placeholder_body">Sign-in is coming. Your designs are saved on this phone.</string>
     <string name="onboarding_backup_not_now">Not now</string>
     <!-- Onboarding: backup page (the real one, once accounts ship; the sign-in and card words are the Account card's own) -->
-    <string name="onboarding_backup_intro">Optional. Sign in with Google and your saved designs follow you to a new phone, and your signing key is backed up (encrypted with a passphrase only you know), so a new phone can keep updating the face on your watch.</string>
-    <string name="onboarding_backup_found">This account already has a backup of a signing key.</string>
+    <string name="onboarding_backup_intro">Optional. Sign in with Google to keep your designs on every device, then back up your signing key with a passphrase only you know.</string>
+    <string name="onboarding_backup_why">Optional. With a backup, a new phone can keep updating the face on your watch.</string>
+    <string name="onboarding_backup_check_again">Check again</string>
     <string name="onboarding_backup_back_up">Back up my signing key</string>
     <string name="onboarding_backup_restore">Restore my signing key</string>
     <string name="onboarding_backup_skip">Skip for now</string>

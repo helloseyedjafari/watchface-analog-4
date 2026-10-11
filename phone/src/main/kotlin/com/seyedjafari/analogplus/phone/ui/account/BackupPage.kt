@@ -45,13 +45,17 @@ fun BackupPage(onDone: () -> Unit) {
     PageLayout(stringResource(OnboardingText.BACKUP_TITLE)) {
         val account = ui.account as? AccountState.SignedIn
         // the explanation is for before signing in; afterwards the room goes to the step itself (at large text it would push the button off the screen)
-        if (account == null) {
+        if (showsIntro(view.step)) {
             Text(
                 stringResource(BackupPageText.INTRO), style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
             )
-        } else {
-            Text(uiTextResource(signedInAsText(account.email)), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag(AccountTags.EMAIL))
+        }
+        if (account != null) {
+            Text(
+                uiTextResource(signedInAsText(account.email)), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
+                modifier = Modifier.testTag(AccountTags.EMAIL),
+            )
             Pill(backupPill(ui.backup), AccountTags.BACKUP_STATUS)
         }
         message?.let { NoticeRow(it, callbacks.dismissMessage) }
@@ -63,33 +67,50 @@ fun BackupPage(onDone: () -> Unit) {
                 modifier = Modifier.testTag(AccountTags.NOT_CONFIGURED),
             )
             BackupPageStep.SIGN_IN -> {
-                Text(
-                    stringResource(AccountText.SIGNED_OUT_PRIVACY), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
-                )
                 SignInFailure(ui.account)
                 PrimaryButton(stringResource(AccountText.SIGN_IN), callbacks.signIn, Modifier.fillMaxWidth().testTag(AccountTags.PAGE_SIGN_IN))
             }
             BackupPageStep.SIGNING_IN -> SigningInLine()
             BackupPageStep.DELETION_PENDING -> pendingDeletionText(ui.deletion)?.let { PendingDeletionCard(it, buttons, callbacks) }
-            BackupPageStep.CHECKING, BackupPageStep.UNKNOWN -> Unit   // the pill above says what is known
-            BackupPageStep.SET_PASSPHRASE -> PrimaryButton(
-                stringResource(BackupPageText.BACK_UP), { flow.backUp(BackupButton.BACK_UP) },
-                Modifier.fillMaxWidth().testTag(AccountTags.PAGE_BACK_UP), enabled = buttons.backUp == Show.ENABLED,
-            )
-            BackupPageStep.RESTORE -> {
-                Text(stringResource(BackupPageText.FOUND), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+            // the pill above says what is known; where the cloud could not be asked, asking again is offered (and the way out of an expired sign-in)
+            BackupPageStep.CHECKING, BackupPageStep.UNKNOWN -> {
+                if (view.checkAgain != Show.HIDDEN) {
+                    PrimaryButton(
+                        stringResource(BackupPageText.CHECK_AGAIN), accounts::refresh,
+                        Modifier.fillMaxWidth().testTag(AccountTags.PAGE_CHECK_AGAIN), enabled = view.checkAgain == Show.ENABLED,
+                    )
+                }
+                if (view.signOut != Show.HIDDEN) {
+                    SecondaryButton(
+                        stringResource(AccountText.SIGN_OUT), accounts::signOut,
+                        Modifier.fillMaxWidth().testTag(AccountTags.PAGE_SIGN_OUT), enabled = view.signOut == Show.ENABLED,
+                    )
+                }
+            }
+            BackupPageStep.SET_PASSPHRASE -> {
+                Text(stringResource(BackupPageText.WHY), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
                 PrimaryButton(
-                    stringResource(BackupPageText.RESTORE), { scope.launch { flow.restore() } },
-                    Modifier.fillMaxWidth().testTag(AccountTags.PAGE_RESTORE), enabled = buttons.restore == Show.ENABLED,
+                    stringResource(BackupPageText.BACK_UP), { flow.backUp(BackupButton.BACK_UP) },
+                    Modifier.fillMaxWidth().testTag(AccountTags.PAGE_BACK_UP), enabled = buttons.backUp == Show.ENABLED,
                 )
             }
+            BackupPageStep.RESTORE -> PrimaryButton(
+                stringResource(BackupPageText.RESTORE), { scope.launch { flow.restore() } },
+                Modifier.fillMaxWidth().testTag(AccountTags.PAGE_RESTORE), enabled = buttons.restore == Show.ENABLED,
+            )
             BackupPageStep.BACKED_UP -> PrimaryButton(stringResource(BackupPageText.DONE), onDone, Modifier.fillMaxWidth().testTag(AccountTags.PAGE_DONE))
         }
 
         // optional at every step: leaving never waits for a running action (a backup that was started finishes in the controller)
         if (view.step != BackupPageStep.BACKED_UP) {
             SecondaryButton(stringResource(skipLabel(view.step)), onDone, Modifier.fillMaxWidth().testTag(AccountTags.PAGE_SKIP))
+        }
+        // what the cloud stores is said before anyone signs in, but under the buttons: at large text they come first
+        if (view.step == BackupPageStep.SIGN_IN) {
+            Text(
+                stringResource(AccountText.SIGNED_OUT_PRIVACY), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+            )
         }
     }
     CloudDialogHost(flow, ui, accounts)

@@ -30,7 +30,7 @@ import org.junit.runners.Parameterized
  *
  * Animations are off (animator scale 0 is provided), so each animation shows its last frame and the pictures are the same every
  * time. The pair page shows a ready watch, and the backup page is on (accounts) so that all five pages are covered: the real
- * page, in four steps (signed out, no backup yet, a backup of another key to restore, done), each as `onboarding-backup[-<step>]-...`.
+ * page, in four steps (signed out, no backup yet, a backup to restore on a phone without a key, done), each as `onboarding-backup[-<step>]-...`.
  * 8 pictures per shot, 64 in all.
  *
  * It takes about a minute, so the normal suite skips it: it runs only with the runner argument `screenshots=true` (which the
@@ -112,7 +112,7 @@ class OnboardingScreenshotTest(
         BACKUP_RESTORE(OnboardingPage.BACKUP, "backup-restore", AccountTags.PAGE_RESTORE),
         BACKUP_DONE(OnboardingPage.BACKUP, "backup-done", AccountTags.PAGE_DONE);
 
-        /** The accounts behind the backup page for this picture: signed out, signed in with no backup, with a backup of another key, with one of this phone's. */
+        /** The accounts behind the backup page for this picture: signed out, signed in with no backup, with a backup on a phone that has no key, with one of this phone's key. */
         internal fun accounts(): AccountUiFixture {
             val pemA = FakeKeySource.samplePem("A")
             val signedIn = AccountState.SignedIn("u1", "me@example.com")

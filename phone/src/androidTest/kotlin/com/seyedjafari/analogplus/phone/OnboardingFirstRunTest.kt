@@ -58,7 +58,8 @@ class OnboardingFirstRunTest {
             scenario?.close()
             runBlocking { AppModel.awaitPendingSaves() }
         } finally {
-            try { snapshot.restore() } finally { syncSnapshot.restore() }
+            // the flag is process-wide: put the default back so that a test after this one does not depend on this one's launches
+            try { snapshot.restore() } finally { try { syncSnapshot.restore() } finally { OnboardingConfig.accountsAvailable = false } }
         }
     }
 

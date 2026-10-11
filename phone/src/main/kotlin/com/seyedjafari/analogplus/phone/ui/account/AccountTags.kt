@@ -53,4 +53,6 @@ object AccountTags {
     const val PAGE_DONE = "backup_page_done"
     const val PAGE_RESTORE = "backup_page_restore"
     const val PAGE_BACK_UP = "backup_page_back_up"
+    const val PAGE_CHECK_AGAIN = "backup_page_check_again"
+    const val PAGE_SIGN_OUT = "backup_page_sign_out"
 }

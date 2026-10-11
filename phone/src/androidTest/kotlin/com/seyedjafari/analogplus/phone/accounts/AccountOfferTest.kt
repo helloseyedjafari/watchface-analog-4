@@ -26,6 +26,7 @@ import com.seyedjafari.analogplus.phone.OnboardingController
 import com.seyedjafari.analogplus.phone.OnboardingPage
 import com.seyedjafari.analogplus.phone.Tags
 import com.seyedjafari.analogplus.phone.newTestStore
+import com.seyedjafari.analogplus.phone.onboardingPages
 import com.seyedjafari.analogplus.phone.testSend
 import com.seyedjafari.analogplus.phone.ui.account.AccountTags
 import com.seyedjafari.analogplus.phone.ui.nav.Destination
@@ -172,7 +173,7 @@ class AccountOfferTest {
     @Test fun theOfferIsAskedOverFirstRunSetupLikeTheLinkQuestion() {
         val f = fixture()
         val store = newTestStore()
-        val onboarding = OnboardingHost(OnboardingController(store))
+        val onboarding = OnboardingHost(OnboardingController(store, onboardingPages(accountsAvailable = false)))
         f.show(rule, scrolls = false) { AppShell(EditorState(DesignSettings()), store, testSend(store), watchReady, null, onboarding) {} }
         rule.onNodeWithTag(Tags.onboardingPage(OnboardingPage.WELCOME)).assertExists()
         f.sync.setOffer(offer)

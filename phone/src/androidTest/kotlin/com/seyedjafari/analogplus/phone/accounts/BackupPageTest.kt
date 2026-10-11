@@ -1,5 +1,8 @@
 package com.seyedjafari.analogplus.phone.accounts
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -112,6 +115,24 @@ class BackupPageTest {
         assertEquals(1, done)
     }
 
+    @Test fun theIntroductionIsThereBeforeSigningInAndGoneAfterwards() {
+        val f = fixture()
+        f.showPage()
+        waitForTag(AccountTags.PAGE_SIGN_IN)
+        waitForText("Sign in with Google to keep your designs on every device, then back up your signing key")
+        gone(AccountTags.EMAIL)
+        signIn()
+        waitForTag(AccountTags.PAGE_BACK_UP)
+        rule.onNodeWithText("Sign in with Google to keep your designs on every device", substring = true).assertDoesNotExist()
+        waitForText("Optional. With a backup, a new phone can keep updating the face on your watch.")   // after signing in the page says why instead
+    }
+
+    @Test fun withoutFirebaseThereIsNoIntroductionToSignIn() {
+        fixture(availability = AccountsAvailability.NOT_CONFIGURED).showPage()
+        waitForTag(AccountTags.NOT_CONFIGURED)
+        rule.onNodeWithText("Sign in with Google to keep your designs", substring = true).assertDoesNotExist()
+    }
+
     // ---- a new backup -----------------------------------------------------------------------------------------------
 
     @Test fun signInThenAPassphraseBacksTheKeyUpAndDoneFinishesThePage() {
@@ -177,10 +198,11 @@ class BackupPageTest {
         assertNull(f.remote.backupOf("u1"))
     }
 
-    @Test fun aBackupThatIsStillBeingWrittenIsNotStoppedByLeavingThePage() {
+    @Test fun aBackupThatIsStillBeingWrittenIsNotStoppedByTheShellRemovingThePage() {
         val f = fixture(account = AccountState.SignedIn("u1", "me@example.com"))
         f.gated.putGate = CompletableDeferred()
-        f.showPage()
+        var shown by mutableStateOf(true)
+        f.show(rule, scrolls = false) { if (shown) BackupPage(onDone = { done++; shown = false }) }
         waitForTag(AccountTags.PAGE_BACK_UP)
         click(AccountTags.PAGE_BACK_UP)
         waitForTag(AccountTags.PASSPHRASE)
@@ -191,9 +213,13 @@ class BackupPageTest {
         rule.onNodeWithTag(AccountTags.PAGE_BACK_UP).assertIsNotEnabled()       // one backup at a time
         rule.onNodeWithTag(AccountTags.PAGE_SKIP).assertIsEnabled()             // but the person is never held on the page
         click(AccountTags.PAGE_SKIP)
+        rule.waitUntil(10_000) { !shown }
+        rule.onNodeWithTag(AccountTags.PAGE_SKIP).assertDoesNotExist()          // the page, with its coroutine scope, is gone
         assertEquals(1, done)
+        assertEquals(Busy.BACKING_UP, f.controller.ui.value.busy)
         f.gated.putGate!!.complete(Unit)
-        rule.waitUntil(10_000) { f.remote.backupOf("u1") != null }
+        rule.waitUntil(10_000) { f.remote.backupOf("u1") != null && f.controller.ui.value.busy == Busy.NONE }
+        assertEquals(fpA, f.remote.backupOf("u1")!!.sealed.keyFingerprint)
     }
 
     // ---- a backup that is already there ---------------------------------------------------------------------------------
@@ -205,7 +231,8 @@ class BackupPageTest {
         f.showPage()
         signIn()
         waitForTag(AccountTags.PAGE_RESTORE)
-        waitForText("This account already has a backup of a signing key.")
+        waitForText("A backup exists; this phone has no key yet")
+        rule.onNodeWithText("This account already has a backup of a signing key.").assertDoesNotExist()
         rule.onNodeWithTag(AccountTags.PAGE_RESTORE).assertTextEquals("Restore my signing key").assertIsEnabled()
         gone(AccountTags.PAGE_BACK_UP)
         gone(AccountTags.PAGE_DONE)
@@ -310,7 +337,7 @@ class BackupPageTest {
         f.gated.readGate!!.complete(Unit)
     }
 
-    @Test fun aBackupThatCouldNotBeCheckedOffersNeitherActionAndCanBeLeft() {
+    @Test fun aBackupThatCouldNotBeCheckedOffersNeitherActionButCheckAgainAndCanBeLeft() {
         val f = fixture()
         f.remote.failWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
         f.showPage()
@@ -319,8 +346,42 @@ class BackupPageTest {
         gone(AccountTags.PAGE_BACK_UP)
         gone(AccountTags.PAGE_RESTORE)
         gone(AccountTags.PAGE_DONE)
+        gone(AccountTags.PAGE_SIGN_OUT)                                          // only an expired sign-in asks for that
+        rule.onNodeWithTag(AccountTags.PAGE_CHECK_AGAIN).assertTextEquals("Check again").assertIsEnabled()
         click(AccountTags.PAGE_SKIP)
         assertEquals(1, done)
+    }
+
+    @Test fun checkAgainAsksTheCloudAgainAndTheStepMovesOnWhenItAnswers() {
+        val f = fixture()
+        f.remote.failWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        f.showPage()
+        signIn()
+        waitForTag(AccountTags.PAGE_CHECK_AGAIN)
+        val reads = f.gated.reads.get()
+        click(AccountTags.PAGE_CHECK_AGAIN)                                      // still offline: it asks again and says the same
+        rule.waitUntil(10_000) { f.controller.ui.value.busy == Busy.NONE && f.controller.ui.value.backup is BackupStatus.Unknown && f.gated.reads.get() > reads }
+        waitForTag(AccountTags.PAGE_CHECK_AGAIN)
+        f.remote.failWith = null                                                 // the network is back
+        click(AccountTags.PAGE_CHECK_AGAIN)
+        waitForTag(AccountTags.PAGE_BACK_UP)
+        gone(AccountTags.PAGE_CHECK_AGAIN)
+        waitForText("Signing key is not backed up")
+    }
+
+    @Test fun anExpiredSignInOffersSignOutAndSigningOutReturnsToTheSignInStep() {
+        val f = fixture()
+        f.remote.failWith = RemoteException(RemoteErrorKind.AUTH, "token expired")
+        f.showPage()
+        signIn()
+        waitForTag(AccountTags.PAGE_SIGN_OUT)
+        waitForText("Sign out and sign in again")
+        rule.onNodeWithTag(AccountTags.PAGE_CHECK_AGAIN).assertIsEnabled()
+        rule.onNodeWithTag(AccountTags.PAGE_SIGN_OUT).assertTextEquals("Sign out").assertIsEnabled()
+        click(AccountTags.PAGE_SIGN_OUT)
+        waitForTag(AccountTags.PAGE_SIGN_IN)
+        gone(AccountTags.PAGE_SIGN_OUT)
+        assertEquals(0, done)
     }
 
     @Test fun anUnfinishedDeletionShowsTheCardAndNothingElseAndCanBeLeft() {
@@ -429,7 +490,7 @@ class BackupPageLayoutTest(private val window: WindowDp, private val fontScale: 
         reach(AccountTags.REPLACE_CANCEL)
     }
 
-    @Test fun theDoneStepAndThePendingDeletionStepKeepTheirButtonsReachable() {
+    @Test fun theDoneStepKeepsItsButtonReachable() {
         val done = AccountUiFixture(initial = AccountState.SignedIn("u1", "me@example.com")).also { fixture = it }
         done.otherPhoneBacksUp(pemA)
         show(done)

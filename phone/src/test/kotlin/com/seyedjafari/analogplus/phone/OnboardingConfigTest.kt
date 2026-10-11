@@ -1,6 +1,8 @@
 package com.seyedjafari.analogplus.phone
 
 import com.seyedjafari.analogplus.phone.accounts.AccountsAvailability
+import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseMode
+import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseSetup
 import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -44,6 +46,12 @@ class OnboardingConfigTest {
         OnboardingConfig.setAccountsFrom(AccountsAvailability.NOT_CONFIGURED)
         assertEquals(4, before.pages.size)
         assertEquals(5, after.pages.size)
+    }
+
+    @Test fun theFirebaseSetupMapsToTheAvailabilityTheFlagFollows() {
+        assertEquals(AccountsAvailability.NOT_CONFIGURED, FirebaseSetup(FirebaseMode.NOT_CONFIGURED, "").availability)
+        assertEquals(AccountsAvailability.AVAILABLE, FirebaseSetup(FirebaseMode.PRODUCTION, "id").availability)
+        assertEquals(AccountsAvailability.AVAILABLE, FirebaseSetup(FirebaseMode.EMULATOR, "").availability)
     }
 
     @Test fun theFlagCanBeTurnedOffAgain() {
