@@ -22,14 +22,14 @@ fun stripJpegMetadata(jpeg: ByteArray): ByteArray? {
     out.write(MARKER_START); out.write(SOI)
     var i = 2
     while (true) {
-        // a marker: 0xFF, any number of 0xFF fill bytes, then the marker code
+        // a marker: the marker-start byte, any number of fill bytes of the same value, then the marker code
         if (i >= jpeg.size || jpeg.u(i) != MARKER_START) return null
         while (i < jpeg.size && jpeg.u(i) == MARKER_START) i++
         if (i >= jpeg.size) return null
         val code = jpeg.u(i++)
         when {
             code == EOI -> { out.write(MARKER_START); out.write(EOI); return out.toByteArray() }   // anything after it is dropped
-            code == 0x00 || code == SOI || code in RST_FIRST..RST_LAST || code == TEM -> return null   // not a marker that may start a segment here
+            code == STUFFED_ZERO || code == SOI || code in RST_FIRST..RST_LAST || code == TEM -> return null   // not a marker that may start a segment here
         }
         // every other marker is followed by its length (which counts itself)
         if (i + 2 > jpeg.size) return null
@@ -41,19 +41,19 @@ fun stripJpegMetadata(jpeg: ByteArray): ByteArray? {
         }
         i = end
         if (code == SOS) {
-            // the entropy-coded data of the scan runs to the next real marker (0xFF 0x00 is a stuffed byte, restarts are part of the scan)
+            // the entropy-coded data of the scan runs to the next real marker (the start byte followed by a zero is a stuffed data byte, restarts are part of the scan)
             val start = i
             while (i < jpeg.size) {
                 if (jpeg.u(i) == MARKER_START && i + 1 < jpeg.size) {
                     val next = jpeg.u(i + 1)
-                    if (next != 0x00 && next !in RST_FIRST..RST_LAST && next != MARKER_START) break
+                    if (next != STUFFED_ZERO && next !in RST_FIRST..RST_LAST && next != MARKER_START) break
                     if (next == MARKER_START) { i++; continue }   // fill byte before a marker: the marker is found on the next round
                 }
                 i++
             }
             if (i >= jpeg.size) return null   // no end of the scan, no end marker
             var dataEnd = i
-            while (dataEnd > start && jpeg.u(dataEnd - 1) == MARKER_START) dataEnd--   // fill bytes before the marker (scan data never ends in 0xFF: that is 0xFF 0x00)
+            while (dataEnd > start && jpeg.u(dataEnd - 1) == MARKER_START) dataEnd--   // fill bytes before the marker (scan data never ends in the start byte: a stuffed one is followed by a zero)
             out.write(jpeg, start, dataEnd - start)
         }
     }
@@ -73,20 +73,22 @@ private fun startsWith(bytes: ByteArray, from: Int, to: Int, tag: ByteArray): Bo
     return true
 }
 
-private fun ByteArray.u(i: Int) = this[i].toInt() and 0xFF
+private fun ByteArray.u(i: Int) = this[i].toInt() and 255
 private fun ByteArray.isMarker(i: Int, code: Int) = i + 1 < size && u(i) == MARKER_START && u(i + 1) == code
 
-private const val MARKER_START = 0xFF
-private const val SOI = 0xD8
-private const val EOI = 0xD9
-private const val SOS = 0xDA
-private const val TEM = 0x01
-private const val RST_FIRST = 0xD0
-private const val RST_LAST = 0xD7
-private const val APP0 = 0xE0
-private const val APP1 = 0xE1
-private const val APP2 = 0xE2
-private const val APP14 = 0xEE
-private const val APP15 = 0xEF
-private const val COM = 0xFE
+/** Every marker starts with this byte (hexadecimal FF); the byte after it is the marker code. Decimal, as in `AndroidPhotoDownscaler`. */
+private const val MARKER_START = 255
+private const val STUFFED_ZERO = 0   // a marker start followed by this is a data byte, not a marker
+private const val SOI = 216
+private const val EOI = 217
+private const val SOS = 218
+private const val TEM = 1
+private const val RST_FIRST = 208
+private const val RST_LAST = 215
+private const val APP0 = 224
+private const val APP1 = 225
+private const val APP2 = 226
+private const val APP14 = 238
+private const val APP15 = 239
+private const val COM = 254
 private val ICC_TAG = "ICC_PROFILE\u0000".toByteArray(Charsets.ISO_8859_1)
