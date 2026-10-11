@@ -225,6 +225,16 @@ class SyncResolverTest {
         assertEquals(" (a" + "\uD83D\uDE00".repeat(14) + ")", suffix)
     }
 
+    @Test fun theNameFieldStopsAtTheLimitTheCloudAcceptsCountingCharactersNotUnits() {
+        assertEquals("Night", limitDesignName("Night"))
+        assertEquals("x".repeat(MAX_DESIGN_NAME_CHARS), limitDesignName("x".repeat(250)))
+        val emoji = "\uD83D\uDE00".repeat(MAX_DESIGN_NAME_CHARS + 20)       // two UTF-16 units per character
+        val cut = limitDesignName(emoji)
+        assertEquals(MAX_DESIGN_NAME_CHARS, cut.codePointCount(0, cut.length))
+        assertEquals("a name of exactly the limit is kept whole", cut, limitDesignName(cut))
+        assertEquals("a" + "\uD83D\uDE00".repeat(MAX_DESIGN_NAME_CHARS - 1), limitDesignName("a" + emoji))
+    }
+
     @Test fun uniqueNameNeverExceedsTheFirestoreNameLimit() {
         val long = "x".repeat(99)
         val first = uniqueName(long, emptySet(), suffix)

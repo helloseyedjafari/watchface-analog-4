@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.EditorState
+import com.seyedjafari.analogplus.phone.accounts.limitDesignName
 import com.seyedjafari.analogplus.phone.ChangeOrigin
 import com.seyedjafari.analogplus.phone.SavedChange
 import com.seyedjafari.analogplus.phone.SavedDesign
@@ -106,7 +107,8 @@ internal fun MyDesignsSection(state: EditorState, store: Store, askToReplace: (S
 
     SectionCard(stringResource(R.string.mydesigns_save_title)) {
         OutlinedTextField(
-            value = name, onValueChange = { name = it; nameRequired = false }, singleLine = true,
+            // the cloud accepts a name of up to MAX_DESIGN_NAME_CHARS characters; a longer one would never sync
+            value = name, onValueChange = { name = limitDesignName(it); nameRequired = false }, singleLine = true,
             label = { Text(stringResource(R.string.mydesigns_name_label)) },
             isError = nameRequired,
             modifier = Modifier.fillMaxWidth().testTag(Tags.SAVE_NAME_FIELD),

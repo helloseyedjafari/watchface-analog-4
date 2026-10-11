@@ -57,6 +57,15 @@ fun copyNameSuffix(deviceLabel: String, pattern: (String) -> String, fallbackWor
 const val MAX_DESIGN_NAME_CHARS = 100
 
 /**
+ * [input] cut to [MAX_DESIGN_NAME_CHARS] characters (code points, as the rules count), for the field a design is named in:
+ * a longer name is never accepted by the cloud, so the field does not take it in the first place.
+ */
+fun limitDesignName(input: String): String {
+    if (input.codePointCount(0, input.length) <= MAX_DESIGN_NAME_CHARS) return input
+    return input.substring(0, input.offsetByCodePoints(0, MAX_DESIGN_NAME_CHARS))
+}
+
+/**
  * Per-design last write wins (pure, no I/O).
  *
  * A side "changed" when the phone's entry is dirty (local) or the cloud `updatedAt` is newer than the base the phone

@@ -57,6 +57,17 @@ class LibraryAccountTest {
         rule.onNodeWithTag(Tags.saved("Mine")).assertExists()
     }
 
+    @Test fun theNameFieldTakesNoMoreThanTheCloudAcceptsAndAShorterNameStillSaves() {
+        val state = EditorState(DesignSettings())
+        rule.setContent { AnalogTheme { LibraryScreen(state, testStore()) } }
+        rule.onNodeWithTag("tab_mydesigns").performClick()
+        rule.onNodeWithTag(Tags.SAVE_NAME_FIELD).performTextInput("n".repeat(130))
+        val shown = rule.onNodeWithTag(Tags.SAVE_NAME_FIELD).fetchSemanticsNode().config[SemanticsProperties.EditableText].text
+        assertEquals("a name over 100 characters is refused as it is typed", 100, shown.length)
+        rule.onNodeWithTag(Tags.SAVE_BUTTON).performClick()
+        rule.waitUntil(WRITE_TIMEOUT_MS) { rule.onAllNodesWithTag(Tags.saved("n".repeat(100))).fetchSemanticsNodes().isNotEmpty() }
+    }
+
     @Test fun accountHostsTheSigningKeyReset() {
         rule.setContent { AnalogTheme { AccountScreen() } }
         rule.onNodeWithTag(Tags.RESET_KEY_BUTTON).performScrollTo().assertExists()
