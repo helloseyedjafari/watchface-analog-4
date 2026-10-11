@@ -534,6 +534,9 @@ class SyncEngine(
 
     private enum class Outcome { DONE, UNSYNCABLE, LOCAL_CHANGED }
 
+    /** Names tried for the copy of a kept-both before the pass is planned again (a few phones making it at once). */
+    private val MAX_COPY_ATTEMPTS = 5
+
     /**
      * True when the phone's record of design [id] is still what the plan was made from (the user did not touch it since).
      *
@@ -600,22 +603,36 @@ class SyncEngine(
                 val mine = local?.design ?: return Outcome.UNSYNCABLE
                 if (idDiffersFromName(action.remote)) return Outcome.UNSYNCABLE
                 val theirs = withContext(io) { designFromRemoteJson(action.remote.designJson) } ?: return Outcome.UNSYNCABLE
-                // This phone's version is saved under its new name first, so that nothing can end with it gone.
-                val kept = withContext(io) {
-                    if (!unchangedSince(action.id, local)) return@withContext false
-                    store.saveNamed(action.copyName, mine, ChangeOrigin.SYNC)
-                    store.saveNamed(action.remote.name, theirs, ChangeOrigin.SYNC)
-                    journal.markApplied(action.id, action.remote.name, EntryState.LIVE, action.remote.updatedAtMs, local.modifiedAtMs)
-                }
-                if (!kept) return Outcome.LOCAL_CHANGED
-                // The copy is a saved design without a journal entry until it is in the cloud; if the push below fails, the
-                // next pass adopts it as a new, unsynced design and pushes it.
                 val mapped = withContext(io) { designToRemoteJson(mine, photos) }
                 val json = mapped.remoteJson ?: return Outcome.UNSYNCABLE
-                val copyId = designId(action.copyName)
-                val written = designWrite(uid, json.length) { remote.putDesign(uid, copyId, action.copyName, json, DesignState.LIVE, DESIGN_SCHEMA) }
+                if (!withContext(io) { unchangedSince(action.id, local) }) return Outcome.LOCAL_CHANGED
+                // The copy is created in the cloud FIRST, and only where its id is free: another phone of the same model may be
+                // making the same copy right now, and a plain write would overwrite its version. If the name is taken the next
+                // free one ("Night (Pixel 8) 2") is tried. Nothing has changed on the phone until the cloud holds the copy, so
+                // a failure here (offline, say) leaves nothing half done; if the user edits the design meanwhile, the copy that
+                // was just created reaches the phone as a new design at the next pass and the edited version is kept again.
+                var copyName = action.copyName
+                val tried = HashSet<String>()
+                var written: RemoteDesign? = null
+                while (written == null && tried.size < MAX_COPY_ATTEMPTS) {
+                    val name = copyName
+                    written = write(json.length) { remote.createDesign(uid, designId(name), name, json, DESIGN_SCHEMA) }
+                    if (written == null) { tried += name; copyName = uniqueName(action.copyName, tried, "") }
+                }
+                val created = written ?: return Outcome.LOCAL_CHANGED.also { wake(Wake.FULL) }   // every name was taken at once: plan again
+                writeSeq.incrementAndGet()
+                noteProgress(uid)
+                val copyId = designId(copyName)
+                val kept = withContext(io) {
+                    if (!unchangedSince(action.id, local)) return@withContext false
+                    store.saveNamed(copyName, mine, ChangeOrigin.SYNC)
+                    store.saveNamed(action.remote.name, theirs, ChangeOrigin.SYNC)
+                    journal.markApplied(action.id, action.remote.name, EntryState.LIVE, action.remote.updatedAtMs, local.modifiedAtMs)
+                    journal.markCopyPushed(copyId, copyName, created.updatedAtMs)
+                    true
+                }
+                if (!kept) return Outcome.LOCAL_CHANGED
                 notePhoto(copyId, mapped)
-                withContext(io) { journal.markCopyPushed(copyId, action.copyName, written.updatedAtMs) }
             }
         }
         return Outcome.DONE

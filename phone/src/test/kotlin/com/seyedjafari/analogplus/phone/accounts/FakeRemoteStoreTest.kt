@@ -23,6 +23,18 @@ class FakeRemoteStoreTest {
         assertEquals(2, store.designWrites.size)
     }
 
+    @Test fun createDesignWritesOnlyWhereNothingIsAndReportsNullOtherwise() {
+        val store = FakeRemoteStore()
+        val first = runBlocking { store.createDesign("u", "a", "Night (Pixel 8)", "{\"v\":1}", 1) }!!
+        assertEquals("{\"v\":1}", first.designJson)
+        assertNull("the id is taken: nothing is written", runBlocking { store.createDesign("u", "a", "Night (Pixel 8)", "{\"v\":2}", 1) })
+        assertEquals("{\"v\":1}", store.designsOf("u").getValue("a").designJson)
+        assertEquals(1, store.designWrites.size)
+        put(store, "t", DesignState.TOMBSTONE)
+        assertNull("a deleted design's document counts as taken", runBlocking { store.createDesign("u", "t", "n", "{}", 1) })
+        assertEquals("another user's id is free", "{}", runBlocking { store.createDesign("w", "a", "n", "{}", 1) }!!.designJson)
+    }
+
     @Test fun usersAreSeparate() {
         val store = FakeRemoteStore()
         put(store, "a")

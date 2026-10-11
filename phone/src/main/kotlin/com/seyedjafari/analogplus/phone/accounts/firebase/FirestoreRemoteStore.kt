@@ -181,6 +181,31 @@ class FirestoreRemoteStore(
             read
         }
 
+    /**
+     * One Firestore transaction: read the document and set it only if it does not exist. Like [putBackup] it works only
+     * online (a transaction fails offline), so a copy made while the connection is down is retried later. The transaction is
+     * bounded like a design write; if the bound passes the SDK may still commit it, and the next pass finds the document
+     * (with the same content, or not) and plans again. The result is read back like [putDesign]'s.
+     */
+    override suspend fun createDesign(uid: String, id: String, name: String, designJson: String, schema: Int): RemoteDesign? = mapErrors {
+        val ref = designs(uid).document(id)
+        val data = mapOf(
+            "name" to name, "design" to designJson, "updatedAt" to FieldValue.serverTimestamp(),
+            "deleted" to false, "schema" to schema.toLong(),
+        )
+        val created = bounded(writeTimeout(designJson.length)) {
+            db.runTransaction(Transaction.Function<Boolean> { tx ->
+                if (tx.get(ref).exists()) false else { tx.set(ref, data); true }
+            }).await()
+        }
+        if (!created) return@mapErrors null
+        val doc = bounded(readTimeoutMs) { ref.get(Source.SERVER).await() }
+        if (doc.metadata.hasPendingWrites()) throw unsettled()
+        val read = toDesign(doc) ?: throw RemoteException(RemoteErrorKind.OTHER, "The cloud returned an unreadable design.")
+        if (!designReadBackMatches(name, designJson, DesignState.LIVE, schema, read)) throw changedMeanwhile()
+        read
+    }
+
     override suspend fun getCurrent(uid: String): RemoteCurrent? = mapErrors {
         val doc = bounded(readTimeoutMs) { currentDoc(uid).get(Source.SERVER).await() }
         if (doc.metadata.hasPendingWrites()) throw unsettled()

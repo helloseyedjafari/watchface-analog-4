@@ -47,6 +47,12 @@ class FakeRemoteStore(var serverNow: Long = 1_000_000) : RemoteStore {
         return d
     }
 
+    override suspend fun createDesign(uid: String, id: String, name: String, designJson: String, schema: Int): RemoteDesign? {
+        check()
+        if (designsOf(uid).containsKey(id)) return null
+        return putDesign(uid, id, name, designJson, DesignState.LIVE, schema)
+    }
+
     override suspend fun getCurrent(uid: String): RemoteCurrent? { check(); return currents.value[uid] }
     override fun observeCurrent(uid: String): Flow<RemoteCurrent?> = currents.map { check(); it[uid] }
 

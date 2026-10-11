@@ -132,6 +132,17 @@ class SyncEngineTest {
             return inner.putDesign(uid, id, name, designJson, state, schema)
         }
 
+        /** The same gates, hooks and refusals as [putDesign], for the call that creates a document only if its id is free. */
+        override suspend fun createDesign(uid: String, id: String, name: String, designJson: String, schema: Int): RemoteDesign? {
+            if (hangPuts) awaitCancellation()
+            stickyGate?.let { withContext(NonCancellable) { it.await() } }
+            putGate?.await()
+            attemptedNames += name
+            refuse?.invoke(name)?.let { throw it }
+            onPutDesign?.also { onPutDesign = null }?.invoke()
+            return inner.createDesign(uid, id, name, designJson, schema)
+        }
+
         override suspend fun putCurrent(uid: String, designJson: String, deviceId: String, deviceLabel: String): RemoteCurrent {
             if (hangPutCurrent) awaitCancellation()
             currentPutGate?.let { withContext(NonCancellable) { it.await() } }
@@ -155,7 +166,7 @@ class SyncEngineTest {
         val remote: FakeRemoteStore, scope: CoroutineScope, val id: String, var now: () -> Long,
         engineRemote: RemoteStore = remote, photos: PhotoDownscaler = PhotoDownscaler { it },
         io: CoroutineDispatcher = Dispatchers.Unconfined, random: () -> Double = { 1.0 },
-        val journalKv: MemoryKeyValueStore = MemoryKeyValueStore(), currentDebounceMs: Long = 1_000,
+        val journalKv: MemoryKeyValueStore = MemoryKeyValueStore(), currentDebounceMs: Long = 1_000, copyLabel: String = "Phone $id",
     ) {
         val store = Store(MemoryKeyValueStore(), File(tmp.newFolder(), "background.jpg"))
         val journal = SyncJournal(journalKv) { now() }
@@ -163,7 +174,7 @@ class SyncEngineTest {
         val applied = ArrayList<DesignSettings>()
         val engine = SyncEngine(
             store, journal, engineRemote, scope, photos, { applied += it; current = it }, { current },
-            deviceId = id, deviceLabel = "Phone $id", copySuffix = copyNameSuffix("Phone $id", { " ($it)" }, "copy"), clock = { now() }, io = io,
+            deviceId = id, deviceLabel = "Phone $id", copySuffix = copyNameSuffix(copyLabel, { " ($it)" }, "copy"), clock = { now() }, io = io,
             debounceMs = 1_000, currentDebounceMs = currentDebounceMs, retryMs = 30_000, maxRetryMs = 300_000,
             callTimeoutMs = 20_000, random = random,
         )
@@ -175,7 +186,8 @@ class SyncEngineTest {
         remote: FakeRemoteStore, id: String, clock: () -> Long = { testScheduler.currentTime + 5_000_000 },
         engineRemote: RemoteStore = remote, photos: PhotoDownscaler = PhotoDownscaler { it }, io: CoroutineDispatcher = Dispatchers.Unconfined,
         random: () -> Double = { 1.0 }, journalKv: MemoryKeyValueStore = MemoryKeyValueStore(), currentDebounceMs: Long = 1_000,
-    ) = Phone(remote, backgroundScope, id, clock, engineRemote, photos, io, random, journalKv, currentDebounceMs)
+        copyLabel: String = "Phone $id",
+    ) = Phone(remote, backgroundScope, id, clock, engineRemote, photos, io, random, journalKv, currentDebounceMs, copyLabel)
 
     // ---- the brief's tests, adapted to the final signatures ---------------------------------------------------------
 
@@ -928,7 +940,8 @@ class SyncEngineTest {
         assertEquals(SyncMark.CLEAN, a.journal.entries().getValue(designId("Night")).mark)
     }
 
-    @Test fun anEditToTheKeptCopyWhileItIsBeingPushedIsNotMarkedSynced() = runTest {
+    /** The copy is created in the cloud before it exists on the phone, so the user can only be editing the original meanwhile. */
+    @Test fun anEditOfTheOriginalWhileItsCopyIsBeingCreatedLosesNeitherVersion() = runTest {
         val remote = FakeRemoteStore()
         val flaky = FlakyRemote(remote)
         val other = phone(remote, "other")
@@ -938,10 +951,36 @@ class SyncEngineTest {
         val mine = night.copy(accent = "#FF111111")
         a.store.saveNamed("Night", mine)
         val edited = mine.copy(accent = "#FF999999")
-        flaky.onPutDesign = { a.store.saveNamed("Night (Phone a)", edited) }   // the user edits the copy being uploaded
+        flaky.onPutDesign = { a.store.saveNamed("Night", edited) }   // the user edits the design whose copy is being created
         a.engine.start("u1"); runCurrent()
-        advanceTimeBy(2_000); runCurrent()
-        assertEquals(edited, DesignJson.fromJson(remote.designsOf("u1").getValue(designId("Night (Phone a)")).designJson))
+        advanceTimeBy(5_000); runCurrent()
+        val accentsInCloud = remote.designsOf("u1").values.map { DesignJson.fromJson(it.designJson).accent }.toSet()
+        assertEquals(setOf("#FF222222", "#FF111111", "#FF999999"), accentsInCloud)   // theirs, mine before the edit, mine after it
+        assertEquals(accentsInCloud, a.store.savedDesigns().map { it.design.accent }.toSet())
+    }
+
+    /** A3-7: two phones of the same model making the same copy at the same moment must not overwrite each other. */
+    @Test fun twoPhonesMakingTheSameCopyAtTheSameTimeKeepBothVersions() = runTest {
+        val remote = FakeRemoteStore()
+        val other = phone(remote, "b")
+        other.store.saveNamed("Night", night.copy(accent = "#FF333333"))      // the design both phones meet in the cloud
+        other.engine.start("u1"); runCurrent()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky, copyLabel = "Pixel 8")
+        val c = phone(remote, "c", copyLabel = "Pixel 8")
+        a.store.saveNamed("Night", night.copy(accent = "#FF111111"))
+        c.store.saveNamed("Night", night.copy(accent = "#FF222222"))
+        val gate = CompletableDeferred<Unit>()
+        flaky.putGate = gate
+        a.engine.start("u1"); runCurrent()                                      // a has planned "Night (Pixel 8)" and waits to create it
+        c.engine.start("u1"); runCurrent()                                      // c planned and created the same name meanwhile
+        assertEquals("#FF222222", DesignJson.fromJson(remote.designsOf("u1").getValue(designId("Night (Pixel 8)")).designJson).accent)
+        gate.complete(Unit); runCurrent(); advanceTimeBy(3_000); runCurrent()
+        val byName = remote.designsOf("u1").values.associate { it.name to DesignJson.fromJson(it.designJson).accent }
+        assertEquals("c's copy is untouched", "#FF222222", byName["Night (Pixel 8)"])
+        assertEquals("a's copy got the next free name", "#FF111111", byName["Night (Pixel 8) 2"])
+        assertEquals("#FF333333", byName["Night"])
+        assertEquals("#FF111111", a.store.savedDesigns().first { it.name == "Night (Pixel 8) 2" }.design.accent)   // a keeps its version
     }
 
     // ---- fix round items 8, 9 and 13 ------------------------------------------------------------------------------------------
@@ -1871,8 +1910,9 @@ class SyncEngineTest {
         firstPass = false
         // another phone's different "Night" arrives through the listener: this phone's version becomes the copy "Night (Phone a)"
         remote.seedDesign("u1", RemoteDesign(designId("Night"), "Night", DesignJson.toJson(night.copy(accent = "#FF222222")), 9_000_000, DesignState.LIVE, 1)); runCurrent()
-        assertTrue("the copy is on the phone and not yet in the cloud", "Night (Phone a)" in a.names())
-        assertTrue(remote.designsOf("u1").values.none { it.name == "Night (Phone a)" })
+        assertEquals("the create failed offline", SyncStatus.Offline, a.engine.status.value)
+        assertTrue("nothing of the copy exists yet, here or in the cloud", "Night (Phone a)" !in a.names() &&
+            remote.designsOf("u1").values.none { it.name == "Night (Phone a)" })
         a.current = day
         a.engine.onCurrentSaved(day, ChangeOrigin.USER)                    // only the design being edited changes now
         advanceTimeBy(3_000); runCurrent()

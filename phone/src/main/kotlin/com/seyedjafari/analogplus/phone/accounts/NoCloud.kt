@@ -16,6 +16,7 @@ class NoRemoteStore : RemoteStore {
     override suspend fun putDesign(
         uid: String, id: String, name: String, designJson: String, state: DesignState, schema: Int,
     ): RemoteDesign = fail()
+    override suspend fun createDesign(uid: String, id: String, name: String, designJson: String, schema: Int): RemoteDesign? = fail()
     override suspend fun getCurrent(uid: String): RemoteCurrent? = fail()
     override fun observeCurrent(uid: String): Flow<RemoteCurrent?> = emptyFlow()
     override suspend fun putCurrent(uid: String, designJson: String, deviceId: String, deviceLabel: String): RemoteCurrent = fail()

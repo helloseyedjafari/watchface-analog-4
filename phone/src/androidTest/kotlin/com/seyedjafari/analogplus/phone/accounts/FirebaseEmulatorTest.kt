@@ -395,6 +395,34 @@ class FirebaseEmulatorTest {
         waitUntil("the abandoned commit to land") { count("users/$uid/designs") < 2 }
     }
 
+    // ---- a copy is created only where its id is free ---------------------------------------------------------------
+
+    @Test fun createDesignWritesOnlyWhereNothingIsAndNeverOverwritesAnExistingDocument() = inTest {
+        val uid = signInAs(unique("create"))
+        val id = designId("Night (Pixel 8)")
+        val first = remote.createDesign(uid, id, "Night (Pixel 8)", "{\"v\":1}", DESIGN_SCHEMA)
+        assertNotNull(first)
+        assertEquals("{\"v\":1}", first!!.designJson)
+        assertEquals(DesignState.LIVE, first.state)
+        // the id is taken: nothing is written, and the document is exactly what the first call stored
+        assertNull(remote.createDesign(uid, id, "Night (Pixel 8)", "{\"v\":2}", DESIGN_SCHEMA))
+        assertEquals(first, remote.fetchDesigns(uid).single())
+        // a deleted design's document counts as taken too
+        val gone = designId("Gone")
+        remote.putDesign(uid, gone, "Gone", "", DesignState.TOMBSTONE, DESIGN_SCHEMA)
+        assertNull(remote.createDesign(uid, gone, "Gone", "{}", DESIGN_SCHEMA))
+        assertEquals(DesignState.TOMBSTONE, remote.fetchDesigns(uid).first { it.id == gone }.state)
+    }
+
+    @Test fun twoCreatesOfTheSameIdAtTheSameTimeLetOnlyOneWin() = inTest {
+        val uid = signInAs(unique("create-race"))
+        val id = designId("Race")
+        val results = (1..4).map { i -> async { remote.createDesign(uid, id, "Race", "{\"writer\":$i}", DESIGN_SCHEMA) } }.awaitAll()
+        assertEquals("exactly one create succeeded", 1, results.count { it != null })
+        val stored = remote.fetchDesigns(uid).single()
+        assertEquals("and its document is the one that is stored", results.first { it != null }!!.designJson, stored.designJson)
+    }
+
     // ---- the design list is read in pages -----------------------------------------------------------------------
 
     @Test fun fetchDesignsReadsEveryDesignOncePageByPageWithNoLimitOnTheirNumber() = inTest {

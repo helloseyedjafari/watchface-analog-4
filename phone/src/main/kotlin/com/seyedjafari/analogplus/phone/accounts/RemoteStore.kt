@@ -106,6 +106,15 @@ interface RemoteStore {
     /** Writes with the server's timestamp and returns the document as the server stored it. */
     suspend fun putDesign(uid: String, id: String, name: String, designJson: String, state: DesignState, schema: Int): RemoteDesign
 
+    /**
+     * Writes a LIVE design only if no document with [id] exists (not even a deleted one): the check and the write are one
+     * step (a Firestore transaction in the production store; it works only online, offline it fails with
+     * [RemoteErrorKind.OFFLINE]). Returns the document as the server stored it, or null when the id was taken (nothing is
+     * written). It is for the copy that keeps this phone's version of a design when two designs with the same name differ:
+     * two phones that make the same copy at the same moment must not overwrite each other's version.
+     */
+    suspend fun createDesign(uid: String, id: String, name: String, designJson: String, schema: Int): RemoteDesign?
+
     suspend fun getCurrent(uid: String): RemoteCurrent?
     fun observeCurrent(uid: String): Flow<RemoteCurrent?>
     suspend fun putCurrent(uid: String, designJson: String, deviceId: String, deviceLabel: String): RemoteCurrent
