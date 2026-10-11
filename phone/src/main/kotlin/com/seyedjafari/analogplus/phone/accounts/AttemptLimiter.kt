@@ -10,7 +10,9 @@ import java.io.IOException
  * encrypted backup (that is what the passphrase rules and the KDF cost are for), nor against someone who sets the
  * phone's clock forward or clears the app's data.
  * The count survives restarts; a correct passphrase resets it. If the count cannot be saved (disk full) it is still
- * kept in memory, so the delay holds while the app runs. A clock set back never makes the wait longer than the delay.
+ * kept in memory, so the delay holds while the app runs. A clock set back (or a stored failure time in the future) never
+ * makes the wait longer than the delay, and never for longer than one delay: the countdown starts again from now, so a
+ * clock that was set back ten days does not lock restores for ten days.
  */
 class AttemptLimiter(private val kv: KeyValueStore, private val clock: () -> Long = System::currentTimeMillis) {
     private data class State(val failures: Long, val lastAtMs: Long)
@@ -25,8 +27,14 @@ class AttemptLimiter(private val kv: KeyValueStore, private val clock: () -> Lon
         val state = read()
         val delay = delayAfter(state.failures)
         if (delay == 0L) return 0
-        val elapsed = clock() - state.lastAtMs
-        if (elapsed < 0) delay else (delay - elapsed).coerceIn(0, delay)
+        val now = clock()
+        val elapsed = now - state.lastAtMs
+        if (elapsed < 0) {
+            // the failure lies in the future (the clock was set back): count the delay from now, not until the clock catches up
+            write(State(state.failures, now))
+            return delay
+        }
+        (delay - elapsed).coerceIn(0, delay)
     }
 
     fun recordFailure() = synchronized(lock) {

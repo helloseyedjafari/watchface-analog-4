@@ -46,11 +46,37 @@ class AttemptLimiterTest {
         assertEquals(0, l.waitMs())
     }
 
-    @Test fun aClockSetBackNeverMakesTheWaitLongerThanTheDelay() {
+    @Test fun aClockSetBackNeverMakesTheWaitLongerThanTheDelayAndTheWaitRunsOut() {
+        now = 30L * 24 * 3600 * 1000                      // a clock that can be set back by days and stay positive
         val l = limiter()
         repeat(3) { l.recordFailure() }
         now -= 10L * 24 * 3600 * 1000   // the date was set back ten days
         assertEquals(5_000, l.waitMs())
+        now += 2_000
+        assertEquals(3_000, l.waitMs())  // the countdown started when the clock was found set back
+        now += 3_000
+        assertEquals("not ten days: one delay", 0, l.waitMs())
+    }
+
+    @Test fun aClockSetBackIsHandledAfterARestartToo() {
+        now = 30L * 24 * 3600 * 1000                      // a clock that can be set back by days and stay positive
+        repeat(4) { limiter().recordFailure() }          // 10 s delay
+        now -= 3_600_000
+        assertEquals(10_000, limiter().waitMs())
+        now += 10_000
+        assertEquals(0, limiter().waitMs())
+    }
+
+    @Test fun aWaitThatStartedWhenTheClockWasFoundSetBackIsNotRestartedByLaterChecks() {
+        now = 30L * 24 * 3600 * 1000                      // a clock that can be set back by days and stay positive
+        val l = limiter()
+        repeat(3) { l.recordFailure() }
+        now -= 1_000_000
+        l.waitMs()
+        now += 1_000
+        l.waitMs()
+        now += 1_000
+        assertEquals(3_000, l.waitMs())                  // 2 s of the 5 s have passed since the first check
     }
 
     @Test fun garbageInTheStoreDoesNotBlockOrCrash() {
@@ -59,6 +85,8 @@ class AttemptLimiterTest {
         assertEquals(0, limiter().waitMs())
         kv.putLong("restore_failures", 50)
         assertEquals(300_000, limiter().waitMs())          // a last-failure time in the far future still waits at most the delay
+        now += 300_000
+        assertEquals("and the wait ends", 0, limiter().waitMs())
         kv.map["restore_failures"] = "three"               // another type reads as absent
         assertEquals(0, limiter().waitMs())
     }
