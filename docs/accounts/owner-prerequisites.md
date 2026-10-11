@@ -33,21 +33,31 @@ off. Do these in order; each item says what to hand back to the code.
   log line "Enter this debug secret into the allow list in the Firebase Console" (`adb logcat | grep -i appcheck`), and add the
   token under App Check, Apps, Manage debug tokens. Watch App Check's request metrics for a few days, **then** switch Firestore
   to *Enforced*. Enforcing earlier locks out your own test builds.
-- [ ] **7. Privacy policy at a public URL.** Host the text of `docs/accounts/privacy-policy-draft.md` (Task 17 adds it; fill in
-  your name and contact email) on any public page. Put the URL in the OAuth consent screen (item 8) and in Play Console, Policy and
+- [ ] **7. Privacy policy at a public URL.** Host the text of `docs/accounts/privacy-policy-draft.md` on any public page. First
+  fill in every `[OWNER: ...]` in it (your name or company, contact email, the Firestore location from item 5, the URL of the
+  deletion page from item 10, dates) and answer the two questions it asks about what Firebase Authentication keeps from the Google
+  profile (look at a test account in the console), then remove its draft status paragraph. Put the URL in the OAuth consent screen (item 8) and in Play Console, Policy and
   programs, App content, Privacy policy.
 - [ ] **8. Google Auth Platform / OAuth consent screen.** console.cloud.google.com, the same project, Google Auth Platform,
   Branding: app name, logo, support email, and the privacy policy link (item 7). Complete **brand verification** so that the
   app name, not a raw project id, shows in the Google account chooser.
 - [ ] **9. Play Data Safety form.** After item 7 (it needs the privacy policy URL). Play Console, App content, Data safety. The
-  answers are in the appendix of the privacy policy draft (Task 17 adds it). Re-check them whenever the app collects something new.
+  answers are in the appendix of `docs/accounts/privacy-policy-draft.md`; copy them into the form and settle the lines marked
+  `[OWNER]` there (name, phone model). Re-check them whenever the app collects something new.
 - [ ] **10. Account deletion page.** Play requires an in-app way **and** a web URL for deleting an account. The in-app way
-  (Account, Delete account) is added by Task 15 of the plan. Host `docs/accounts/account-deletion-page-draft.md` (Task 17 adds it) as a public page and enter its URL in
-  Play Console, App content, Data deletion.
+  is in the app (Account, Delete account and cloud data). Host `docs/accounts/account-deletion-page-draft.md` as a public page
+  (fill in its `[OWNER: ...]` places) and enter its URL in Play Console, App content, Data deletion. The page promises that a
+  request by email is answered by hand: you delete the user under Authentication and the `users/<uid>` data under Firestore
+  yourself, so decide how many days you promise.
 - [ ] **11. Usage watch.** The Spark plan has **no budget alerts**. After launch, look at the Usage tab for Firestore and
   Authentication now and then (quotas change, read them there). For email alerts, upgrade to **Blaze** (pay as you go, still
   keeps the free allowance) and set a budget alert. This design uses a handful of small documents per user.
-- [ ] **12. Tell the agent** (one message): the project id, the Firestore location, whether `google-services.json` may be
+- [ ] **12. Check the texts against the real project.** Once items 1-6 are done, read `docs/accounts/privacy-policy-draft.md`
+  once against the Firebase console (the location, what an Authentication user record shows, whether App Check is enforced) and
+  fix the draft where it disagrees. Nothing in these drafts has been checked against a real project.
+- [ ] **13. Run the real-device checklist.** `docs/accounts/real-device-checklist.md` is NOT RUN. It needs items 1-5 done and a
+  phone; the Galaxy Watch part (E2) settles the key-reset spike, which was seen on an emulator only.
+- [ ] **14. Tell the agent** (one message): the project id, the Firestore location, whether `google-services.json` may be
   committed, and the two URLs.
 
 Until item 4 is done: `./gradlew :phone:assembleDebug` gives a debug app that signs in through the **Auth emulator**

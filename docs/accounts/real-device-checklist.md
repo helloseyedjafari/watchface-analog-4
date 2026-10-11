@@ -1,0 +1,126 @@
+# Accounts and sync: real-device checklist
+
+**Status: NOT RUN. Every line below is NOT RUN.** The owner chose to skip real devices when the accounts work was built. Nothing
+here has been tried on a real phone, a real watch, with a real Google sign-in, with App Check, or against a real Firebase
+project. The only verification so far is: JVM tests, the Firestore rules tests and the instrumented tests on a phone emulator
+against the Firebase Emulator Suite (`scripts/accounts_e2e.sh`, `cd firebase && npm test`), and the key-reset spike on a Wear OS
+emulator (`docs/poc/key-reset-spike.md`). Tick a line only after you did it and write what you saw next to it.
+
+Needs `phone/google-services.json` from the owner's Firebase project (`docs/accounts/owner-prerequisites.md`, items 1-5) and a
+build installed on a real phone with Google Play services and a Google account on it. With the file present a debug build uses
+YOUR project unless the app's `files/use-firebase-emulator` marker exists (it must not, for this checklist). A debug build
+needs its App Check debug token registered (item 6 of the prerequisites) once enforcement is on. Run each Android group on
+both Android 13 or lower and Android 14 or newer if you have both phones; note the version beside each result.
+
+Texts below are the English texts of the app (`phone/src/main/res/values/strings.xml`).
+
+## A. Sign in, sync, backup, restore
+
+- [ ] **NOT RUN** A1. Account, **Sign in with Google**: the Google chooser lists your account. After choosing it the card shows
+  "Signed in as <email>" and the sync pill ends at "Synced just now". Note which sheet you saw (Android 14 and newer: the system
+  sheet; Android 13 and lower: a Play services sheet).
+- [ ] **NOT RUN** A2. Save a design in Library. Within a few seconds the Firebase console, Firestore, `users/<uid>/designs` shows
+  a document with that design's name and `deleted: false`. Delete the design in the app: the document stays with `deleted: true`
+  and an empty `design`.
+- [ ] **NOT RUN** A3. Account, **Back up signing key**, choose a passphrase twice, **Back up**. While it works the card says
+  "Backing up and checking the backup...". Then the pill reads "Signing key backed up (key <16 hex>)". The console shows
+  `users/<uid>/backup/signingKey` with `sealed`, `kdf: pbkdf2-hmac-sha256`, `iterations: 600000`, `salt`, `iv`, `version`,
+  `keyFingerprint`, `writeId`, `createdAt` and no readable key. Write down the fingerprint.
+- [ ] **NOT RUN** A4. On a **second phone** (or after clearing the first phone's app data) sign in with the same Google account.
+  The saved designs appear. The pill says "A backup exists; this phone has no key yet".
+- [ ] **NOT RUN** A5. **Restore signing key from backup**. First type a wrong passphrase twice: "That passphrase did not open the
+  backup. Check it and try again." The third wrong try shows "That passphrase did not open the backup. Wait 5 seconds before
+  trying again." Then type the right one: "Signing key restored (key ...)" with the **same fingerprint as in A3**. Send to watch
+  from this phone: the watch accepts the update in place (no key-mismatch message, the version rises).
+- [ ] **NOT RUN** A6. Edit the design you are editing on phone 2, then open the app on phone 1. The saved designs update. The
+  edited design asks "Use the design from <phone model>?" with **Use theirs** and **Keep mine**, once per difference. **Keep
+  mine** is the filled (default) button; a tap outside the dialog or the system Back button also means Keep mine. The question
+  appears on any tab (Design, Library, Send, Account), not only on Design.
+- [ ] **NOT RUN** A7. Phone 1 in airplane mode: edit a saved design and delete another. The pill shows "Offline, will retry".
+  Switch airplane mode off: the pill goes to "Synced ..." and phone 2 sees both changes.
+- [ ] **NOT RUN** A8. **Sign out**: "Signing out keeps your designs on this phone." Sign in again: the same state comes back.
+  **Sync now** works.
+
+## B. The Google prompt on a real phone
+
+- [ ] **NOT RUN** B1. The Credential Manager flow with a real account, on **Android 13 or lower** (a hidden Play services
+  activity) **and** on **Android 14 or newer** (the system sheet): choose an account; cancel with Back; tap outside the sheet.
+  Cancel leaves the card signed out without an error and the button works again at once.
+- [ ] **NOT RUN** B2. **Reopening the app while the Google prompt is open** (the app's main screen is `singleTask`): open the
+  prompt, then press Home and tap the launcher icon again, and separately tap an `analogplus://design?...` link. The prompt must
+  end as cancelled. "Signing in..." must not stay on screen. Repeat with the prompt from **Delete account and cloud data**:
+  "Deleting your account..." must not stay on screen and nothing is deleted. Check Android 13 or lower especially.
+- [ ] **NOT RUN** B3. **Changing the configuration while the prompt is open**: rotate the phone, switch dark mode, and use
+  split-screen (or fold) while the prompt is open, then choose an account. You must end up signed in as the account you picked,
+  not signed out and not as another account.
+- [ ] **NOT RUN** B4. Sign-in problems: airplane mode at **Sign in with Google** shows "Sign-in needs an internet connection.
+  Check it and try again." A phone with no Google account shows "No Google account was found on this phone. Add one in the
+  phone's settings, then try again."
+
+## C. Deleting the account
+
+- [ ] **NOT RUN** C1. **Delete account and cloud data**, then **Delete account** in "Delete your account?". You are asked to
+  choose your Google account again. Afterwards: "Your account and its cloud data were deleted. Designs and the signing key on
+  this phone are untouched." The card is signed out, the console shows no `users/<uid>` documents, the Authentication list no
+  longer has you, and designs and the signing key on the phone are still there. Send to watch still works.
+- [ ] **NOT RUN** C2. **Interrupted deletion**: start the deletion and kill the app while "Deleting your account..." is shown
+  (swipe it away from recents, or switch airplane mode on). Reopen the app: the card says "Deleting your account was not
+  finished" with **Finish deleting** and **Keep my account**, and sync is paused. **Finish deleting** asks for Google again
+  and completes (as C1). Repeat once and choose **Keep my account** instead: "Your account was kept. Sync is on again and the
+  designs on this phone are uploaded again." and the designs are back in the console.
+- [ ] **NOT RUN** C3. The signing-key backup is one of the things C1 removes: after C1 sign in again with the same Google
+  account. There is no backup ("Signing key is not backed up").
+
+## D. First run (onboarding) with accounts
+
+- [ ] **NOT RUN** D1. A fresh install (or Account, **Run setup again**) on a build with `google-services.json` shows five
+  pages ("Step 5 of 5" on the last). Page 5 is optional: **Sign in with Google**, then **Back up my signing key** (passphrase
+  twice), then **Done**. On a second phone the same page offers **Restore my signing key**.
+- [ ] **NOT RUN** D2. On page 5: **Back** returns to page 4; **Skip for now** ends setup without signing in and records it as
+  skipped; rotating the phone and killing the app keep the page; a build without `google-services.json` keeps four pages.
+- [ ] **NOT RUN** D3. (From the onboarding plan, earlier skipped) On the owner's paired phone and watch: Account, **Run setup
+  again**, page 2 "Connect your watch": both rows "OK" within a few seconds; the animation switches to the tick. Note how long
+  the check took. Turn Bluetooth off on the phone and come back: the rows change (Found becomes Not found or Could not check);
+  turn it on and return: both OK again.
+- [ ] **NOT RUN** D4. (From the onboarding plan, earlier skipped) Look at all onboarding pages on the owner's phone in light and
+  dark mode and at a large font size. Is anything clipped, is the primary button always reachable, is the text readable?
+- [ ] **NOT RUN** D5. (From the POC, earlier skipped) The Data Layer transfer on a really paired phone and watch: **Send to
+  watch** from the phone installs the face on the watch. Until this is run, `docs/poc/README.md` keeps its "Data Layer not
+  verified on real devices" bullet.
+
+## E. Forgotten passphrase and the Galaxy Watch (the reset spike)
+
+- [ ] **NOT RUN** E1. On a phone with no key and a backup in the cloud: **Restore signing key from backup**, then **I forgot the
+  passphrase**. The title is "Start over without the passphrase?". The text matches the spike result (SELF_SERVICE: it tells you
+  to uninstall the watch face on the watch itself; NEEDS_ADB: it tells you that a computer with adb is needed). Do **not** confirm
+  **Delete backup and start over** (or **Delete backup anyway**) unless you want to lose the backup.
+- [ ] **NOT RUN** E2. **On the Galaxy Watch (SM-L315F), what the spike could not show.** The spike result SELF_SERVICE was seen
+  on the **Wear OS 6 emulator only**. There, Settings, Apps & notifications, App info lists **several** entries named "Analog
+  Plus" (the watch app and the faces; four on that emulator). The pushed face is the one with no version number and about 98 kB of
+  storage, and it offers **Uninstall**. After uninstalling it, a face signed with a new key was accepted. On the real watch
+  check, with the owner's test faces in mind (ask before removing anything, see `CLAUDE.md`):
+  1. Open the watch's Settings and find its list of apps. Is the pushed face listed? How many "Analog Plus" entries are there, and
+     can you tell the face from the watch app (version number, storage size)?
+  2. Is **Uninstall** offered for the face entry?
+  3. After uninstalling it, does **Send to watch** from a phone with a new key succeed, and do you have to pick the face in the
+     watch face picker (press and hold the watch face, choose Analog Plus)?
+  4. If any answer is no, the app's text ("account_reset_self_remove" and "account_reset_self_pick" in `strings.xml`) promises too
+     much. Edit `RESET_RESULT:` in `docs/poc/key-reset-spike.md` to `NEEDS_ADB` and `KeyResetCopy.CURRENT` to `ResetPath.NEEDS_ADB`
+     together (`KeyResetCopyTest` fails when they differ). That is a code change, not a document change.
+
+## F. App Check and Play Integrity
+
+- [ ] **NOT RUN** F1. After App Check enforcement is switched on for Firestore (owner prerequisites item 6): a **release** build
+  that came from Play (an internal test track is enough) still signs in and syncs.
+- [ ] **NOT RUN** F2. A debug build whose debug token is **not** registered is refused ("The cloud refused the sync" or similar);
+  after registering the token it syncs again.
+- [ ] **NOT RUN** F3. A sideloaded release build that Play does not know (the signing SHA-256 is not registered) is refused.
+
+## Known limits (accepted by the owner, not failures)
+
+- **A backup write has no time limit.** While "Backing up and checking the backup..." is shown on a flaky connection, **Sign
+  out** waits for the write to end. Firestore itself gives up after its own five attempts. The owner accepted this. Before launch
+  consider making sign-out stop waiting and having the next sign-in check and undo a backup that was never proven. This is not run
+  and not scheduled.
+- A deleted or renamed saved design leaves a small record (name, deleted flag, time) in the cloud until the account is deleted.
+- The face version counter is not synced (it belongs to the install on the watch). The cloud holds designs, the design being edited and the key backup only.

@@ -39,8 +39,8 @@ inside it) when you switch away, rotate the phone or the system restarts the app
   design under a name is in My designs).
 - **Send** shows the watch status (paired, Analog Plus installed) and the progress of a send. Pressing **Send to watch**
   in Design starts the send and opens this destination. A send keeps running if you switch destination.
-- **Account** shows the app version, the (not yet available) sign-in, **Run setup again** (see First run below) and
-  **Reset signing key**, which used to be in the Share tab.
+- **Account** shows the app version, **Backup and sync** (optional sign-in, see Accounts and sync below), **Run setup again** (see First run
+  below) and **Reset signing key**, which used to be in the Share tab.
 
 Design sections. Colours are typed as `#AARRGGBB` (for example `#FF1E6BFF`); a wrong value shows a message and disables
 **Send to watch**. The preview updates as you type. Complications: choose 4 or 6 slots, tap a slot to edit it, drag it to
@@ -111,7 +111,10 @@ battery, the second the step count as text, the others start empty; pick provide
   higher ("version not higher").
 - **No bundled default face.** The watch is empty until the phone has pushed once.
 - **Signing key.** It is generated on the first send and lives in the phone app's private storage. It is excluded from
-  backup and from phone-to-phone transfer. **If you uninstall the phone app (or clear its data, or move to a new phone) the key is lost, a new key is generated, and the watch
+  Android's own backup and from phone-to-phone transfer. Since the accounts work, you can back it up yourself, encrypted with a
+  passphrase, in the cloud (Account, **Back up signing key**) and restore it on a new phone; this has not been tried with a real
+  Firebase project or a real device, and without a backup the paragraph below still applies.
+  **If you uninstall the phone app (or clear its data, or move to a new phone) the key is lost, a new key is generated, and the watch
   rejects every update because it is signed with a different key. Recovery means getting the old face off the watch.
   **Uninstalling the Analog Plus watch app does NOT remove the pushed face** (checked on the Wear OS 6 emulator: the
   face package stays). Remove it with
@@ -127,10 +130,50 @@ battery, the second the step count as text, the others start empty; pick provide
 - The ring and slot complication data cannot be shown on an emulator without providers; the e2e run only checks that the
   layout is drawn.
 
+## Accounts and sync (optional)
+
+Signing in with Google is optional. It syncs saved designs and the design being edited between phones and backs up the
+signing key, encrypted with a recovery passphrase. Design: `docs/superpowers/specs/2026-10-09-accounts-sync-design.md`; plan:
+`docs/superpowers/plans/2026-10-09-accounts-sync.md`; what only the owner can do (Firebase project, SHA-1s, privacy policy,
+Play forms): `docs/accounts/owner-prerequisites.md`; texts to publish: `docs/accounts/privacy-policy-draft.md` and
+`docs/accounts/account-deletion-page-draft.md`; real-device checklist (**NOT RUN**): `docs/accounts/real-device-checklist.md`.
+
+**Not verified:** nothing about accounts has run against a real Firebase project, with a real Google sign-in, with App Check
+or on a real device. The verification so far is JVM tests, the Firestore rules tests and the instrumented tests on the phone
+emulator against the Firebase Emulator Suite, and the key-reset spike on a Wear OS emulator.
+
+- **Without `phone/google-services.json`** the release build runs with accounts off (the Account card says sign-in is not set
+  up, and onboarding keeps four pages). A **debug** build without it uses the Firebase Emulator Suite, so the sign-in button
+  works on the phone emulator with no Google account: `cd firebase && npm ci && npm run emulators` (Auth 9099, Firestore 8080;
+  the phone emulator reaches the host as 10.0.2.2), then use the app. The fake sign-in account is the first line of the marker file
+  `files/use-firebase-emulator` in the app's storage when it exists
+  (`adb shell run-as com.seyedjafari.analogplus sh -c 'echo me@example.com > files/use-firebase-emulator'`), else `tester@example.com`.
+- **With `phone/google-services.json`** a debug build talks to the owner's real project, unless that marker file exists: then it
+  uses the emulators again (with the project id and key of the file, only the endpoints redirected, and without App Check). The
+  instrumented tests do not depend on this: their runner (`AccountsTestRunner`) writes the marker before the app starts and removes
+  it afterwards if it made it.
+- **Tests that need the emulators:** `scripts/accounts_e2e.sh` starts the Firebase emulators and the phone emulator, runs every
+  instrumented test in the package `com.seyedjafari.analogplus.phone.accounts` (among them `FirebaseEmulatorTest`, the real
+  Firestore code against the emulators with `firebase/firestore.rules` loaded, and `AccountsEndToEndTest`, a phone replaced end
+  to end through the Account card), with the emulators required, and stops what it started (`--class a.B,c.D` runs only those
+  classes). Firestore rules: `cd firebase && npm test` (starts the Firestore emulator itself; the CI workflow runs it too).
+- **Signing key backup:** Account, **Back up signing key** (choose a passphrase of at least 12 characters; the app shows an
+  estimate of its strength; the backup is checked by reading it back and opening it). On a new phone: sign in, **Restore signing
+  key from backup**. The old key, if any, is kept in `signing-key.pem.bak` in the app's storage. Wrong passphrases are slowed down
+  on the phone only (the third wait is 5 seconds, then it doubles up to 5 minutes). **Forgotten passphrase:** see
+  `docs/poc/key-reset-spike.md` for what happens on the watch; the app's text follows that finding, which was seen on a Wear OS
+  emulator only (not on a Galaxy Watch).
+- **Deleting the account:** Account, **Delete account and cloud data** asks for the Google account again, then deletes the cloud
+  data and the account; designs and the key on the phone stay. A deletion that is cut off is remembered: the card offers
+  **Finish deleting** or **Keep my account** and sync stays paused until then.
+- Not synced on purpose: the face version counter (it belongs to the install on the watch). Photos are shrunk to at most 512 px on the
+  longest side in the cloud copy. At most 200 saved designs sync.
+
 ## Checklist for the real-device test
 
 **Group 0 below is NOT RUN yet** (the owner skipped it: no phone and watch were attached when onboarding was built). Do it,
 then write what happened under "Known limits".
+The accounts checklist, `docs/accounts/real-device-checklist.md`, is **NOT RUN** either (it also lists the onboarding steps above).
 
 0. (Not run) Phone: Account, **Run setup again**. Connect page: both rows "OK" within a few seconds; the animation switches to
    the tick; note how long the check took and any message. Turn Bluetooth off on the phone, come back to the app: the rows
