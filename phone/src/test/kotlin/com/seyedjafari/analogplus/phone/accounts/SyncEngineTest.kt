@@ -1392,4 +1392,94 @@ class SyncEngineTest {
         assertEquals(doc.updatedAtMs, entry.baseRemoteAtMs)               // ... and recorded against ITS time, not the old one
         assertEquals("u2", a.journal.boundUid())
     }
+
+    // ---- the status stays steady while the backoff retries ----------------------------------------------------------
+
+    /** A cloud where only the writes of saved designs can be made to fail, so a pass has work (actions) and then fails. */
+    private class FailingPuts(val inner: FakeRemoteStore) : RemoteStore by inner {
+        var failure: RemoteException? = null
+        var attempts = 0
+        override suspend fun putDesign(uid: String, id: String, name: String, designJson: String, state: DesignState, schema: Int): RemoteDesign {
+            attempts++
+            failure?.let { throw it }
+            return inner.putDesign(uid, id, name, designJson, state, schema)
+        }
+    }
+
+    private fun TestScope.recordStatuses(phone: Phone): MutableList<SyncStatus> {
+        val seen = ArrayList<SyncStatus>()
+        backgroundScope.launch(kotlinx.coroutines.Dispatchers.Unconfined) { phone.engine.status.collect { seen += it } }
+        return seen
+    }
+
+    private fun retryingStatusIsSteady(failure: RemoteException, expected: SyncStatus) = runTest {
+        val remote = FakeRemoteStore()
+        val cloud = FailingPuts(remote).also { it.failure = failure }
+        val a = phone(remote, "a", engineRemote = cloud)
+        a.store.saveNamed("Night", night)
+        val seen = recordStatuses(a)
+        a.engine.start("u1"); runCurrent()
+        assertEquals(expected, a.engine.status.value)            // the first pass moved data (Syncing) and ended like this
+        assertTrue(seen.contains(SyncStatus.Syncing))
+        seen.clear()
+        val attemptsBefore = cloud.attempts
+        advanceTimeBy(400_000); runCurrent()                      // several backoff rounds
+        assertTrue("retries must have run", cloud.attempts >= attemptsBefore + 2)
+        assertTrue("the status must not move: $seen", seen.isEmpty())
+        cloud.failure = null                                      // the cloud works again
+        advanceTimeBy(400_000); runCurrent()
+        assertTrue("no flicker on the way to synced: $seen", seen.none { it == SyncStatus.Syncing })
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+        assertEquals(1, remote.designsOf("u1").size)
+    }
+
+    @Test fun anOfflineRetryDoesNotFlickerToSyncing() =
+        retryingStatusIsSteady(RemoteException(RemoteErrorKind.OFFLINE, "offline"), SyncStatus.Offline)
+
+    @Test fun aSignInNeededRetryDoesNotFlickerToSyncing() =
+        retryingStatusIsSteady(RemoteException(RemoteErrorKind.AUTH, "token"), SyncStatus.Error(SyncProblem.SIGN_IN_NEEDED))
+
+    @Test fun aQuotaRetryDoesNotFlickerToSyncing() =
+        retryingStatusIsSteady(RemoteException(RemoteErrorKind.QUOTA, "quota"), SyncStatus.Error(SyncProblem.QUOTA))
+
+    @Test fun aUserTriggeredPassWhileOfflineStillShowsSyncing() = runTest {
+        val remote = FakeRemoteStore()
+        val cloud = FailingPuts(remote).also { it.failure = RemoteException(RemoteErrorKind.OFFLINE, "offline") }
+        val a = phone(remote, "a", engineRemote = cloud)
+        a.store.saveNamed("Night", night)
+        a.engine.start("u1"); runCurrent()
+        val seen = recordStatuses(a)
+        seen.clear()
+        a.engine.syncNow()
+        assertEquals(listOf(SyncStatus.Syncing, SyncStatus.Offline), seen)
+    }
+
+    @Test fun anEditTriggeredPassWhileOfflineStillShowsSyncing() = runTest {
+        val remote = FakeRemoteStore()
+        val cloud = FailingPuts(remote).also { it.failure = RemoteException(RemoteErrorKind.OFFLINE, "offline") }
+        val a = phone(remote, "a", engineRemote = cloud)
+        a.store.saveNamed("Night", night)
+        a.engine.start("u1"); runCurrent()
+        val seen = recordStatuses(a)
+        seen.clear()
+        a.store.saveNamed("Day", day)                            // the person edits: their pass says it is working
+        advanceTimeBy(1_500); runCurrent()
+        assertTrue("an edit's pass shows syncing: $seen", seen.contains(SyncStatus.Syncing))
+        assertEquals(SyncStatus.Offline, a.engine.status.value)
+    }
+
+    @Test fun anEditMadeWhileTheRetryTimersPassWaitsForItsDebounceMakesThatPassShowSyncing() = runTest {
+        val remote = FakeRemoteStore()
+        val cloud = FailingPuts(remote).also { it.failure = RemoteException(RemoteErrorKind.OFFLINE, "offline") }
+        val a = phone(remote, "a", engineRemote = cloud)
+        a.store.saveNamed("Night", night)
+        a.engine.start("u1"); runCurrent()
+        val seen = recordStatuses(a)
+        (seen as MutableList).clear()
+        advanceTimeBy(30_200); runCurrent()                       // the retry timer has fired; its pass waits out the debounce
+        assertTrue(seen.isEmpty())
+        a.store.saveNamed("Day", day)                            // and now the person edits: the pass is theirs
+        advanceTimeBy(2_500); runCurrent()                        // (the edit restarts the debounce)
+        assertTrue("an edit's pass shows syncing: $seen", seen.contains(SyncStatus.Syncing))
+    }
 }

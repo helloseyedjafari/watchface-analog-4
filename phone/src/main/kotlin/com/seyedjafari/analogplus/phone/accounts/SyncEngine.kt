@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -57,6 +58,11 @@ import kotlinx.coroutines.withTimeout
  * starts the backoff over, except that a pass does not while a listener that died of a retried error is still down (it
  * starts over when that listener delivers again), so a listener that keeps dying does not retry every half minute.
  * [setForeground]: in the background no listener runs and nothing is retried; edits still get their (debounced) pass.
+ *
+ * Status during retries: [SyncStatus.Syncing] means a pass that is moving data because of something that just happened
+ * (the first pass of a session, [syncNow], an edit). A pass that only the backoff timer started ([QuietPass]) leaves the
+ * status as it was (Offline, sign-in needed, quota) until it ends in a result, so a phone that stays offline does not
+ * flicker between "offline" and "syncing" every half minute.
  */
 class SyncEngine(
     private val store: Store,
@@ -152,6 +158,9 @@ class SyncEngine(
      * on the old list could push past [MAX_SYNCED_DESIGNS].
      */
     private val fetchSeq = AtomicLong()
+
+    /** Set by the retry timer for the next pass of the session loop; cleared by anything a person did (edit, keep mine). */
+    private val quietNext = java.util.concurrent.atomic.AtomicBoolean(false)
     private val writeSeq = AtomicLong()
 
     /** Designs (ids, and [CURRENT]) whose latest cloud copy lacks the photo because it could not be shrunk. */
@@ -192,7 +201,7 @@ class SyncEngine(
             launch {
                 for (t in channel) {
                     do { delay(debounceMs) } while (channel.tryReceive().isSuccess)   // waits until edits stop for debounceMs
-                    runPass(uid)
+                    if (quietNext.getAndSet(false)) withContext(QuietPass()) { runPass(uid) } else runPass(uid)
                 }
             }
         }
@@ -275,6 +284,7 @@ class SyncEngine(
             val mine = currentDesign()
             if (mine.photoStillLoading()) { currentPushWanted = true; return@launch }
             pendingCurrent.compareAndSet(null, PendingCurrent(mine, journal.currentStamp()))   // a newer save is already queued: keep that
+            quietNext.set(false)
             trigger?.trySend(Unit)
         }
     }
@@ -312,6 +322,7 @@ class SyncEngine(
     private fun editMade() {
         resetBackoff()
         cancelRetry()
+        quietNext.set(false)
     }
 
     private fun resetBackoff() {
@@ -372,7 +383,7 @@ class SyncEngine(
         }
         val actions = capNewDesigns(planned, remoteList)
         // Only real work shows as "Syncing": noting a cloud time (RecordBase) or forgetting a deletion (Drop) is bookkeeping.
-        if (actions.any { it !is SyncAction.RecordBase && it !is SyncAction.Drop }) setStatus(id, SyncStatus.Syncing)
+        if (actions.any { it !is SyncAction.RecordBase && it !is SyncAction.Drop }) markSyncing(id)
         val byId = local.associateBy { it.id }
         var skipped = 0
         var firstReason = ""
@@ -561,7 +572,7 @@ class SyncEngine(
         }
         val mapped = withContext(io) { designToRemoteJson(d, photos) }
         val json = mapped.remoteJson ?: run { currentSync = CurrentSync.TOO_LARGE; return }
-        setStatus(uid, SyncStatus.Syncing)
+        markSyncing(uid)
         val written = try {
             write(json.length) { remote.putCurrent(uid, json, deviceId, deviceLabel) }
         } catch (e: Throwable) {
@@ -618,6 +629,11 @@ class SyncEngine(
     }
 
     // ---- plumbing -----------------------------------------------------------------------------------------------
+
+    /** A pass that only the retry timer started does not show "syncing" (see the class comment). */
+    private suspend fun markSyncing(id: String) {
+        if (currentCoroutineContext()[QuietPass] == null) setStatus(id, SyncStatus.Syncing)
+    }
 
     private fun setStatus(id: String, s: SyncStatus) {
         if (uid == id) _status.value = s   // a pass that outlives a sign-out must not bring the status back
@@ -699,7 +715,7 @@ class SyncEngine(
         synchronized(retryLock) {
             if (retryJob?.isActive == true) return
             val wait = nextRetryDelay()
-            retryJob = scope.launch(parent) { delay(wait); recover() }
+            retryJob = scope.launch(parent) { delay(wait); recover(quiet = true) }
         }
     }
 
@@ -711,8 +727,12 @@ class SyncEngine(
 
     private fun cancelRetry() = synchronized(retryLock) { retryJob?.cancel(); retryJob = null }
 
-    /** Brings back whatever is down: the listeners, and one full pass (after the debounce). */
-    private fun recover() {
+    /**
+     * Brings back whatever is down: the listeners, and one full pass (after the debounce). [quiet]: the retry timer asked,
+     * so the pass does not show "syncing" ([QuietPass]).
+     */
+    private fun recover(quiet: Boolean = false) {
+        if (quiet) quietNext.set(true)
         ensureListeners()
         trigger?.trySend(Unit)
     }
@@ -770,6 +790,11 @@ class SyncEngine(
      */
     private fun listenerDelivered(which: Watch) {
         if (failingListeners.remove(which) && failingListeners.isEmpty()) resetBackoff()
+    }
+
+    /** Marks the coroutine of a pass that the retry timer started: it leaves the status as it was until it has a result. */
+    private class QuietPass : kotlin.coroutines.AbstractCoroutineContextElement(QuietPass) {
+        companion object Key : kotlin.coroutines.CoroutineContext.Key<QuietPass>
     }
 
     private companion object {
