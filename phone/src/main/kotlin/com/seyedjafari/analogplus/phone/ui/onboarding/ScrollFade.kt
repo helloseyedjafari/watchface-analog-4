@@ -38,13 +38,13 @@ internal var SemanticsPropertyReceiver.scrollHint by ScrollHintKey
  * A vertical scroll that tells the user there is more: the content fades out at the top edge while it can scroll back and at
  * the bottom edge while it can scroll forward, so text cut off in a short window (landscape, large font) reads as "continues"
  * and not as the end. The fade is an alpha mask over the viewport, so it works on any background and in light and dark.
- * Tagged [Tags.ONBOARDING_PAGE_SCROLL]; its [ScrollHint] is in the semantics.
+ * Tagged [tag] ([Tags.ONBOARDING_PAGE_SCROLL] for an onboarding page); its [ScrollHint] is in the semantics.
  */
 @Composable
-internal fun Modifier.verticalScrollWithFades(state: ScrollState): Modifier {
+internal fun Modifier.verticalScrollWithFades(state: ScrollState, tag: String = Tags.ONBOARDING_PAGE_SCROLL): Modifier {
     val opaque = MaterialTheme.colorScheme.background       // only its alpha matters in the mask below
     return this
-        .testTag(Tags.ONBOARDING_PAGE_SCROLL)
+        .testTag(tag)
         .semantics { scrollHint = scrollHintOf(state.canScrollBackward, state.canScrollForward) }
         // the mask needs an offscreen layer, but only while there is something to fade: a page that fits (a 60 fps animation on it) draws straight
         .graphicsLayer { compositingStrategy = if (state.canScrollBackward || state.canScrollForward) CompositingStrategy.Offscreen else CompositingStrategy.Auto }

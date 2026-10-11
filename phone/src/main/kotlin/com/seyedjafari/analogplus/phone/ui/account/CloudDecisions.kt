@@ -133,13 +133,18 @@ sealed interface CloudDialog {
     /**
      * Type the passphrase of the backup the person confirmed with [plan]. [error] is the last wrong try; [waitMs] the wait
      * that answer named (null: ask the service). [attempt] counts the answers, so two equal answers in a row are two states.
+     * [afterChange] is true when the dialog was opened again because the backup (or this phone's key) changed under the last one:
+     * it says so, because the passphrase asked for now belongs to the backup that is in the cloud now.
      */
-    data class Enter(val plan: RestorePlan, val error: AccountMessage? = null, val waitMs: Long? = null, val attempt: Int = 0) : CloudDialog
+    data class Enter(
+        val plan: RestorePlan, val error: AccountMessage? = null, val waitMs: Long? = null, val attempt: Int = 0, val afterChange: Boolean = false,
+    ) : CloudDialog
 
     /** The forgotten-passphrase dialog; [writeId] is the version of the backup the person saw (the only one it may delete). */
     data class Forgot(val plan: RestorePlan, val writeId: String) : CloudDialog
 
-    data object Delete : CloudDialog
+    /** "Delete your account?"; [finish] is true when it comes from "Finish deleting" (an unfinished deletion), false for a first deletion. */
+    data class Delete(val finish: Boolean = false) : CloudDialog
 }
 
 /** What a tap that asked the service what to do leads to. [refresh]: the backup line is stale, read it again. [stale]: say so. */
@@ -252,7 +257,13 @@ fun afterUpload(result: UploadResult): CloudDialog = when (result) {
 
 /** The new confirmation after [UploadResult.BackupDiffers]; the passphrase was cleared on submit, so it is asked for again. */
 fun reAsk(diff: UploadResult.BackupDiffers): CloudDialog = when (val cloud = diff.cloud) {
-    CloudBackup.Absent -> CloudDialog.Confirm(ConfirmKind.REPLACE_BACKUP, reAskGoneText(), CloudDialog.SetPassphrase(BackupExpectation.None))
+    CloudBackup.Absent -> when (diff.phone) {
+        is KeyOnPhone.Present ->
+            CloudDialog.Confirm(ConfirmKind.REPLACE_BACKUP, reAskGoneText(), CloudDialog.SetPassphrase(BackupExpectation.None))
+        // no usable key to back up (a damaged key would fail the upload, a missing one would be made silently): the notice and the
+        // refreshed line say the rest, and Back up there starts it with honest words
+        KeyOnPhone.None, KeyOnPhone.Damaged -> CloudDialog.None
+    }
     is CloudBackup.Present -> when (val phone = diff.phone) {
         is KeyOnPhone.Present ->
             if (phone.fingerprint == cloud.fingerprint) {

@@ -11,6 +11,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -57,7 +59,8 @@ fun PassphraseFields(state: PassphraseState, error: AccountMessage?, modifier: M
  */
 @Composable
 fun MessageLines(message: AccountMessage, modifier: Modifier = Modifier) {
-    Column(modifier.semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+    // a live region: a screen reader says the result of an action when it appears
+    Column(modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }, verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
         val words = uiTextResource(message.text)
         if (message.kind == NoticeKind.ERROR) ErrorBanner(words) else Text(words, style = MaterialTheme.typography.bodyMedium)
         message.detail?.let {

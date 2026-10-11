@@ -322,6 +322,7 @@
     <string name="account_button_delete">Delete account and cloud data</string>
     <string name="account_sign_out_note">Signing out keeps your designs on this phone.</string>
     <string name="account_notice_dismiss">OK</string>
+    <string name="account_notice_dismiss_description">Dismiss this message</string>
     <string name="account_detail_line">Details: %1$s</string>
 
     <!-- Account: what the person is waiting for -->
@@ -462,6 +463,7 @@
     <string name="account_enter_title">Restore your signing key</string>
     <string name="account_enter_body">Enter the recovery passphrase you chose when you backed the key up.</string>
     <string name="account_enter_confirm">Restore</string>
+    <string name="account_enter_changed">The backup in the cloud changed. This asks for the passphrase of the backup that is there now.</string>
     <string name="account_enter_forgot">I forgot the passphrase</string>
     <string name="account_dialog_cancel">Cancel</string>
     <string name="account_replace_title">Replace the signing key on this phone?</string>

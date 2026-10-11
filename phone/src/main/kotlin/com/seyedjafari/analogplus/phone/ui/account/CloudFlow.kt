@@ -5,7 +5,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.seyedjafari.analogplus.phone.accounts.AccountsController
 import com.seyedjafari.analogplus.phone.accounts.BackupExpectation
-import com.seyedjafari.analogplus.phone.accounts.OfferChoice
 
 /**
  * The dialogs of the account flows and the steps between them. Every step is a decision made by the pure functions in
@@ -33,6 +32,22 @@ class CloudFlow(private val accounts: AccountsController) {
         private set
 
     fun close() { dialog = CloudDialog.None }
+
+    /** The account the dialogs and the note belong to; set by [resetIfAnother]. */
+    private var owner: String? = null
+
+    /** Another account than the one these dialogs were opened for took over (a direct switch): they are closed like after a sign-out. */
+    fun resetIfAnother(uid: String?) {
+        if (owner != null && owner != uid) reset()
+        owner = uid
+    }
+
+    /** Leaving the signed-in card (a sign-out, another account): no dialog and no note of the account that left stays. */
+    fun reset() {
+        dialog = CloudDialog.None
+        note = null
+        owner = null
+    }
 
     fun dismissNote() { note = null }
 
@@ -63,13 +78,23 @@ class CloudFlow(private val accounts: AccountsController) {
 
     suspend fun restore() {
         note = null
-        planAgain()
+        apply(restoreStart(accounts.planRestore()))
     }
 
-    private suspend fun planAgain() = apply(restoreStart(accounts.planRestore()))
+    /** Plans again; a passphrase dialog that opens is marked as asking for the backup that is there now. */
+    private suspend fun planAgain() {
+        apply(restoreStart(accounts.planRestore()))
+        (dialog as? CloudDialog.Enter)?.let { dialog = it.copy(afterChange = true) }
+    }
 
+    /**
+     * The answer belongs to the dialog the passphrase was typed in: if the person closed it or went on to another one while the
+     * restore ran, nothing is opened or closed on its account (the controller's notice carries the words).
+     */
     suspend fun submitRestore(passphrase: String, enter: CloudDialog.Enter) {
-        when (val next = afterRestore(accounts.restore(passphrase, enter.plan))) {
+        val next = afterRestore(accounts.restore(passphrase, enter.plan))
+        if (dialog != enter) return
+        when (next) {
             RestoreFollowUp.Close -> dialog = CloudDialog.None
             RestoreFollowUp.PlanAgain -> {
                 dialog = CloudDialog.None
@@ -108,15 +133,21 @@ class CloudFlow(private val accounts: AccountsController) {
 
     fun askToDelete() {
         note = null
-        dialog = CloudDialog.Delete
+        dialog = CloudDialog.Delete()
     }
 
-    suspend fun confirmDelete() {
+    /** "Finish deleting" asks the same question as a first deletion; the answer then runs the normal path. */
+    fun askToFinishDeletion() {
+        note = null
+        dialog = CloudDialog.Delete(finish = true)
+    }
+
+    suspend fun confirmDelete(finish: Boolean) {
         dialog = CloudDialog.None
-        accounts.deleteAccount()
+        if (finish) finishDeletion() else accounts.deleteAccount()
     }
 
-    suspend fun finishDeletion() {
+    private suspend fun finishDeletion() {
         note = null
         note = noteAfterDeletion(accounts.finishDeletion())
     }
@@ -125,8 +156,6 @@ class CloudFlow(private val accounts: AccountsController) {
         note = null
         note = noteAfterKeep(accounts.keepAccount())
     }
-
-    fun resolveOffer(choice: OfferChoice) = accounts.resolveOffer(choice)
 
     private suspend fun apply(start: FlowStart) {
         dialog = start.dialog

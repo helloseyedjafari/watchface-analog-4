@@ -6,6 +6,9 @@ import com.seyedjafari.analogplus.phone.accounts.AccountState
 import com.seyedjafari.analogplus.phone.accounts.AccountsAvailability
 import com.seyedjafari.analogplus.phone.accounts.AccountsController
 import com.seyedjafari.analogplus.phone.accounts.AttemptLimiter
+import com.seyedjafari.analogplus.phone.accounts.DeletionState
+import com.seyedjafari.analogplus.phone.accounts.RemoteBackup
+import com.seyedjafari.analogplus.phone.accounts.RemoteStore
 import com.seyedjafari.analogplus.phone.accounts.BackupExpectation
 import com.seyedjafari.analogplus.phone.accounts.BackupService
 import com.seyedjafari.analogplus.phone.accounts.BackupStatus
@@ -23,7 +26,9 @@ import com.seyedjafari.analogplus.phone.accounts.UploadResult
 import com.seyedjafari.analogplus.phone.R
 import com.seyedjafari.analogplus.phone.accounts.vault.KeyVault
 import com.seyedjafari.analogplus.phone.keyFingerprint
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -53,13 +58,30 @@ class CloudFlowTest {
     private val fpC = keyFingerprint(pemC)
     private val passphrase = "correct horse battery staple"
 
-    private fun service(keys: FakeKeySource) = BackupService(remote, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined)
+    private val marks = DeletionMarks(MemoryKeyValueStore())
+
+    /** Holds every read of the backup of the person's own phone while a test acts meanwhile (the other phone reads the cloud directly). */
+    private class Gate {
+        @Volatile var door: CompletableDeferred<Unit>? = null
+        fun hold() { door = CompletableDeferred() }
+        fun release() { door?.complete(Unit) }
+    }
+    private val gate = Gate()
+
+    private inner class GatedRemote : RemoteStore by remote {
+        override suspend fun getBackup(uid: String): RemoteBackup? {
+            gate.door?.await()
+            return remote.getBackup(uid)
+        }
+    }
+
+    private fun service(keys: FakeKeySource, cloud: RemoteStore = remote) = BackupService(cloud, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined)
 
     /** The phone of the person; [other] writes to the same cloud, like another phone of the same account. */
     private fun TestScope.phone(keys: FakeKeySource): Pair<AccountsController, CloudFlow> {
         val controller = AccountsController(
-            AccountsAvailability.AVAILABLE, manager, sync, service(keys),
-            AccountDeletion(manager, remote, sync, SyncJournal(MemoryKeyValueStore()), DeletionMarks(MemoryKeyValueStore()), Dispatchers.Unconfined), backgroundScope,
+            AccountsAvailability.AVAILABLE, manager, sync, service(keys, GatedRemote()),
+            AccountDeletion(manager, remote, sync, SyncJournal(MemoryKeyValueStore()), marks, Dispatchers.Unconfined), backgroundScope,
         )
         return controller to CloudFlow(controller)
     }
@@ -374,7 +396,7 @@ class CloudFlowTest {
         flow.confirmForgot(forgot)
         assertNotNull(remote.backupOf("u1"))                                         // not deleted
         assertEquals(Notice.BackupChanged, c.ui.value.notice)
-        assertEquals(CloudDialog.Enter(RestorePlan.InstallNew(fpA)), flow.dialog)    // asked again for the backup that is there now
+        assertEquals(CloudDialog.Enter(RestorePlan.InstallNew(fpA), afterChange = true), flow.dialog)    // asked again for the backup that is there now
     }
 
     @Test fun backingOutOfTheForgottenDialogReturnsToThePassphrase() = runTest(UnconfinedTestDispatcher()) {
@@ -393,9 +415,9 @@ class CloudFlowTest {
         val (c, flow) = phone(FakeKeySource(pemA))
         c.signIn()
         flow.askToDelete()
-        assertEquals(CloudDialog.Delete, flow.dialog)
+        assertEquals(CloudDialog.Delete(), flow.dialog)
         assertEquals(0, manager.deleteCalls)
-        flow.confirmDelete()
+        flow.confirmDelete(finish = false)
         assertEquals(CloudDialog.None, flow.dialog)
         assertEquals(1, manager.deleteCalls)
         assertEquals("u1", remote.deletedAllFor)
@@ -406,7 +428,7 @@ class CloudFlowTest {
     @Test fun finishingAndKeepingWhenNothingIsPendingSayTheyDidNothing() = runTest(UnconfinedTestDispatcher()) {
         val (c, flow) = phone(FakeKeySource(pemA))
         c.signIn()
-        flow.finishDeletion()
+        flow.confirmDelete(finish = true)
         assertEquals("There was no unfinished deletion to end.", en(flow.note))
         assertNull(c.ui.value.notice)
         flow.dismissNote()
@@ -415,11 +437,119 @@ class CloudFlowTest {
         assertEquals("There was no unfinished deletion to end.", en(flow.note))
     }
 
-    @Test fun theOfferGoesToTheController() = runTest(UnconfinedTestDispatcher()) {
+    @Test fun finishDeletingAsksFirstAndTheAnswerRunsTheNormalPath() = runTest(UnconfinedTestDispatcher()) {
+        marks.mark("u1")
         val (c, flow) = phone(FakeKeySource(pemA))
         c.signIn()
-        flow.resolveOffer(com.seyedjafari.analogplus.phone.accounts.OfferChoice.KEEP_MINE)
-        assertEquals(listOf(com.seyedjafari.analogplus.phone.accounts.OfferChoice.KEEP_MINE), sync.choices)
+        assertEquals(DeletionState.PENDING, c.ui.value.deletion)
+        flow.askToFinishDeletion()
+        assertEquals(CloudDialog.Delete(finish = true), flow.dialog)
+        assertEquals(0, manager.deleteCalls)                      // asking changed nothing
+        flow.confirmDelete(finish = true)
+        assertEquals(CloudDialog.None, flow.dialog)
+        assertEquals(1, manager.deleteCalls)
+        assertEquals(AccountState.SignedOut, c.ui.value.account)
+    }
+
+    @Test fun cancelingTheQuestionOfFinishDeletingDeletesNothing() = runTest(UnconfinedTestDispatcher()) {
+        marks.mark("u1")
+        val (c, flow) = phone(FakeKeySource(pemA))
+        c.signIn()
+        flow.askToFinishDeletion()
+        flow.close()
+        assertEquals(0, manager.deleteCalls)
+        assertEquals(DeletionState.PENDING, c.ui.value.deletion)
+    }
+
+    // ---- an answer belongs to the dialog that asked --------------------------------------------------------------------------
+
+    @Test fun aRestoreAnswerForADialogThePersonClosedOpensNothingAgain() = runTest(UnconfinedTestDispatcher()) {
+        otherPhoneBacksUp(pemA)
+        val keys = FakeKeySource(null)
+        val (c, flow) = phone(keys)
+        c.signIn()
+        flow.restore()
+        val enter = flow.dialog as CloudDialog.Enter
+        // the passphrase is sent; while the restore runs the person cancels
+        gate.hold()
+        val sending = launch { flow.submitRestore("not the passphrase", enter) }
+        flow.close()
+        gate.release()
+        sending.join()
+        assertEquals(CloudDialog.None, flow.dialog)             // not reopened with "try again"
+        assertFalse(keys.hasKey())
+    }
+
+    @Test fun aStalePlanAnswerForAClosedDialogDoesNotOpenAConfirmation() = runTest(UnconfinedTestDispatcher()) {
+        otherPhoneBacksUp(pemA)
+        val (c, flow) = phone(FakeKeySource(null))
+        c.signIn()
+        flow.restore()
+        val enter = flow.dialog as CloudDialog.Enter
+        remote.deleteBackupDirectly("u1")
+        otherPhoneBacksUp(pemC)
+        gate.hold()
+        val sending = launch { flow.submitRestore(passphrase, enter) }
+        flow.close()
+        gate.release()
+        sending.join()
+        assertEquals(CloudDialog.None, flow.dialog)
+    }
+
+    @Test fun aRestoreThatSucceededForAClosedDialogStillInstallsTheKeyAndLeavesTheNotice() = runTest(UnconfinedTestDispatcher()) {
+        otherPhoneBacksUp(pemA)
+        val keys = FakeKeySource(null)
+        val (c, flow) = phone(keys)
+        c.signIn()
+        flow.restore()
+        val enter = flow.dialog as CloudDialog.Enter
+        gate.hold()
+        val sending = launch { flow.submitRestore(passphrase, enter) }
+        flow.close()
+        gate.release()
+        sending.join()
+        assertEquals(pemA, keys.pem())
+        assertEquals(Notice.KeyRestored(fpA), c.ui.value.notice)
+    }
+
+    @Test fun planningAgainMarksThePassphraseDialogAsAskingForTheBackupThatIsThereNow() = runTest(UnconfinedTestDispatcher()) {
+        otherPhoneBacksUp(pemA)
+        val (c, flow) = phone(FakeKeySource(null))
+        c.signIn()
+        flow.restore()
+        assertEquals(false, (flow.dialog as CloudDialog.Enter).afterChange)
+        val enter = flow.dialog as CloudDialog.Enter
+        remote.deleteBackupDirectly("u1")
+        otherPhoneBacksUp(pemC)
+        flow.submitRestore(passphrase, enter)
+        val again = flow.dialog as CloudDialog.Enter
+        assertEquals(RestorePlan.InstallNew(fpC), again.plan)
+        assertEquals(true, again.afterChange)
+    }
+
+    // ---- leaving the card ------------------------------------------------------------------------------------------------------
+
+    @Test fun resetClosesTheDialogAndForgetsTheNote() = runTest(UnconfinedTestDispatcher()) {
+        val (c, flow) = phone(FakeKeySource(pemA))
+        c.signIn()
+        flow.askToDelete()
+        flow.keepAccount()                                        // nothing is pending: the screen says so itself
+        assertNotNull(flow.note)
+        assertEquals(CloudDialog.Delete(), flow.dialog)
+        flow.reset()
+        assertEquals(CloudDialog.None, flow.dialog)
+        assertNull(flow.note)
+    }
+
+    @Test fun anotherAccountTakingOverClosesTheDialogsOfTheFirstOne() = runTest(UnconfinedTestDispatcher()) {
+        val (c, flow) = phone(FakeKeySource(pemA))
+        c.signIn()
+        flow.resetIfAnother("u1")
+        flow.askToDelete()
+        flow.resetIfAnother("u1")                                 // the same account again: nothing happens
+        assertEquals(CloudDialog.Delete(), flow.dialog)
+        flow.resetIfAnother("u2")
+        assertEquals(CloudDialog.None, flow.dialog)
     }
 
     private val staleWords = StringsXml.text(R.string.account_msg_status_stale)

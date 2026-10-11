@@ -37,6 +37,7 @@ import com.seyedjafari.analogplus.phone.accounts.CurrentApplier
 import com.seyedjafari.analogplus.phone.accounts.firebase.CurrentActivity
 import com.seyedjafari.analogplus.phone.accounts.firebase.PromptWatch
 import com.seyedjafari.analogplus.phone.ui.account.AccountScreen
+import com.seyedjafari.analogplus.phone.ui.account.AccountOfferHost
 import com.seyedjafari.analogplus.phone.ui.account.LocalAccounts
 import com.seyedjafari.analogplus.phone.ui.components.LoadSharedDesignDialog
 import com.seyedjafari.analogplus.phone.ui.design.DesignScreen
@@ -215,7 +216,8 @@ class MainActivity : ComponentActivity() {
 
 /**
  * The whole app: first-run setup while it is active, otherwise the four destinations under the bottom bar; and the "Load shared
- * design?" dialog on top of whichever one is showing (onboarding too). A link ([pendingLink]) never replaces the design on its own;
+ * design?" dialog on top of whichever one is showing (onboarding too), and, when no link waits, the "design from another device"
+ * question ([AccountOfferHost]) the same way. A link ([pendingLink]) never replaces the design on its own;
  * both buttons call [onPendingLinkResolved]. [onboarding] null means no gate (previews, tests of the shell alone).
  *
  * The gate is a plain `if`: while setup is active the navigation (and its Back handler) is not composed at all, and once it is
@@ -243,8 +245,12 @@ fun AppShell(
                 else MainContent(state, store, send, watch, onboarding.controller)
             }
         }
-        pendingLink?.let { incoming ->
-            LoadSharedDesignDialog(incoming, onLoad = { state.replaceWholeDesign(incoming); onPendingLinkResolved() }, onKeep = onPendingLinkResolved)
+        // one question at a time, on top of whichever screen shows (onboarding too, like the link question): a tapped link first, then
+        // the design another device saved. The offer is the controller's (a rotation shows it again), so it waits its turn.
+        if (pendingLink != null) {
+            LoadSharedDesignDialog(pendingLink, onLoad = { state.replaceWholeDesign(pendingLink); onPendingLinkResolved() }, onKeep = onPendingLinkResolved)
+        } else {
+            AccountOfferHost()
         }
     }
 }

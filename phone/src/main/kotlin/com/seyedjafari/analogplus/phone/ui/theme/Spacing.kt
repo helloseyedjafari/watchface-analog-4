@@ -42,6 +42,8 @@ object Dimens {
     val OnboardingContentMax = 640.dp
     /** The outline of the selected template on the onboarding template page (the word "Selected" says it too). */
     val SelectedBorder = 2.dp
+    /** The narrowest a dialog of the account flows is (the M3 alert dialog's minimum). */
+    val DialogMinWidth = 280.dp
     /** A dialog of the account flows in a short wide window is one scrolling page this wide at most. */
     val DialogMaxWidth = 560.dp
     /** The slot drag canvas never grows past this. */

@@ -121,7 +121,8 @@ class CloudDecisionsTest {
             BackupStatus::class.java,
             listOf(BackupStatus.SignedOut, BackupStatus.Checking, BackupStatus.NotChecked, BackupStatus.NotBackedUp, backedUp(KeyMatch.SAME), BackupStatus.Unknown(RemoteErrorKind.OTHER, "")),
         )
-        for (match in KeyMatch.entries) assertNotNull("$match", cloudButtons(ui(backedUp(match))))
+        // a new KeyMatch fails here until it has a row above and is added to this list
+        assertEquals(setOf(KeyMatch.SAME, KeyMatch.DIFFERENT, KeyMatch.NO_LOCAL_KEY, KeyMatch.LOCAL_DAMAGED), KeyMatch.entries.toSet())
     }
 
     // ---- busy and a pending deletion -----------------------------------------------------------------------------------
@@ -312,13 +313,17 @@ class CloudDecisionsTest {
     }
 
     @Test fun ifTheBackupIsGoneTheQuestionIsAskedAgainWithNoExpectedBackup() {
-        for (phone in listOf(KeyOnPhone.Present(phoneFp), KeyOnPhone.None, KeyOnPhone.Damaged)) {
-            val again = afterUpload(diff(CloudBackup.Absent, phone)) as CloudDialog.Confirm
-            assertEquals("$phone", ConfirmKind.REPLACE_BACKUP, again.kind)
-            assertEquals("$phone", CloudDialog.SetPassphrase(BackupExpectation.None), again.then)
-            assertEquals("The backup changed", StringsXml.text(again.text.title))
-            assertTrue(body(again).startsWith("While you were choosing a passphrase, the backup in the cloud was deleted."))
-        }
+        val again = afterUpload(diff(CloudBackup.Absent, KeyOnPhone.Present(phoneFp))) as CloudDialog.Confirm
+        assertEquals(ConfirmKind.REPLACE_BACKUP, again.kind)
+        assertEquals(CloudDialog.SetPassphrase(BackupExpectation.None), again.then)
+        assertEquals("The backup changed", StringsXml.text(again.text.title))
+        assertTrue(body(again).startsWith("While you were choosing a passphrase, the backup in the cloud was deleted."))
+    }
+
+    @Test fun ifTheBackupIsGoneAndThePhoneHasNoUsableKeyNothingIsAskedBecauseThereIsNothingToBackUp() {
+        // a damaged key would fail the upload after two typed passphrases; a missing one would be made silently
+        assertEquals(CloudDialog.None, afterUpload(diff(CloudBackup.Absent, KeyOnPhone.None)))
+        assertEquals(CloudDialog.None, afterUpload(diff(CloudBackup.Absent, KeyOnPhone.Damaged)))
     }
 
     @Test fun ifTheBackupIsNowOfThisPhonesKeyTheQuestionIsAskedAgainWithTheSameKey() {

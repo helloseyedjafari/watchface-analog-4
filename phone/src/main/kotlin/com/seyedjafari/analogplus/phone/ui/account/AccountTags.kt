@@ -44,6 +44,10 @@ object AccountTags {
     const val OFFER_USE = "account_offer_use"
     const val OFFER_KEEP = "account_offer_keep"
 
+    /** The scrolling page of a dialog in a short wide window, and the line that says a passphrase dialog now asks about another backup. */
+    const val DIALOG_SCROLL = "account_dialog_scroll"
+    const val ENTER_CHANGED = "account_enter_changed"
+
     const val PAGE_SIGN_IN = "backup_page_sign_in"
     const val PAGE_SKIP = "backup_page_skip"
     const val PAGE_DONE = "backup_page_done"

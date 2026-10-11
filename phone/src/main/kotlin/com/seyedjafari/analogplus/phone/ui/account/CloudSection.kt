@@ -20,6 +20,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import com.seyedjafari.analogplus.phone.accounts.AccountState
 import com.seyedjafari.analogplus.phone.accounts.AccountsAvailability
 import com.seyedjafari.analogplus.phone.accounts.BackupStatus
@@ -73,8 +77,9 @@ fun AccountSection(modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val nowMs = rememberNowMs()
     val card = cloudCard(ui)
-    // signed out (also by an expired session) while a dialog is open: it has nothing to act on any more
-    LaunchedEffect(card) { if (card != CloudCard.SIGNED_IN) flow.close() }
+    val uid = (ui.account as? AccountState.SignedIn)?.uid
+    // signed out (also by an expired session) or another account: no dialog and no note of the account that left stays open
+    LaunchedEffect(card, uid) { if (card != CloudCard.SIGNED_IN) flow.reset() else flow.resetIfAnother(uid) }
 
     val callbacks = CloudCallbacks(
         signIn = accounts::signIn,
@@ -84,7 +89,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
         replaceBackup = { scope.launch { flow.replaceBackup() } },
         restore = { scope.launch { flow.restore() } },
         askToDelete = flow::askToDelete,
-        finishDeletion = { scope.launch { flow.finishDeletion() } },
+        finishDeletion = flow::askToFinishDeletion,
         keepAccount = { scope.launch { flow.keepAccount() } },
         dismissMessage = { accounts.dismissNotice(); flow.dismissNote() },
     )
@@ -92,14 +97,24 @@ fun AccountSection(modifier: Modifier = Modifier) {
     CloudDialogHost(flow, ui, accounts)
 }
 
+/**
+ * The question about a design that another device saved, shown wherever the person is in the app as soon as the controller has
+ * it (the shell hosts it, like the "Load shared design?" question). One question at a time and no state of its own: the offer
+ * lives in the controller, so a rotation shows it again, and the answer is the controller's.
+ */
+@Composable
+fun AccountOfferHost(accounts: AccountsController = LocalAccounts.current) {
+    val ui by accounts.ui.collectAsState()
+    ui.offer?.let { offer ->
+        OfferDialog(offer, onUse = { accounts.resolveOffer(OfferChoice.USE_REMOTE) }, onKeep = { accounts.resolveOffer(OfferChoice.KEEP_MINE) })
+    }
+}
+
 /** Shows the dialog [CloudFlow] has open and runs its steps. */
 @Composable
 fun CloudDialogHost(flow: CloudFlow, ui: AccountsUi, accounts: AccountsController) {
     val scope = rememberCoroutineScope()
     val busy = ui.busy != Busy.NONE
-    ui.offer?.let { offer ->
-        OfferDialog(offer, onUse = { flow.resolveOffer(OfferChoice.USE_REMOTE) }, onKeep = { flow.resolveOffer(OfferChoice.KEEP_MINE) })
-    }
     when (val d = flow.dialog) {
         CloudDialog.None -> Unit
         is CloudDialog.SetPassphrase -> SetPassphraseDialog(
@@ -115,10 +130,10 @@ fun CloudDialogHost(flow: CloudFlow, ui: AccountsUi, accounts: AccountsControlle
             onDismiss = flow::close,
         )
         is CloudDialog.Forgot -> ForgotPassphraseDialog(
-            d, onConfirm = { scope.launch { flow.confirmForgot(d) } }, onBack = { flow.backFromForgot(d) },
+            d, busy = busy, onConfirm = { scope.launch { flow.confirmForgot(d) } }, onBack = { flow.backFromForgot(d) },
         )
-        CloudDialog.Delete -> DeleteAccountDialog(
-            busy = busy, onConfirm = { scope.launch { flow.confirmDelete() } }, onDismiss = flow::close,
+        is CloudDialog.Delete -> DeleteAccountDialog(
+            busy = busy, onConfirm = { scope.launch { flow.confirmDelete(d.finish) } }, onDismiss = flow::close,
         )
     }
 }
@@ -151,7 +166,11 @@ fun CloudSectionContent(ui: AccountsUi, nowMs: Long, note: AccountMessage?, call
 private fun NoticeRow(message: AccountMessage, onDismiss: () -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
         MessageLines(message, Modifier.testTag(AccountTags.NOTICE))
-        TertiaryButton(stringResource(AccountText.NOTICE_DISMISS), onDismiss, Modifier.testTag(AccountTags.NOTICE_DISMISS))
+        val dismissDescription = stringResource(AccountText.NOTICE_DISMISS_DESCRIPTION)
+        TertiaryButton(
+            stringResource(AccountText.NOTICE_DISMISS), onDismiss,
+            Modifier.testTag(AccountTags.NOTICE_DISMISS).semantics { contentDescription = dismissDescription },
+        )
     }
 }
 
@@ -171,13 +190,17 @@ private fun SignedOutContent(ui: AccountsUi, message: AccountMessage?, callbacks
 private fun SignedInContent(ui: AccountsUi, nowMs: Long, message: AccountMessage?, callbacks: CloudCallbacks) {
     val buttons = cloudButtons(ui)
     pendingDeletionText(ui.deletion)?.let { PendingDeletionCard(it, buttons, callbacks) }
-    message?.let { NoticeRow(it, callbacks.dismissMessage) }
     val account = ui.account as? AccountState.SignedIn
     Text(uiTextResource(signedInAsText(account?.email)), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag(AccountTags.EMAIL))
     Pill(syncPill(ui.sync, nowMs), AccountTags.SYNC_STATUS)
     Pill(backupPill(ui.backup), AccountTags.BACKUP_STATUS)
+    // under the pills: the texts say "the backup line above", and this is where the eyes are after a dialog closes
+    message?.let { NoticeRow(it, callbacks.dismissMessage) }
     busyText(ui.busy)?.let { words ->
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag(AccountTags.BUSY)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(Spacing.md), verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.testTag(AccountTags.BUSY).semantics { liveRegion = LiveRegionMode.Polite },
+        ) {
             CircularProgressIndicator(Modifier.size(Spacing.xl))
             Text(uiTextResource(words), style = MaterialTheme.typography.bodyMedium)
         }

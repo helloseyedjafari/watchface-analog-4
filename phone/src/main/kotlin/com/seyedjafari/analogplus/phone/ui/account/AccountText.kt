@@ -33,6 +33,7 @@ object AccountText {
     @StringRes val DELETE = R.string.account_button_delete
     @StringRes val SIGN_OUT_NOTE = R.string.account_sign_out_note
     @StringRes val NOTICE_DISMISS = R.string.account_notice_dismiss
+    @StringRes val NOTICE_DISMISS_DESCRIPTION = R.string.account_notice_dismiss_description
 
     /** "Details: ..." around the system's own words, shown under our sentence and never instead of it. */
     @StringRes val DETAIL_LINE = R.string.account_detail_line

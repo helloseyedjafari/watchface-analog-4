@@ -16,9 +16,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
+import com.seyedjafari.analogplus.phone.ui.theme.ProvideOuterDensity
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import com.seyedjafari.analogplus.facegen.KeyStore
 import com.seyedjafari.analogplus.phone.Tags
@@ -49,16 +51,19 @@ internal fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier:
         done?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag(Tags.RESET_KEY_NOTICE)) }
     }
     if (confirming) {
+        val outer = LocalDensity.current   // the dialog is a window of its own: it gets the density of this place back
         AlertDialog(
             onDismissRequest = { confirming = false },
-            title = { Text(stringResource(R.string.signing_key_dialog_title)) },
+            title = { ProvideOuterDensity(outer) { Text(stringResource(R.string.signing_key_dialog_title)) } },
             text = {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                    signingKeyDialogText().forEach { Text(uiTextResource(it)) }
+                ProvideOuterDensity(outer) {
+                    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                        signingKeyDialogText().forEach { Text(uiTextResource(it)) }
+                    }
                 }
             },
             confirmButton = {
-                PrimaryButton(
+                ProvideOuterDensity(outer) { PrimaryButton(
                     stringResource(R.string.signing_key_button_confirm),
                     {
                         confirming = false
@@ -74,9 +79,9 @@ internal fun SigningKeySection(keyStoreFactory: (Context) -> KeyStore, modifier:
                         }
                     },
                     Modifier.testTag(Tags.RESET_KEY_CONFIRM),
-                )
+                ) }
             },
-            dismissButton = { SecondaryButton(stringResource(R.string.common_cancel), { confirming = false }) },
+            dismissButton = { ProvideOuterDensity(outer) { SecondaryButton(stringResource(R.string.common_cancel), { confirming = false }) } },
         )
     }
 }

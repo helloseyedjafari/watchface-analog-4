@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -27,15 +26,19 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import com.seyedjafari.analogplus.phone.R
 import com.seyedjafari.analogplus.phone.accounts.CurrentOffer
 import com.seyedjafari.analogplus.phone.accounts.NoticeKind
 import com.seyedjafari.analogplus.phone.ui.components.PrimaryButton
 import com.seyedjafari.analogplus.phone.ui.components.SecondaryButton
 import com.seyedjafari.analogplus.phone.ui.components.TertiaryButton
+import com.seyedjafari.analogplus.phone.ui.onboarding.verticalScrollWithFades
 import com.seyedjafari.analogplus.phone.ui.theme.Dimens
 import com.seyedjafari.analogplus.phone.ui.theme.Elevation
+import com.seyedjafari.analogplus.phone.ui.theme.ProvideOuterDensity
 import com.seyedjafari.analogplus.phone.ui.theme.ScreenLayout
 import com.seyedjafari.analogplus.phone.ui.theme.Spacing
 import com.seyedjafari.analogplus.phone.ui.theme.rememberScreenLayout
@@ -45,53 +48,78 @@ import kotlinx.coroutines.delay
  * A dialog made of a [DialogText]: heading, paragraphs (and [extra] below them) and two buttons. In an upright window the
  * body scrolls and the buttons stay below it, so a large font or an open keyboard never hides them. In a short wide window
  * (a phone held sideways) there is no room for that: the whole dialog is one page that scrolls, buttons last, and it gives way
- * to the keyboard (see [DialogFrame]).
+ * to the keyboard (see [DialogFrame]). [destructive] draws the confirm button in the error colours.
  */
 @Composable
 private fun TextDialog(
     text: DialogText, confirmTag: String, cancelTag: String, onConfirm: () -> Unit, onCancel: () -> Unit,
-    confirmEnabled: Boolean = true, extra: @Composable ColumnScope.() -> Unit = {},
+    confirmEnabled: Boolean = true, destructive: Boolean = false, extra: @Composable ColumnScope.() -> Unit = {},
 ) {
     DialogFrame(
         title = stringResource(text.title), confirmLabel = stringResource(text.confirm), cancelLabel = stringResource(text.cancel),
         confirmTag = confirmTag, cancelTag = cancelTag, onConfirm = onConfirm, onCancel = onCancel, confirmEnabled = confirmEnabled,
+        destructive = destructive,
     ) {
         text.paragraphs.forEach { Text(uiTextResource(it), style = MaterialTheme.typography.bodyMedium) }
         extra()
     }
 }
 
-/** The shape of every dialog of the account flows; [body] is what is said between the heading and the buttons. */
+/**
+ * The shape of every dialog of the account flows; [body] is what is said between the heading and the buttons. [onDismiss] is
+ * what a tap outside or Back means (the cancel button's answer unless said otherwise). A dialog is a window of its own, so
+ * the density of the place that shows it is given back to everything drawn inside (see [ProvideOuterDensity]).
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DialogFrame(
     title: String, confirmLabel: String, cancelLabel: String, confirmTag: String, cancelTag: String,
-    onConfirm: () -> Unit, onCancel: () -> Unit, confirmEnabled: Boolean = true, body: @Composable ColumnScope.() -> Unit,
+    onConfirm: () -> Unit, onCancel: () -> Unit, onDismiss: () -> Unit = onCancel, confirmEnabled: Boolean = true,
+    destructive: Boolean = false, body: @Composable ColumnScope.() -> Unit,
 ) {
+    val outer = LocalDensity.current
     if (rememberScreenLayout() == ScreenLayout.SIDE_BY_SIDE) {
-        Dialog(onDismissRequest = onCancel, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            Surface(
-                modifier = Modifier.padding(Spacing.lg).widthIn(max = Dimens.DialogMaxWidth).fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = Elevation.raised,
-            ) {
-                Column(Modifier.verticalScroll(rememberScrollState()).padding(Spacing.xl), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                    Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
-                    body()
-                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm, Alignment.End), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                        SecondaryButton(cancelLabel, onCancel, Modifier.testTag(cancelTag))
-                        PrimaryButton(confirmLabel, onConfirm, Modifier.testTag(confirmTag), enabled = confirmEnabled)
+        Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            ProvideOuterDensity(outer) {
+                Surface(
+                    modifier = Modifier.padding(Spacing.lg).widthIn(max = Dimens.DialogMaxWidth).fillMaxWidth(),
+                    shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = Elevation.raised,
+                ) {
+                    // the page may be taller than the window: the fade at its edges says there is more
+                    Column(
+                        Modifier.verticalScrollWithFades(rememberScrollState(), AccountTags.DIALOG_SCROLL).padding(Spacing.xl),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                    ) {
+                        Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+                        body()
+                        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm, Alignment.End), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            SecondaryButton(cancelLabel, onCancel, Modifier.testTag(cancelTag))
+                            PrimaryButton(confirmLabel, onConfirm, Modifier.testTag(confirmTag), enabled = confirmEnabled, destructive = destructive)
+                        }
                     }
                 }
             }
         }
     } else {
-        AlertDialog(
-            onDismissRequest = onCancel,
-            title = { Text(title) },
-            text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.md)) { body() } },
-            confirmButton = { PrimaryButton(confirmLabel, onConfirm, Modifier.testTag(confirmTag), enabled = confirmEnabled) },
-            dismissButton = { SecondaryButton(cancelLabel, onCancel, Modifier.testTag(cancelTag)) },
-        )
+        // The M3 AlertDialog lays its buttons out one under the other when they are wide, and at a large font that row overlapped
+        // its own buttons; this is the same shape with a row that wraps: heading, a body that scrolls, buttons that stay below it.
+        Dialog(onDismissRequest = onDismiss) {
+            ProvideOuterDensity(outer) {
+                Surface(
+                    modifier = Modifier.widthIn(min = Dimens.DialogMinWidth, max = Dimens.DialogMaxWidth),
+                    shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = Elevation.raised,
+                ) {
+                    Column(Modifier.padding(Spacing.xl), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                        Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+                        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.md)) { body() }
+                        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm, Alignment.End), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            SecondaryButton(cancelLabel, onCancel, Modifier.testTag(cancelTag))
+                            PrimaryButton(confirmLabel, onConfirm, Modifier.testTag(confirmTag), enabled = confirmEnabled, destructive = destructive)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -138,8 +166,10 @@ fun EnterPassphraseDialog(
         onCancel = { state.clear(); onDismiss() },
         confirmEnabled = state.valid && !busy && until != null && remaining == 0L,
     ) {
+        if (enter.afterChange) Text(stringResource(R.string.account_enter_changed), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag(AccountTags.ENTER_CHANGED))
         PassphraseFields(state, error = line)
-        TertiaryButton(stringResource(EnterPassphraseText.FORGOT), { state.clear(); onForgot() }, Modifier.testTag(AccountTags.FORGOT))
+        // while a restore runs, the delete of the backup it is opening must not be asked for: it would queue behind it
+        TertiaryButton(stringResource(EnterPassphraseText.FORGOT), { state.clear(); onForgot() }, Modifier.testTag(AccountTags.FORGOT), enabled = !busy)
     }
 }
 
@@ -150,28 +180,35 @@ fun ConfirmDialog(confirmation: CloudDialog.Confirm, onConfirm: () -> Unit, onCa
         ConfirmKind.REPLACE_KEY -> AccountTags.REPLACE_CONFIRM to AccountTags.REPLACE_CANCEL
         ConfirmKind.REPLACE_BACKUP -> AccountTags.REPLACE_BACKUP_CONFIRM to AccountTags.REPLACE_BACKUP_CANCEL
     }
-    TextDialog(confirmation.text, confirmTag, cancelTag, onConfirm, onCancel)
+    TextDialog(confirmation.text, confirmTag, cancelTag, onConfirm, onCancel, destructive = true)
 }
 
 /** What a forgotten passphrase leads to. The words and the confirm button follow [forgotVariant] of the plan. */
 @Composable
-fun ForgotPassphraseDialog(forgot: CloudDialog.Forgot, onConfirm: () -> Unit, onBack: () -> Unit) {
+fun ForgotPassphraseDialog(forgot: CloudDialog.Forgot, busy: Boolean, onConfirm: () -> Unit, onBack: () -> Unit) {
     val variant = forgotVariant(forgot.plan) ?: return
     val confirmTag = if (variant == ForgotVariant.NEW_PASSPHRASE) AccountTags.RESET_NEW_PASSPHRASE else AccountTags.RESET_CONFIRM
-    TextDialog(forgotText(variant), confirmTag, AccountTags.RESET_CANCEL, onConfirm, onBack)
+    // only choosing a new passphrase is harmless; every other variant deletes the backup
+    TextDialog(
+        forgotText(variant), confirmTag, AccountTags.RESET_CANCEL, onConfirm, onBack,
+        confirmEnabled = !busy, destructive = variant != ForgotVariant.NEW_PASSPHRASE,
+    )
 }
 
 @Composable
 fun DeleteAccountDialog(busy: Boolean, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    TextDialog(deleteAccountText(), AccountTags.DELETE_CONFIRM, AccountTags.DELETE_CANCEL, onConfirm, onDismiss, confirmEnabled = !busy)
+    TextDialog(deleteAccountText(), AccountTags.DELETE_CONFIRM, AccountTags.DELETE_CANCEL, onConfirm, onDismiss, confirmEnabled = !busy, destructive = true)
 }
 
-/** "Use the design from another device?": the choice is the controller's to apply. */
+/**
+ * "Use the design from another device?": the choice is the controller's to apply. "Keep mine" is the filled button (it changes
+ * nothing here) and "Use theirs" the quiet one (it replaces the design being edited); a tap outside or Back means Keep mine.
+ */
 @Composable
 fun OfferDialog(offer: CurrentOffer, onUse: () -> Unit, onKeep: () -> Unit) {
     val words = offerText(offer)
     DialogFrame(
-        title = uiTextResource(words.title), confirmLabel = stringResource(words.use), cancelLabel = stringResource(words.keep),
-        confirmTag = AccountTags.OFFER_USE, cancelTag = AccountTags.OFFER_KEEP, onConfirm = onUse, onCancel = onKeep,
+        title = uiTextResource(words.title), confirmLabel = stringResource(words.keep), cancelLabel = stringResource(words.use),
+        confirmTag = AccountTags.OFFER_KEEP, cancelTag = AccountTags.OFFER_USE, onConfirm = onKeep, onCancel = onUse, onDismiss = onKeep,
     ) { Text(uiTextResource(words.body), style = MaterialTheme.typography.bodyMedium) }
 }
