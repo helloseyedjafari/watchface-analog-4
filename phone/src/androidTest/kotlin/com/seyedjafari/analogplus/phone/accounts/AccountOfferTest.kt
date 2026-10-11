@@ -73,7 +73,7 @@ class AccountOfferTest {
         rule.onNodeWithText("Use the design from Pixel 8?").assertExists()
         // both designs are named, and what "Use theirs" costs is said
         rule.onNodeWithText("Pixel 8 saved \"Night\". This phone is editing \"Ocean\".", substring = true).assertExists()
-        rule.onNodeWithText("Use theirs replaces \"Ocean\" here, and no copy of it is kept unless you saved it in My designs.", substring = true).assertExists()
+        rule.onNodeWithText("Use theirs replaces \"Ocean\" here: whatever you have not saved in My designs is lost.", substring = true).assertExists()
         // "Keep mine" changes nothing here and is the main button; "Use theirs" replaces the design being edited and is the quiet one
         val keep = rule.onNodeWithTag(AccountTags.OFFER_KEEP).fetchSemanticsNode().boundsInRoot
         val use = rule.onNodeWithTag(AccountTags.OFFER_USE).fetchSemanticsNode().boundsInRoot

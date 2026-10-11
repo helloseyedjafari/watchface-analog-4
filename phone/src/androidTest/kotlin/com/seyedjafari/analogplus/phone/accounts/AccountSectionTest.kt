@@ -13,7 +13,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
@@ -82,7 +84,7 @@ class AccountSectionTest {
     @Test fun signedOutExplainsTheBenefitAndWhatIsStoredAndOffersSignIn() {
         fixture(account = AccountState.SignedOut).show(rule)
         rule.onNodeWithText("Everything works without signing in.", substring = true).assertExists()
-        rule.onNodeWithText("The cloud stores your email address, your name and profile picture from your Google account, your designs", substring = true).assertExists()
+        rule.onNodeWithText("The cloud stores your email address, your name and the link to your profile picture from your Google account, your designs", substring = true).assertExists()
         rule.onNodeWithTag(AccountTags.SIGN_IN).assertIsEnabled().assertTextEquals("Sign in with Google")
         gone(AccountTags.EMAIL)
     }
@@ -208,6 +210,24 @@ class AccountSectionTest {
         gone(AccountTags.RESTORE)
     }
 
+    @Test fun theKeyboardsDoneKeyOnTheConfirmFieldSubmitsAGoodPassphraseAndDoesNothingForABadOne() {
+        val f = fixture()
+        f.show(rule)
+        waitForText("Signing key is not backed up")
+        click(AccountTags.BACK_UP)
+        type(AccountTags.PASSPHRASE, f.passphrase)
+        type(AccountTags.PASSPHRASE_CONFIRM, "something else entirely")
+        rule.onNodeWithTag(AccountTags.PASSPHRASE_CONFIRM).performImeAction()
+        rule.waitForIdle()
+        rule.onNodeWithTag(AccountTags.PASSPHRASE).assertExists()            // a mismatch is not submitted
+        assertEquals(null, f.remote.backupOf("u1"))
+        rule.onNodeWithTag(AccountTags.PASSPHRASE_CONFIRM).performTextClearance()
+        type(AccountTags.PASSPHRASE_CONFIRM, f.passphrase)
+        rule.onNodeWithTag(AccountTags.PASSPHRASE_CONFIRM).performImeAction()
+        waitForText("Signing key backed up (key $fpA)")
+        assertEquals(fpA, f.remote.backupOf("u1")!!.sealed.keyFingerprint)
+    }
+
     @Test fun whileTheBackupIsWrittenTheBusyLineShowsAndEveryButtonIsOff() {
         val f = fixture()
         f.gated.putGate = kotlinx.coroutines.CompletableDeferred()
@@ -288,13 +308,16 @@ class AccountSectionTest {
     @Test fun afterThreeWrongTriesTheDialogCountsDownAndTheButtonStaysOffUntilTheWaitIsOver() {
         val f = fixture(FakeKeySource(null))
         f.otherPhoneBacksUp(pemA)
+        f.readStepMs.set(7)                      // a running clock: every read of it is a little later than the one before
         f.show(rule)
         waitForText("A backup exists; this phone has no key yet")
         click(AccountTags.RESTORE)
         waitForTag(AccountTags.PASSPHRASE)
         repeat(3) { wrongTry(f, "wrong guess $it") }
         waitForText("You can try again in")
-        // the countdown is read out when it first shows (a moment later, in the same whole second, it still is); never at every tick
+        // the countdown is read out when it first shows, and the first value is "5 seconds" (the single clock reading that makes the first
+        // remaining wait the wait itself is pinned by CloudDecisionsTest: the screen's own tick re-reads the clock before the first frame)
+        waitForText("You can try again in 5 seconds")
         f.clock.addAndGet(40)
         rule.waitForIdle()
         assertEquals(LiveRegionMode.Polite, rule.onNodeWithTag(AccountTags.PASSPHRASE_ERROR).fetchSemanticsNode().config[SemanticsProperties.LiveRegion])
@@ -681,5 +704,42 @@ class AccountSectionTest {
         rule.onNodeWithTag(com.seyedjafari.analogplus.phone.Tags.RESET_KEY_BUTTON).performScrollTo().performClick()
         rule.onNodeWithTag(com.seyedjafari.analogplus.phone.Tags.RESET_KEY_CONFIRM).performClick()
         waitForText("A backup exists; this phone has no key yet")
+    }
+
+    private fun keepMyAccountLabelColour(dark: Boolean) {
+        val f = fixture(pending = true)
+        f.show(rule, dark = dark)
+        waitForTag(AccountTags.KEEP_ACCOUNT)
+        val scheme = if (dark) com.seyedjafari.analogplus.phone.ui.theme.DarkScheme else com.seyedjafari.analogplus.phone.ui.theme.LightScheme
+        assertEquals("dark=$dark", scheme.onErrorContainer, rule.onNodeWithTag(AccountTags.KEEP_ACCOUNT).colourOfText())
+    }
+
+    @Test fun theKeepMyAccountLabelIsDrawnInTheColourMadeForTextOnTheErrorContainerInTheLightTheme() = keepMyAccountLabelColour(dark = false)
+
+    @Test fun theKeepMyAccountLabelIsDrawnInTheColourMadeForTextOnTheErrorContainerInTheDarkTheme() = keepMyAccountLabelColour(dark = true)
+
+    @Test fun theDeleteQuestionSaysThatOtherPhonesAreSignedOutAndNothingMoreAndAnOfflineOneStaysSignedIn() {
+        val f = fixture()
+        f.show(rule)
+        click(AccountTags.DELETE)
+        waitForTag(AccountTags.DELETE_CONFIRM)
+        rule.onNodeWithText("Your other phones are signed out, and nothing more, the next time they reach the cloud; their designs and signing keys stay too.", substring = true).assertExists()
+        rule.onNodeWithText("A phone that is offline stays signed in until it reconnects.", substring = true).assertExists()
+        click(AccountTags.DELETE_CANCEL)
+    }
+
+    @Test fun theKickedOutNoticeSaysThatThisAccountWasDeletedOnAnotherPhoneThatThisPhoneWasSignedOutAndWhatIsKept() {
+        val f = fixture(account = AccountState.SignedOut)
+        f.show(rule) {
+            com.seyedjafari.analogplus.phone.ui.account.CloudSectionContent(
+                AccountsUi(AccountsAvailability.AVAILABLE, AccountState.SignedOut, SyncStatus.Off, BackupStatus.SignedOut, Busy.NONE, Notice.SignedOutAccountDeleted, null),
+                PINNED_NOW, null, com.seyedjafari.analogplus.phone.ui.account.CloudCallbacks.None,
+            )
+        }
+        rule.onNodeWithTag(AccountTags.NOTICE).assertTextContains(
+            "This account was deleted on another phone, so this phone was signed out. The designs and the signing key on this phone are kept.",
+        )
+        rule.onNodeWithTag(AccountTags.SIGN_IN).assertExists()
+        rule.onNodeWithTag(AccountTags.NOTICE_DISMISS).assertExists()
     }
 }

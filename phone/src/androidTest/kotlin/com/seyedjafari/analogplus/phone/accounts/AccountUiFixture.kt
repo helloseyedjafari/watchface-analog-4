@@ -81,6 +81,9 @@ internal class AccountUiFixture(
     val gated = GatedRemote(remote)
     val sync = FakeCloudSync()
     val clock = AtomicLong(PINNED_NOW)
+
+    /** Milliseconds the screen's clock moves on at every READ (0: it stands still). A real clock runs between two reads; this makes a test see that gap. */
+    val readStepMs = AtomicLong(0)
     val vault = KeyVault(iterations = 1_000, minAcceptedIterations = 1_000)
     val marks = DeletionMarks(MemoryKeyValueStore())
     val passphrase = "correct horse battery staple"
@@ -133,7 +136,7 @@ internal class AccountUiFixture(
         }
         CompositionLocalProvider(
             LocalAnimationScale provides 0f, LocalDensity provides Density(base.density, fontScale ?: base.fontScale),
-            LocalConfiguration provides themed, LocalAccounts provides controller, LocalNowMs provides { clock.get() },
+            LocalConfiguration provides themed, LocalAccounts provides controller, LocalNowMs provides { clock.getAndAdd(readStepMs.get()) },
         ) {
             AnalogTheme {
                 PinnedWindow(window) {
@@ -154,4 +157,38 @@ internal fun SemanticsNodeInteraction.fontScaleOfText(): Float {
     val action = fetchSemanticsNode().config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action
     check(action != null && action(results) && results.isNotEmpty()) { "the node has no text layout" }
     return results.first().layoutInput.density.fontScale
+}
+
+/** The colour a text node was drawn in (the label of a button on a coloured container, say). */
+internal fun SemanticsNodeInteraction.colourOfText(): androidx.compose.ui.graphics.Color {
+    val results = mutableListOf<TextLayoutResult>()
+    val action = fetchSemanticsNode().config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action
+    check(action != null && action(results) && results.isNotEmpty()) { "the node has no text layout" }
+    return results.first().layoutInput.style.color
+}
+
+/** Top of the keyboard's window on the screen, or null when the device shows none (a hardware keyboard setting). */
+internal fun keyboardTopOnScreen(): Int? = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
+    .also { ua -> ua.serviceInfo = ua.serviceInfo.apply { flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS } }
+    .windows
+    .firstOrNull { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+    ?.let { val r = android.graphics.Rect(); it.getBoundsInScreen(r); r.top }
+
+/**
+ * Waits until the on-screen keyboard has come up and settled. A dialog shrinks by the keyboard's inset frame by frame while the
+ * keyboard slides in, and Compose's idling does not wait for that animation, so a test that scrolls first races it. Returns
+ * after at most [timeoutMs] also when no keyboard shows (nothing to wait for then).
+ */
+internal fun ComposeContentTestRule.waitForTheKeyboardToSettle(timeoutMs: Long = 5_000) {
+    val end = System.currentTimeMillis() + timeoutMs
+    while (keyboardTopOnScreen() == null && System.currentTimeMillis() < end) Thread.sleep(50)
+    var last = -1
+    var steady = 0
+    while (steady < 4 && System.currentTimeMillis() < end) {
+        val top = keyboardTopOnScreen() ?: -1
+        steady = if (top == last) steady + 1 else 0
+        last = top
+        Thread.sleep(100)
+    }
+    waitForIdle()
 }

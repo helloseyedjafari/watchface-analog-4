@@ -94,14 +94,12 @@ class AccountLayoutTest(private val window: WindowDp, private val fontScale: Flo
         // pictures) would show a font scale nobody tested
         assertEquals(fontScale, rule.onNodeWithText("Back up your signing key").fontScaleOfText())
         rule.onNodeWithTag(AccountTags.PASSPHRASE).performTextInput(f.passphrase)
+        // typing opens the real keyboard and the dialog shrinks by its inset while it slides in. Scrolling before it has settled raced it
+        // (the second field was in view, nothing scrolled, and the shrinking body then left it out): wait for the keyboard first
+        rule.waitForTheKeyboardToSettle()
         rule.onNodeWithTag(AccountTags.PASSPHRASE_CONFIRM).performScrollTo()
-        rule.waitForIdle()                       // the scroll has settled (the page fades its edges on an offscreen layer)
-        runCatching { rule.onNodeWithTag(AccountTags.PASSPHRASE_CONFIRM).assertIsDisplayed() }.onFailure {
-            val c = rule.onNodeWithTag(AccountTags.PASSPHRASE_CONFIRM).fetchSemanticsNode().boundsInWindow
-            val page = rule.onNodeWithTag(AccountTags.DIALOG_SCROLL).fetchSemanticsNode().boundsInWindow
-            throw AssertionError("confirm $c page $page: ${it.message}")
-        }
-        rule.onNodeWithTag(AccountTags.PASSPHRASE_CONFIRM).performTextInput(f.passphrase)
+        rule.waitForIdle()
+        rule.onNodeWithTag(AccountTags.PASSPHRASE_CONFIRM).assertIsDisplayed().performTextInput(f.passphrase)
         reach(AccountTags.PASSPHRASE_SUBMIT)
         rule.onNodeWithTag(AccountTags.PASSPHRASE_SUBMIT).assertIsEnabled()
         reach(AccountTags.PASSPHRASE_CANCEL)

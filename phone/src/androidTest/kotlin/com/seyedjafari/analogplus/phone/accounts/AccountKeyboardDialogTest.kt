@@ -40,11 +40,7 @@ import org.junit.runners.Parameterized
 class AccountKeyboardDialogTest(private val landscape: Boolean) {
     @get:Rule val rule = createEmptyComposeRule()
 
-    private fun keyboardTop(): Int? = InstrumentationRegistry.getInstrumentation().uiAutomation
-        .also { ua -> ua.serviceInfo = ua.serviceInfo.apply { flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS } }
-        .windows
-        .firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
-        ?.let { val r = Rect(); it.getBoundsInScreen(r); r.top }
+    private fun keyboardTop(): Int? = keyboardTopOnScreen()
 
     @Test fun theButtonsAreOnScreenAboveTheKeyboardAtFontScale2() {
         ActivityScenario.launch(ComponentActivity::class.java).use { scenario ->

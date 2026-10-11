@@ -307,7 +307,7 @@ class AccountsEndToEndTest {
                     PinnedWindow(PHONE_PORTRAIT) {
                         Column(Modifier.fillMaxSize().testTag(SHELL_WINDOW_TAG).verticalScroll(rememberScrollState()).padding(Spacing.lg)) {
                             AccountSection()
-                            AccountOfferHost()
+                            AccountOfferHost(localDesignName = { phones.first { it.controller === shown }.current.get().name })
                         }
                     }
                 }
@@ -556,8 +556,8 @@ class AccountsEndToEndTest {
         waitForTag(AccountTags.OFFER_USE)
         // the device label is the other phone's model; the question names both designs: the other device's and the one edited here
         waitForText(text(R.string.account_offer_title, AccountsFactory.deviceLabel(context)))
-        // this test's offer host is not told the name of the design edited here (the app passes state.design.name), so it reads "(no name)"
-        waitForText(text(R.string.account_offer_body, AccountsFactory.deviceLabel(context), editingOnPhone1.name, text(R.string.common_no_name)))
+        // the host is told the name of the design edited on the phone shown (the app passes state.design.name): phone 2's
+        waitForText(text(R.string.account_offer_body, AccountsFactory.deviceLabel(context), editingOnPhone1.name, editingOnPhone2.name))
         click(AccountTags.OFFER_USE)
         waitUntilGone(AccountTags.OFFER_USE)
         await("the design of the other device to be applied") { phone2.current.get() == editingOnPhone1 }

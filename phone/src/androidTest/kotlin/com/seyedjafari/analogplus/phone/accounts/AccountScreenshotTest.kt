@@ -106,6 +106,7 @@ class AccountScreenshotTest(private val variant: Variant) {
         Scene("card-not-configured") { Card(ui(BackupStatus.SignedOut, AccountState.SignedOut, SyncStatus.Off, availability = AccountsAvailability.NOT_CONFIGURED)) },
         Scene("card-signed-out") { Card(ui(BackupStatus.SignedOut, AccountState.SignedOut, SyncStatus.Off)) },
         Scene("card-signed-out-failed") { Card(ui(BackupStatus.SignedOut, AccountState.Failed(AccountFailure.NO_GOOGLE_ACCOUNT, "NoCredentialException: no credentials available"), SyncStatus.Off)) },
+        Scene("card-signed-out-account-deleted") { Card(ui(BackupStatus.SignedOut, AccountState.SignedOut, SyncStatus.Off, notice = Notice.SignedOutAccountDeleted)) },
         Scene("card-signing-in") { Card(ui(BackupStatus.SignedOut, AccountState.SigningIn, SyncStatus.Off)) },
         Scene("card-not-backed-up") { Card(ui(BackupStatus.NotBackedUp)) },
         Scene("card-same-key") { Card(ui(backedUp(KeyMatch.SAME), notice = Notice.KeyBackedUp(cloudFp))) },

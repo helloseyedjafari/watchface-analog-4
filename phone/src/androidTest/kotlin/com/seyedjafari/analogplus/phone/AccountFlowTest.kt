@@ -84,4 +84,21 @@ class AccountFlowTest {
         rule.onNodeWithTag(Tags.RESET_KEY_CONFIRM).assertIsDisplayed()
         rule.onNodeWithText("Cancel").assertIsDisplayed()
     }
+
+    @Test fun atFontScale2TheLongResetQuestionOfABuildWithAccountsShowsThatItGoesOn() {
+        // in a build with accounts the question has a first paragraph about the backup: the steps for the watch are far below, and the fade says so
+        com.seyedjafari.analogplus.phone.OnboardingConfig.accountsAvailable = true
+        try {
+            show(fontScale = 2f)
+            rule.onNodeWithTag(Tags.RESET_KEY_BUTTON).performScrollTo().performClick()
+            rule.onNodeWithText("Reset the signing key?").assertIsDisplayed()
+            assertEquals(
+                com.seyedjafari.analogplus.phone.ui.onboarding.ScrollHint.MORE_BELOW,
+                rule.onNodeWithTag(com.seyedjafari.analogplus.phone.ui.account.AccountTags.DIALOG_SCROLL).fetchSemanticsNode().config[com.seyedjafari.analogplus.phone.ui.onboarding.ScrollHintKey],
+            )
+            rule.onNodeWithTag(Tags.RESET_KEY_CONFIRM).assertIsDisplayed()
+        } finally {
+            com.seyedjafari.analogplus.phone.OnboardingConfig.accountsAvailable = false
+        }
+    }
 }

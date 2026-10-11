@@ -74,17 +74,31 @@ class AccountScreenAccountsTest {
         rule.onNodeWithTag(AccountTags.RESTORE).performScrollTo().assertIsDisplayed()
     }
 
-    @Test fun theSigningKeyCardPointsToTheBackupFirstOnlyInABuildWithAccounts() {
+    @Test fun theSigningKeyCardPointsToTheBackupFirstInABuildWithAccountsAndTheSetupCardNamesTheBackupStep() {
         val f = AccountUiFixture().also { fixture = it }
         com.seyedjafari.analogplus.phone.OnboardingConfig.accountsAvailable = true
         try {
-            f.show(rule, scrolls = false) { AccountScreen(keyStoreFactory = keyStoreFactory) }
+            f.show(rule, scrolls = false) { AccountScreen(keyStoreFactory = keyStoreFactory, onRunSetupAgain = {}) }
             rule.onNodeWithText("first try Restore signing key from backup", substring = true).performScrollTo().assertIsDisplayed()
+            // one sentence for a damaged key and for a key the watch no longer accepts
+            rule.onNodeWithText("If the app says the key is damaged, or the watch rejects updates after a reinstall or on a new phone", substring = true).assertExists()
+            rule.onNodeWithText("Go through the welcome steps again: pair your watch, the permission, a starting template and, if you like, signing in", substring = true)
+                .performScrollTo().assertIsDisplayed()
             rule.onNodeWithTag(Tags.RESET_KEY_BUTTON).performScrollTo().performClick()
             rule.onNodeWithText("Restore signing key from backup in Backup and sync above instead of making a new one", substring = true).assertExists()
-            rule.onNodeWithText("Go through the welcome steps again: pair your watch, the permission, a starting template and, if you like, signing in", substring = true).assertDoesNotExist()
         } finally {
             com.seyedjafari.analogplus.phone.OnboardingConfig.accountsAvailable = false
         }
+    }
+
+    @Test fun theSigningKeyCardAndTheSetupCardSayNothingOfABackupInABuildWithoutAccounts() {
+        val f = AccountUiFixture().also { fixture = it }
+        com.seyedjafari.analogplus.phone.OnboardingConfig.accountsAvailable = false
+        f.show(rule, scrolls = false) { AccountScreen(keyStoreFactory = keyStoreFactory, onRunSetupAgain = {}) }
+        rule.onNodeWithText("Go through the welcome steps again: pair your watch, the permission and a starting template.").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("Every face is signed with a key stored in this app. If the app complains that the key is damaged", substring = true).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("Restore signing key from backup in Backup and sync above", substring = true).assertDoesNotExist()
+        rule.onNodeWithTag(Tags.RESET_KEY_BUTTON).performScrollTo().performClick()
+        rule.onNodeWithText("restore it with Restore signing key from backup", substring = true).assertDoesNotExist()
     }
 }
