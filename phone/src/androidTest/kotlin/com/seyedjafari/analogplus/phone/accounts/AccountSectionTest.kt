@@ -294,6 +294,11 @@ class AccountSectionTest {
         waitForTag(AccountTags.PASSPHRASE)
         repeat(3) { wrongTry(f, "wrong guess $it") }
         waitForText("You can try again in")
+        // the countdown is read out when it first shows and not again at every tick
+        assertEquals(LiveRegionMode.Polite, rule.onNodeWithTag(AccountTags.PASSPHRASE_ERROR).fetchSemanticsNode().config[SemanticsProperties.LiveRegion])
+        f.clock.addAndGet(2_000)
+        waitForText("You can try again in 3 seconds")
+        assertFalse(rule.onNodeWithTag(AccountTags.PASSPHRASE_ERROR).fetchSemanticsNode().config.contains(SemanticsProperties.LiveRegion))
         type(AccountTags.PASSPHRASE, f.passphrase)
         rule.onNodeWithTag(AccountTags.PASSPHRASE_SUBMIT).assertIsNotEnabled()
         // the limiter and the screen share the pinned clock: 6 seconds later the wait is over
@@ -609,7 +614,7 @@ class AccountSectionTest {
         val notice = rule.onNodeWithTag(AccountTags.NOTICE).fetchSemanticsNode()
         assertTrue("the notice (${notice.boundsInRoot.top}) is under the backup pill (${pills.bottom})", notice.boundsInRoot.top >= pills.bottom)
         assertEquals(LiveRegionMode.Polite, notice.config[SemanticsProperties.LiveRegion])
-        rule.onNodeWithContentDescription("Dismiss this message").assertExists()
+        rule.onNodeWithContentDescription("OK, dismiss this message").assertExists()
     }
 
     @Test fun theScreensOwnNoteDoesNotSurviveASignOut() {

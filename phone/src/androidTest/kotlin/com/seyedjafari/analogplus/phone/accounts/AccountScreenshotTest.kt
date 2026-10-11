@@ -154,7 +154,7 @@ class AccountScreenshotTest(private val variant: Variant) {
             dialogCard()
             ConfirmDialog(CloudDialog.Confirm(ConfirmKind.REPLACE_BACKUP, replaceBackupText(cloudFp, phoneFp), CloudDialog.None), {}, {})
         },
-        Scene("dlg-reask-gone") { dialogCard(); ConfirmDialog(CloudDialog.Confirm(ConfirmKind.REPLACE_BACKUP, reAskGoneText(), CloudDialog.None), {}, {}) },
+        Scene("dlg-reask-gone") { dialogCard(); ConfirmDialog(CloudDialog.Confirm(ConfirmKind.REPLACE_BACKUP, reAskGoneText(), CloudDialog.None, destructive = false), {}, {}) },
         Scene("dlg-reask-same") { dialogCard(); ConfirmDialog(CloudDialog.Confirm(ConfirmKind.REPLACE_BACKUP, reAskSameText(cloudFp), CloudDialog.None), {}, {}) },
         Scene("dlg-forgot-new") { dialogCard(); ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.AlreadyHaveThisKey(cloudFp), "w1"), busy = false, onConfirm = {}, onBack = {}) },
         Scene("dlg-forgot-replace-backup") { dialogCard(); ForgotPassphraseDialog(CloudDialog.Forgot(RestorePlan.ReplaceLocal(phoneFp, cloudFp), "w1"), busy = false, onConfirm = {}, onBack = {}) },
