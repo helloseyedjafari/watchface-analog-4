@@ -1399,10 +1399,24 @@ class SyncEngineTest {
     private class FailingPuts(val inner: FakeRemoteStore) : RemoteStore by inner {
         var failure: RemoteException? = null
         var attempts = 0
+        var successes = 0
+
+        /** Makes the push of the design in the editor fail (the saved designs are fine). */
+        var currentFailure: RemoteException? = null
+
+        /** When set, the second successful write waits for it: the pass is then in the middle of its upload. */
+        var holdSecond: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+
+        override suspend fun putCurrent(uid: String, designJson: String, deviceId: String, deviceLabel: String): RemoteCurrent {
+            currentFailure?.let { throw it }
+            return inner.putCurrent(uid, designJson, deviceId, deviceLabel)
+        }
+
         override suspend fun putDesign(uid: String, id: String, name: String, designJson: String, state: DesignState, schema: Int): RemoteDesign {
             attempts++
             failure?.let { throw it }
-            return inner.putDesign(uid, id, name, designJson, state, schema)
+            if (successes == 1) holdSecond?.await()
+            return inner.putDesign(uid, id, name, designJson, state, schema).also { successes++ }
         }
     }
 
@@ -1428,7 +1442,10 @@ class SyncEngineTest {
         assertTrue("the status must not move: $seen", seen.isEmpty())
         cloud.failure = null                                      // the cloud works again
         advanceTimeBy(400_000); runCurrent()
-        assertTrue("no flicker on the way to synced: $seen", seen.none { it == SyncStatus.Syncing })
+        // the heal moves data: it shows "syncing" once, from its first write on, and ends synced (never the old error again)
+        assertEquals("syncing once, then synced: $seen", 1, seen.count { it == SyncStatus.Syncing })
+        assertEquals(SyncStatus.Syncing, seen.first())
+        assertTrue(seen.last() is SyncStatus.Idle)
         assertTrue(a.engine.status.value is SyncStatus.Idle)
         assertEquals(1, remote.designsOf("u1").size)
     }
@@ -1481,5 +1498,54 @@ class SyncEngineTest {
         a.store.saveNamed("Day", day)                            // and now the person edits: the pass is theirs
         advanceTimeBy(2_500); runCurrent()                        // (the edit restarts the debounce)
         assertTrue("an edit's pass shows syncing: $seen", seen.contains(SyncStatus.Syncing))
+    }
+
+    @Test fun aHealingRetryShowsSyncingFromItsFirstWriteOnNotTheOldErrorForTheWholeUpload() = runTest {
+        val remote = FakeRemoteStore()
+        val cloud = FailingPuts(remote).also { it.failure = RemoteException(RemoteErrorKind.OFFLINE, "offline") }
+        val a = phone(remote, "a", engineRemote = cloud)
+        a.store.saveNamed("Night", night); a.store.saveNamed("Day", day)
+        a.engine.start("u1"); runCurrent()
+        assertEquals(SyncStatus.Offline, a.engine.status.value)
+        cloud.failure = null
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>().also { cloud.holdSecond = it }
+        advanceTimeBy(32_000); runCurrent()                       // the timer's pass uploads the first design and waits on the second
+        assertEquals("the first write went through: data is moving", SyncStatus.Syncing, a.engine.status.value)
+        gate.complete(Unit); runCurrent()
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+        assertEquals(2, remote.designsOf("u1").size)
+    }
+
+    @Test fun aQuietRetryThatFailsBeforeAnyWriteStillShowsNothingNew() = runTest {
+        val remote = FakeRemoteStore()
+        val cloud = FailingPuts(remote).also { it.failure = RemoteException(RemoteErrorKind.OFFLINE, "offline") }
+        val a = phone(remote, "a", engineRemote = cloud)
+        a.store.saveNamed("Night", night); a.store.saveNamed("Day", day)
+        a.engine.start("u1"); runCurrent()
+        val seen = recordStatuses(a)
+        (seen as MutableList).clear()
+        advanceTimeBy(100_000); runCurrent()
+        assertTrue("$seen", seen.isEmpty())
+    }
+
+    @Test fun aPassForReturningToTheForegroundIsNotQuietEvenIfTheTimerHadAskedForOne() = runTest {
+        // the failing push is the one of the design in the editor: the saved designs are in sync, so the listeners that start
+        // again on the way back to the front have nothing to do, and the pass under test is the loop's
+        val remote = FakeRemoteStore()
+        val cloud = FailingPuts(remote).also { it.currentFailure = RemoteException(RemoteErrorKind.OFFLINE, "offline") }
+        val a = phone(remote, "a", engineRemote = cloud)
+        a.current = night
+        a.engine.start("u1"); runCurrent()
+        a.engine.onCurrentSaved(night, ChangeOrigin.USER)
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(SyncStatus.Offline, a.engine.status.value)
+        val seen = recordStatuses(a)
+        (seen as MutableList).clear()
+        advanceTimeBy(29_500); runCurrent()                       // the timer (30 s after the failed pass at 2 s) fired; its pass waits out the debounce
+        assertTrue("the timer's own pass is quiet: $seen", seen.isEmpty())
+        a.engine.setForeground(false)
+        a.engine.setForeground(true)                              // back in front: this pass is for that, not for the timer
+        advanceTimeBy(3_000); runCurrent()
+        assertTrue("a pass for the foreground shows syncing: $seen", seen.contains(SyncStatus.Syncing))
     }
 }

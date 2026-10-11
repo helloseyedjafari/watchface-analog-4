@@ -61,8 +61,9 @@ import kotlinx.coroutines.withTimeout
  *
  * Status during retries: [SyncStatus.Syncing] means a pass that is moving data because of something that just happened
  * (the first pass of a session, [syncNow], an edit). A pass that only the backoff timer started ([QuietPass]) leaves the
- * status as it was (Offline, sign-in needed, quota) until it ends in a result, so a phone that stays offline does not
- * flicker between "offline" and "syncing" every half minute.
+ * status as it was (Offline, sign-in needed, quota) until it ends in a result or until its first write goes through (then
+ * data is moving and it shows "syncing"), so a phone that stays offline does not flicker between "offline" and "syncing"
+ * every half minute. The "quiet" flag the timer sets is reset when the session ends and by any other reason for a pass.
  */
 class SyncEngine(
     private val store: Store,
@@ -220,6 +221,7 @@ class SyncEngine(
         uid = null
         bound?.complete(Unit)   // lets a caller of syncNow() waiting for the start go; it then sees it is signed out
         bound = null
+        quietNext.set(false)   // what the timer asked for belongs to the session that is over
         lastRemoteSignature = null
         lastPushedCurrent = null
         pendingCurrent.set(null)
@@ -584,6 +586,7 @@ class SyncEngine(
             }
             throw e
         }
+        noteProgress()
         currentSync = CurrentSync.IN_SYNC
         lastPushedCurrent = d
         withContext(NonCancellable + io) { journal.markCurrentPushed(p.stamp) }   // only for the save that went up
@@ -668,8 +671,22 @@ class SyncEngine(
      * A write of a saved design. Counted in [writeSeq] only when it succeeded: that is what makes the cloud send a fresher
      * list (a failed write changes nothing, and the current design is not in that list at all).
      */
-    private suspend fun designWrite(payloadChars: Int, block: suspend () -> RemoteDesign): RemoteDesign =
-        write(payloadChars, block).also { writeSeq.incrementAndGet() }
+    private suspend fun designWrite(payloadChars: Int, block: suspend () -> RemoteDesign): RemoteDesign {
+        val written = write(payloadChars, block)
+        writeSeq.incrementAndGet()
+        noteProgress()
+        return written
+    }
+
+    /**
+     * A write of a quiet pass (see [QuietPass]) went through: data is moving after all, so from here the pass shows
+     * "syncing" until it has its result, instead of the old error for the whole upload.
+     */
+    private suspend fun noteProgress() {
+        if (currentCoroutineContext()[QuietPass] == null) return
+        val id = uid ?: return
+        setStatus(id, SyncStatus.Syncing)
+    }
 
     /** A cloud call; no answer within [timeoutMs] is [RemoteErrorKind.OFFLINE] (the retry then asks again). */
     private suspend fun <T> call(timeoutMs: Long = callTimeoutMs, block: suspend () -> T): T = try {
@@ -732,7 +749,7 @@ class SyncEngine(
      * so the pass does not show "syncing" ([QuietPass]).
      */
     private fun recover(quiet: Boolean = false) {
-        if (quiet) quietNext.set(true)
+        quietNext.set(quiet)   // a pass for any other reason (back in the foreground, say) is not quiet, whatever a timer asked before
         ensureListeners()
         trigger?.trySend(Unit)
     }

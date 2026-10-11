@@ -38,7 +38,8 @@ sealed interface SyncStatus {
 
     /**
      * A pass is moving data because of something that just happened: the first pass of a sign-in, a "sync now", an edit.
-     * A retry that only the backoff timer started leaves the status as it was (offline, sign-in needed, quota) until it ends.
+     * A retry that only the backoff timer started leaves the status as it was (offline, sign-in needed, quota) until it ends
+     * or its first write goes through.
      */
     data object Syncing : SyncStatus
 
