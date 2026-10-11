@@ -5,6 +5,10 @@ Google sign-in or a release build, and it is not legal advice. Fill in before pu
 **[OWNER: contact email]**, **[OWNER: Firestore location chosen in owner-prerequisites item 5, e.g. Europe (eur3)]**,
 **[OWNER: URL of the account deletion page]**, **[OWNER: date]**. Remove this paragraph when you publish.
 
+Code check before publishing: the part of "How long we keep it, and deleting it" that says other signed-in phones are signed out when
+an account is deleted describes the kill-switch design (`.superpowers/sdd/2026-10-09-accounts-sync/kill-switch-spec.md`). It was not in
+the code at e0fd3c7. Check that it is built, and reword that part to what the app really does, before you publish.
+
 Analog Plus is a watch face builder for Wear OS. The app works completely without an account. Signing in is optional. It adds
 two things: your saved designs are kept in the cloud so they follow you to other phones, and the key that signs your watch face
 can be backed up (encrypted) so a new phone can keep updating the face on your watch.
@@ -20,7 +24,7 @@ If you sign in with Google, the following is stored in the cloud:
 | Your email address, an account id (uid), your Google name and the link to your Google profile picture, all sent by Google when you sign in | To know which cloud data is yours | Firebase Authentication (Google) |
 | Your saved designs: the name and the design settings. A saved design carries no background photo | To keep your designs on all your devices | Cloud Firestore (Google), **[OWNER: location]** |
 | A short record for each saved design you delete or rename: its old name, a "deleted" flag and the time, with no design content. It stays until you delete your account (see below) | So your other devices learn that the design is gone | Cloud Firestore |
-| The design you are editing now, with its background photo if it has one (shrunk, see below), the time, a random id of this app installation and the model name of your phone (for example "Pixel 8") | To offer "use the design from another device" | Cloud Firestore |
+| The design you are editing now, with its background photo if it has one (shrunk, see below), the time, a random id of this app installation and the name of your phone (see below) | To offer "use the design from another device" | Cloud Firestore |
 | Your signing key, **encrypted on your phone with a passphrase only you know**, and with it the settings needed to open it again (method name, iteration count, salt, nonce, format version), a short fingerprint of the key (16 hex characters of its hash), a random write id and the time of the write | So a replacement phone can keep updating your watch face | Cloud Firestore |
 | An attestation that the request comes from the genuine app | To keep other programs out of the database | Firebase App Check with Google Play Integrity |
 
@@ -32,15 +36,26 @@ Like any Google service, Firebase receives technical data that comes with a netw
 creates a Firebase installation id for the app. We do not use these; Google processes them to run the service. See Google's
 Firebase privacy information.
 
+**The name of your phone.** Other phones of yours are shown which phone a design came from. That name is the device name you set in
+Android Settings (About phone, Device name), or the phone's model when no name is set. It is free text and **can contain your own
+name**, for example "Sara's phone". The app cleans it (control characters removed, white space collapsed, at most 40 characters) and
+stores it with the design you are editing. When two phones that never synced both have a saved design with the same name but
+different content, both are kept and the copy is named after a phone, for example "Night (Sara's phone)". That is the name of a
+saved design: it is stored in the cloud and shown on your devices, and it stays in the record of the design if you later delete it.
+The app reads the device name without a special permission. You can change it in Settings.
+
 **Deleted and renamed designs.** When you delete or rename a saved design, a record of the old name stays in the cloud: the
 name, a "deleted" flag and the time, with no design content. It stays until you delete your account. We keep it because your
-other devices need it to learn that the design is gone, and we do not remove it earlier. The design's id in the cloud is also
-computed from its name.
+other devices need it to learn that the design is gone, and we have chosen not to remove it earlier. It is the only part of a
+deleted design that stays. The design's id in the cloud is also computed from its name.
 
-**Background photos.** Only the design you are editing is uploaded with its photo. Saved designs have no photo, on your phone or
-in the cloud. The photo is shrunk before it is uploaded: the longest side is at most 512 pixels, it is saved as a JPEG, and the
-app aims for about 300 KB. A photo that is already that small is uploaded as it is. The original stays on your phone. When you
-use the design from another device, you get the shrunk photo. If a photo cannot be read, the design you are editing is
+**Background photos.** The background photo you pick for the design you are editing is uploaded with that design. It is the only
+personal photo that leaves your phone, and it shows whatever is in the picture. Saved designs have no photo, on your phone or in
+the cloud. The photo is shrunk before it is uploaded: the longest side is at most 512 pixels, it is saved as a JPEG, and the app
+aims for about 300 KB. The hidden data in the file is removed before upload, including from a photo that is already that small:
+EXIF (date, camera, GPS location), XMP, captions and anything stored after the end of the picture are cut out without re-encoding
+the image, and a photo that its EXIF turns is saved upright without it. The original stays on your phone. When you use the design
+from another device, you get the shrunk photo. If a photo cannot be read, the design you are editing is
 uploaded without it (with a plain background). A design that is still too large for the cloud after shrinking (about 900 000
 bytes) is not synced and stays on that phone. At most 200 saved designs are synced.
 
@@ -85,9 +100,11 @@ off, the app remembers it and offers **Finish deleting** or **Keep my account**;
 
 Without the app: see **[OWNER: URL of the account deletion page]**, or write to **[OWNER: contact email]**.
 
-If another phone is still signed in to the same account, sign it out first. That phone keeps a valid sign-in for up to an hour
-after the account is deleted, and the app on it cannot tell that the account is gone. An edit made on it in that time is still
-uploaded and stays in the cloud although the account is deleted. The app does not stop this. Write to us and we remove it.
+When the deletion starts, the cloud marks the account as deleted first, and from then on it refuses every new write from
+your other phones. Each other phone that is signed in to the account is signed out of it the next time it checks: while its app is
+open and syncing, or when its next sync is refused. It keeps its local designs and its signing key. This is a sign-out inside the
+app, not a cancellation of the sign-in itself: the sign-in token that Google issued to that phone stays valid until it expires
+(up to an hour) and cannot be cancelled from your phone. The cloud simply has no data left for it and accepts nothing from it.
 
 Signing out only stops syncing. Your cloud data stays until you delete it. Google may keep backup copies of its databases for
 a limited time after deletion, on its own schedule.
@@ -110,12 +127,15 @@ Changes are published here with a new date. Last updated: **[OWNER: date]**.
 ## Appendix: Google Play Data safety form (answers for the signed-in features)
 
 Written from the code. Check each line against Firebase's own data disclosures (Authentication, Firestore, App Check) before
-submitting, and again whenever the app starts collecting something new. The text the app shows before signing in (the Account card) says: "The cloud stores your email address, your name and profile
-picture from your Google account, your designs (the names of designs you delete or rename are kept until you delete your account),
-the encrypted backup of your signing key, the model of your phone and a random device ID. You can delete all of it at any
-time." This policy says all of that. It also lists more: the design you are editing with its shrunk photo, a short fingerprint of
-the key, the settings and write id of the backup, the App Check attestation and the Firebase installation id. Keep the two
-texts from contradicting each other when either changes.
+submitting, and again whenever the app starts collecting something new. The text the app shows before signing in (the Account card and the last setup page, `account_signed_out_privacy`) lists: your
+email address, your name and profile picture from your Google account, your designs (the names of designs you delete or rename are
+kept until you delete your account), the encrypted backup of your signing key, the model of your phone and a random device ID. This
+policy says all of that and lists more: the design you are editing with its shrunk and cleaned photo, a short fingerprint of the
+key, the settings and write id of the backup, the App Check attestation and the Firebase installation id. Three small
+differences to settle in the app's line (it is code, not a document): it says "the model of your phone" where the app now sends the
+device name set in Settings (often a person's name) or else the model; it says "profile picture" where only the link is stored;
+and it does not say that the background photo of the design being edited is uploaded. Keep the two texts from contradicting each
+other when either changes.
 
 | Question | Answer |
 |---|---|
@@ -125,10 +145,10 @@ texts from contradicting each other when either changes.
 | Personal info: Email address | Collected; not shared; optional (only with an account); purpose: account management, app functionality |
 | Personal info: User IDs | Collected (account id; random installation id); not shared; purpose: account management, app functionality |
 | Personal info: Name | Collected (the Google display name, stored by Firebase Authentication); not shared; optional (only with an account); purpose: account management. **[OWNER: confirm]** |
-| Photos and videos: Photos | Collected (the shrunk background photo inside the design being edited; the link to the Google profile picture stored by Firebase Authentication); not shared; optional; purpose: app functionality, account management. **[OWNER: confirm whether the profile picture link belongs here or under another category the form offers]** |
+| Photos and videos: Photos | Collected (the shrunk background photo inside the design being edited, with its EXIF, XMP and trailing data removed before upload; the link to the Google profile picture stored by Firebase Authentication); not shared; optional; purpose: app functionality, account management. **[OWNER: confirm whether the profile picture link belongs here or under another category the form offers]** |
 | App activity / User-generated content | Collected (watch face designs and the name of each, the names of deleted designs until the account is deleted, and the signing key backup, which is encrypted so that we cannot read it); not shared; optional; purpose: app functionality |
 | Device or other IDs | Collected (random installation id; Firebase installation id used by App Check and Firebase); not shared; purpose: app functionality, security |
-| Device or other: phone model name | Collected (shown on another of your devices as "the design from ..."); not shared; optional; purpose: app functionality. In the form this fits under "Device or other IDs" or "App info and performance"; choose what the form offers at submit time. **[OWNER]** |
-| Financial info, location, health, contacts, messages, web history, audio, crash logs, diagnostics | Not collected |
+| Device or other: phone name | Collected (the device name set in Android Settings, or the model when none is set; free text that can contain a person's own name; shown on your other devices as "the design from ..." and inside the name of a kept copy of a design); not shared; optional; purpose: app functionality. In the form this fits under "Device or other IDs" or "App info and performance"; choose what the form offers at submit time. **[OWNER]** |
+| Financial info, location, health, contacts, messages, web history, audio, crash logs, diagnostics | Not collected (the GPS tags of a photo are removed before upload) |
 | Is data processed ephemerally? | No for the items above (stored until deleted) |
 | Is the collection required or optional? | Optional: the app works without an account |

@@ -144,7 +144,14 @@ encrypted; designs are not secret).
 - **Timing of uploads.** A saved-design change is uploaded about a second after it, the design being edited after 10 seconds of quiet or when the app is left. So another phone sees an edit of the design being edited some seconds late.
 - **A backup write has no time limit.** While a backup is being written on a poor connection, sign-out waits for it (Firestore
   gives up after its own five attempts).
-- **Deleting the account while another phone is signed in.** The other phone keeps a valid sign-in for up to an hour. The code does not tell an edit made there after the deletion from normal sync, so that edit is still uploaded and its data stays in the cloud until someone removes it. The deletion page and the policy tell people to sign other phones out first. This is not fixed.
+- **Deleting the account while another phone is signed in.** The design for this is the kill switch in
+  `.superpowers/sdd/2026-10-09-accounts-sync/kill-switch-spec.md` (a marker document the rules check on every write; other phones are
+  signed out of the account on their next check and keep their local designs). It is a sign-out, **not a revocation of the other
+  phone's Firebase token**: that token stays valid until it expires (up to an hour) and a phone cannot revoke it; revoking needs the
+  Admin SDK in a Cloud Function (Blaze plan and a backend), which is out of scope and parked. Until the kill switch is in the code
+  (it was not at e0fd3c7), the other phone keeps a valid sign-in for up to an hour, the code does not tell an edit made there after the
+  deletion from normal sync, and that edit is still uploaded. The deletion page and the policy describe the kill switch, with a
+  code-check note on top.
 - **Nothing here was run against a real Firebase project, a real Google sign-in, App Check or a real device.**
 
 ## Open items

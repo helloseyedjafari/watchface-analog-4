@@ -1,6 +1,9 @@
 # Delete your Analog Plus account (DRAFT, publish at the URL given to Google Play)
 
 Fill in: **[OWNER: contact email]**. Written from the code; not tried with a real Firebase project or a real Google account.
+Code check before publishing: the paragraph "Your other phones" describes the kill-switch design
+(`.superpowers/sdd/2026-10-09-accounts-sync/kill-switch-spec.md`), which was not in the code at e0fd3c7. Check that it is built,
+and reword that paragraph to what the app really does, before you publish.
 
 **In the app (fastest).** Open Analog Plus, go to **Account**, tap **Delete account and cloud data**, then **Delete account**
 in the question "Delete your account?". Choose your Google account again when asked. This removes your account and everything
@@ -18,19 +21,23 @@ done. **[OWNER: you do this by hand in the Firebase console: delete the user und
 Firestore, including the `designs`, `state` and `backup` collections. Deleting the user alone does not delete the Firestore data.]**
 
 **What is deleted.** Your account (email, account id, your Google name and the link to your profile picture), every saved
-design, the small records of designs you deleted or renamed, the design you were editing (with the model name of your phone and
-the random installation id), and the signing-key backup.
+design, the small records of designs you deleted or renamed, the design you were editing (with the name of your phone and
+the random installation id), and the signing-key backup. The name of your phone is the device name you set in Android Settings, or
+the model; it can contain your own name, and it can also be part of the name of a kept copy of a design, which is deleted with the
+designs.
 
 **Until you delete the account.** When you delete or rename a saved design, a record of the old name stays in the cloud, with a
 "deleted" flag and the time and no design content. Your other devices need it to learn that the design is gone, so we do not
 remove it earlier. Deleting the account removes it.
 
-**Sign out other phones first.** If another phone is still signed in to the same account, sign it out before you delete. That phone
-keeps a valid sign-in for up to an hour after the deletion, and the app on it cannot tell that the account is gone. If you edit a
-design on that phone in that time, the edit is still uploaded to the cloud, and it stays there although the account is deleted.
-The app does not stop this. If it happens, write to **[OWNER: contact email]** and we remove it.
+**Your other phones.** When the deletion starts, the cloud marks the account as deleted first, and from then on it refuses every new write from
+your other phones. Each other phone that is signed in to the account is signed out of it the next time it checks: while its app is
+open and syncing, or when its next sync is refused. It keeps its local designs and its signing key. This is a sign-out inside the
+app, not a cancellation of the sign-in itself: the sign-in token that Google issued to that phone stays valid until it expires
+(up to an hour) and cannot be cancelled from your phone. The cloud simply has no data left for it and accepts nothing from it.
 
-**What stays.** Nothing about you stays in our cloud after deletion. Google may keep backup copies of its databases for a
+**What stays.** Nothing about you stays in our cloud after deletion, and the cloud refuses new data from your other phones from the
+moment the deletion starts. Google may keep backup copies of its databases for a
 limited time, on its own schedule. Designs you shared with other people as links or QR codes are theirs.
 
 **Warning about the signing key.** If you delete the backup and later lose your phone, the watch face already installed on your
