@@ -176,6 +176,12 @@ class MainActivity : ComponentActivity() {
         PromptWatch.process.activityResumed()
     }
 
+    override fun onPause() {
+        // a resume that is followed at once by a pause is a relaunch behind a prompt that is still open, not its end
+        PromptWatch.process.activityPaused()
+        super.onPause()
+    }
+
     override fun onStart() {
         super.onStart()
         CurrentActivity.set(this)   // the Google account chooser needs a visible Activity

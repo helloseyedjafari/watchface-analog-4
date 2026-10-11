@@ -238,14 +238,20 @@ class FirebaseEmulatorTest {
     @Test fun aPromptTheSystemFinishedEndsSignInAndReauthenticationAsClosedWhenTheAppSaysSo() = inTest {
         val watch = PromptWatch()
         val hanging = PromptAwareTokenSource(IdTokenSource { awaitCancellation() }, watch)
-        // sign-in: the chooser never answers; the app is opened again
+        // sign-in: the chooser never answers; the app is opened again. The second time it answers.
+        val secondSub = unique("prompt-again")
+        var asked = 0
+        val flaky = PromptAwareTokenSource(IdTokenSource { if (asked++ == 0) awaitCancellation() else fakeToken(secondSub) }, watch)
         auth.signOut()
-        val signingIn = newManager(hanging)
+        val signingIn = newManager(flaky)
         val signIn = launch { signingIn.signIn() }
         waitUntil("signing in") { signingIn.state.value == AccountState.SigningIn }
         watch.promptGone()
         signIn.join()
         assertEquals(AccountState.SignedOut, signingIn.state.value)
+        signingIn.signIn()                                         // its sign-in lock was released: the same manager signs in now
+        assertTrue(signingIn.state.value is AccountState.SignedIn)
+        auth.signOut()
         // re-confirmation: the same, and the manager is free again afterwards (its sign-in lock was released)
         val m = manager(unique("prompt-gone"))
         m.signIn()

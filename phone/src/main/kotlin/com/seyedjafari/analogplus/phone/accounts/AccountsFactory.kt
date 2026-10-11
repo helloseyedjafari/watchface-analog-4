@@ -18,6 +18,7 @@ import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseMode
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseProvider
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirestoreRemoteStore
 import com.seyedjafari.analogplus.phone.accounts.firebase.GoogleIdTokenSource
+import com.seyedjafari.analogplus.phone.accounts.firebase.IdTokenSource
 import com.seyedjafari.analogplus.phone.accounts.firebase.PromptAwareTokenSource
 import com.seyedjafari.analogplus.phone.accounts.firebase.PromptWatch
 import com.seyedjafari.analogplus.phone.accounts.firebase.emulatorEmail
@@ -38,7 +39,8 @@ import kotlinx.coroutines.Job
  * process), not once per process; the earlier controller is stopped by then because its scope ended. Controllers that are
  * alive together share [syncKv] (the attempt delay of a wrong passphrase is read from it every time, so it stays
  * consistent), but each has its own restore lock, so only one should be used at a time. Tests give each controller its own
- * [store], [keyStore] and [syncKv].
+ * [store], [keyStore] and [syncKv]. [tokenSource] replaces the Google chooser (or the emulator's token source) in tests; the
+ * app's [PromptWatch] wrapping is applied to it all the same.
  */
 object AccountsFactory {
     private const val SYNC_PREFS = "analogplus_sync"
@@ -55,6 +57,7 @@ object AccountsFactory {
         applier: CurrentApplier,
         keyStore: KeyStore = KeyStore(context),
         syncKv: KeyValueStore = PrefsKeyValueStore(context.applicationContext.getSharedPreferences(SYNC_PREFS, Context.MODE_PRIVATE)),
+        tokenSource: IdTokenSource? = null,
     ): AccountsController {
         val app = context.applicationContext
         val journal = SyncJournal(syncKv)
@@ -70,7 +73,7 @@ object AccountsFactory {
         store.addObserver(engine)
         // the emulator has no Google account and nothing cached to clear
         val credentialManager = if (setup.mode == FirebaseMode.EMULATOR) null else CredentialManager.create(app)
-        val rawTokens = if (credentialManager == null) EmulatorSetup.tokenSource { emulatorEmail(app) }
+        val rawTokens = tokenSource ?: if (credentialManager == null) EmulatorSetup.tokenSource { emulatorEmail(app) }
         else GoogleIdTokenSource(credentialManager, setup.webClientId) { CurrentActivity.get() }
         // a prompt the system finished when the app was opened again never answers: MainActivity tells PromptWatch
         val tokens = PromptAwareTokenSource(rawTokens, PromptWatch.process)

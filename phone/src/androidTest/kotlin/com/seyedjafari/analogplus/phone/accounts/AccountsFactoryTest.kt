@@ -7,11 +7,14 @@ import com.seyedjafari.analogplus.facegen.KeyStore
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.Store
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseProvider
+import com.seyedjafari.analogplus.phone.accounts.firebase.IdTokenSource
+import com.seyedjafari.analogplus.phone.accounts.firebase.PromptWatch
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import org.junit.After
 import org.junit.Before
 import org.junit.Assert.assertEquals
@@ -52,6 +55,27 @@ class AccountsFactoryTest {
         assertEquals(AccountState.SignedOut, controller.ui.value.account)
         store.saveNamed("Night", DesignSettings(name = "Night"))
         assertTrue(SyncJournal(syncKv).entries().containsKey(designId("Night")))
+    }
+
+    @Test fun theGooglePromptOfAFactoryControllerEndsAsClosedWhenTheAppSaysThePromptIsGone() {
+        val store = Store(MemoryKeyValueStore(), File(context.cacheDir, "factory-prompt-$tag.jpg"))
+        val never = IdTokenSource { awaitCancellation() }          // a prompt the system finished never answers
+        val controller = AccountsFactory.create(
+            context, store, scope, { DesignSettings() }, CurrentApplier { }, KeyStore(context, "factory-$tag.pem"), MemoryKeyValueStore(),
+            tokenSource = never,
+        )
+        controller.signIn()
+        waitFor("signing in") { controller.ui.value.account == AccountState.SigningIn }
+        PromptWatch.process.promptGone()                             // MainActivity.onNewIntent
+        waitFor("signed out again") { controller.ui.value.account == AccountState.SignedOut }
+    }
+
+    private fun waitFor(what: String, ms: Long = 10_000, condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + ms
+        while (!condition()) {
+            if (System.currentTimeMillis() > deadline) throw AssertionError("timed out waiting for: $what")
+            Thread.sleep(20)
+        }
     }
 
     @Test fun theDeviceIdIsMadeOnceAndKept() {

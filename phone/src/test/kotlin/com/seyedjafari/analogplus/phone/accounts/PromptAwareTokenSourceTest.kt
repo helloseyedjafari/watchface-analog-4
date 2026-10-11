@@ -91,6 +91,54 @@ class PromptAwareTokenSourceTest {
         assertEquals("token", result)
     }
 
+    @Test fun aPauseRightAfterAResumeCallsOffTheGracePeriodBecauseThePromptIsStillOpen() = runTest(UnconfinedTestDispatcher()) {
+        // a configuration change relaunches the activity behind the prompt: onResume, then onPause at once
+        val source = PromptAwareTokenSource(neverAnswers, watch, graceMs = 2_000)
+        val job = launch { source.fetchIdToken() }
+        watch.activityResumed()
+        watch.activityPaused()
+        advanceTimeBy(10_000); runCurrent()
+        assertTrue("the prompt is still open, so the request keeps waiting", job.isActive)
+        assertTrue(watch.isWaiting())
+        job.cancelAndJoin()
+    }
+
+    @Test fun aResumeAfterThePauseStartsANewGracePeriod() = runTest(UnconfinedTestDispatcher()) {
+        val source = PromptAwareTokenSource(neverAnswers, watch, graceMs = 2_000)
+        var result: String? = "not finished"
+        val job = launch { result = source.fetchIdToken() }
+        watch.activityResumed(); watch.activityPaused()      // the relaunch
+        advanceTimeBy(5_000); runCurrent()
+        assertTrue(job.isActive)
+        watch.activityResumed()                              // the prompt ended and the activity stays in front
+        advanceTimeBy(1_999); runCurrent()
+        assertTrue(job.isActive)
+        advanceTimeBy(2); runCurrent()
+        job.join()
+        assertNull(result)
+    }
+
+    @Test fun aSecondResumeRestartsTheGracePeriod() = runTest(UnconfinedTestDispatcher()) {
+        val source = PromptAwareTokenSource(neverAnswers, watch, graceMs = 2_000)
+        val job = launch { source.fetchIdToken() }
+        watch.activityResumed()
+        advanceTimeBy(1_500); runCurrent()
+        watch.activityResumed()
+        advanceTimeBy(1_500); runCurrent()
+        assertTrue("1.5 s after the latest resume it still waits", job.isActive)
+        advanceTimeBy(600); runCurrent()
+        job.join()
+    }
+
+    @Test fun aPauseWithNoResumeBeforeItChangesNothing() = runTest(UnconfinedTestDispatcher()) {
+        val source = PromptAwareTokenSource(neverAnswers, watch, graceMs = 2_000)
+        val job = launch { source.fetchIdToken() }
+        watch.activityPaused()                               // the prompt appears and pauses the activity
+        advanceTimeBy(10_000); runCurrent()
+        assertTrue(job.isActive)
+        job.cancelAndJoin()
+    }
+
     @Test fun signalsWithNothingWaitingDoNothing() {
         watch.promptGone()
         watch.activityResumed()
