@@ -153,14 +153,21 @@ encrypted; designs are not secret).
   revocation of the other phone's Firebase token**: that token stays valid until it expires (up to an hour) and a phone cannot revoke
   it; revoking needs the Admin SDK in a Cloud Function (Blaze plan and a backend), which is out of scope and parked. Known limits:
   (1) a phone whose app has not run online for more than about an hour (closed or offline) may be signed out by Google's own sign-in
-  first, without the notice; (2) a phone that never saw the marker live first asks the sign-in service whether the user still exists
-  (`AccountManager.checkUser`, a `reload()` of the signed-in user, once per session): gone means signed out with the notice and
-  nothing created or written; no answer means nothing is written and the pass is retried. What is left is only the window between the
-  deletion removing the marker and removing the Auth user (a second or two): a first-time phone that looks then finds the user,
-  creates the marker again and can upload its designs, the design being edited, the phone name and a backup until its token expires
-  (up to an hour), leaving data for a uid that no longer exists, removed on request (owner-prerequisites item 10 says how to find it); (3) if a deletion is cut off and the
-  phone that started it is lost, reset or cleared, no phone can finish or undo it from the app, because every phone that sees
-  `deleted: true` is signed out (owner ruling); the owner clears the mark by hand on request (owner-prerequisites item 10); (4) other phones that noticed the deletion
+  first, without the notice; (2) a phone that never saw the marker live asks the sign-in service whether the user still exists
+  (`AccountManager.checkUser`, a `reload()` of the signed-in user) before EVERY attempt to create the marker, until the marker has
+  been seen live once (`SyncEngine.markerAllowsPass`, and `BackupService.upload` before it creates the marker for an upload): gone
+  means nothing created or written, a sign-out and the notice; no answer means nothing is written and the pass (or the upload,
+  `Failed(OFFLINE)`) is retried. What is left is the time between the deletion removing the marker and removing the Auth user,
+  normally short; a deletion cut off exactly between those two steps (cloud data and marker gone, `deleteUser` not done) leaves an
+  account that is live in effect and empty until **Finish deleting** is tapped. In that time a phone that never saw the marker (or one
+  signed out earlier that signs in again) finds the user, creates the marker and syncs, and can upload its designs, the design being
+  edited, the phone name and a backup until its token expires (up to an hour); phones with the note that are opened meanwhile read
+  ACTIVE and sync into it too. Finish deleting sets the marker deleted, wipes everything again and removes the user, and every phone
+  with the note is signed out. Not closed in code: the only way would be to leave a marker behind after the wipe, and the marker of
+  a removed user cannot be deleted afterwards. Data left for a uid that no longer exists is removed on request (owner-prerequisites
+  item 10 says how to find it); (3) if a deletion is cut off EARLY (marker `deleted: true`) and the phone that started it is lost,
+  reset or cleared, no phone can finish or undo it from the app, because every phone that sees `deleted: true` is signed out (owner
+  ruling); the owner clears the mark by hand on request (owner-prerequisites item 10); (4) other phones that noticed the deletion
   stay signed out after **Keep my account** and must sign in again (a phone that did not notice it just syncs again). Deployed rules are part of the protection
   (owner-prerequisites item 5). The deletion page and the policy describe this.
 - **Nothing here was run against a real Firebase project, a real Google sign-in, App Check or a real device.**

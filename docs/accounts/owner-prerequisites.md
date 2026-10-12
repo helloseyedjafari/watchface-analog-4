@@ -70,19 +70,22 @@ off. Do these in order; each item says what to hand back to the code.
   is in the app (Account, Delete account and cloud data). Host `docs/accounts/account-deletion-page-draft.md` as a public page
   (fill in its `[OWNER: ...]` places) and enter its URL in Play Console, App content, Data deletion. The page promises that a
   request by email is answered by hand: you delete the user under Authentication and the `users/<uid>` data under Firestore
-  yourself, in this order: 1. in `users/<uid>/meta/account` set `deleted` to `true` (create the document if it is missing; keep
-  `deleted` a boolean, the text "false" reads as a marker that cannot be read and stops sync on every phone); 2. delete the
-  documents in `designs`, `state` and `backup`; 3. delete the user under Authentication; 4. delete `meta` (the account marker), last.
-  (The app itself deletes the marker before the user, because afterwards it can no longer reach Firestore; by hand the user goes
-  first, so that nobody can sign in to the account while its marker is already gone.) Decide how many days you promise. The same page also tells people to write to you when a cut-off deletion cannot be finished or
-  undone in the app (the phone that started it was lost or reset: every phone that signs in is signed out while the marker says
-  `deleted: true`). To clear such a mark and keep the account, set `deleted` to `false` in `users/<uid>/meta/account`; to finish it,
-  do the four steps above.
-  **Finding leftovers.** In one narrow case (a gap of a second or two while an account is being deleted, see the deletion page)
-  a phone that never saw the account can write a marker and data for a user that no longer exists. If a person reports it, or you
-  look: in Firestore the `users` collection lists such uids (the console shows them although the `users/<uid>` document itself
-  does not exist, only its subcollections); one that is not in the Authentication user list is such a leftover. Delete its
-  `designs`, `state`, `backup` and `meta` (steps 2 and 4 above).
+  yourself, in this order: 1. in `users/<uid>/meta/account` set `deleted` to `true` (create the document if it is missing). `deleted`
+  must be a real boolean, `true` here and `false` when you clear a mark below, never the text "true" or "false": a text value
+  reads as a marker that cannot be read and stops sync on every phone; 2. delete the documents in `designs`, `state` and `backup`;
+  3. delete the user under Authentication; 4. delete `meta` (the account marker), last. (The app itself deletes the marker before
+  the user, because afterwards it can no longer reach Firestore; by hand the user goes first, so that nobody can sign in to the
+  account while its marker is already gone.) Decide how many days you promise. The same page also tells people to write to you when
+  a cut-off deletion cannot be finished or undone in the app (the phone that started it was lost or reset). Two cases: if the
+  cut-off came early, every phone that signs in is signed out while the marker says `deleted: true`; to clear the mark and keep the
+  account set `deleted` to `false` in `users/<uid>/meta/account`, to finish it do the four steps above. If the cut-off came at the very end (no
+  `meta/account`, the user still in Authentication), the account simply works again, empty; finish it with steps 2 to 4 if the person
+  wants it gone.
+  **Finding leftovers.** In one narrow case (an account being deleted, cut off between removing the marker and removing the user,
+  see the deletion page) phones that never saw the account can write a marker and data for a user that no longer exists. If a
+  person reports it, or you look: in Firestore the `users` collection lists such uids (the console shows them although the
+  `users/<uid>` document itself does not exist, only its subcollections); one that is not in the Authentication user list is such a
+  leftover. Delete its `designs`, `state`, `backup` and `meta` (steps 2 and 4 above).
 - [ ] **11. Usage watch.** The Spark plan has **no budget alerts**. After launch, look at the Usage tab for Firestore and
   Authentication now and then (quotas change, read them there). For email alerts, upgrade to **Blaze** (pay as you go, still
   keeps the free allowance) and set a budget alert. The number of documents per user is small; the one large document is the design being edited when it has a photo (item 12).

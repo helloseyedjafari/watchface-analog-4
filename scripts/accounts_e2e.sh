@@ -20,8 +20,11 @@
 #    Another session's emulator that binds a port in the same moment is therefore not touched.
 # NOTE that AccountsEndToEndTest empties the Firestore and Auth data of the emulators it runs against, so do not point it at
 # emulators somebody else is using. The phone emulator lock is held for the WHOLE script, so that nobody else installs on the
-# AVD while it boots, runs or is shut down by this script. The AVD boot is bounded (5 minutes) and the script stops at once
-# when the emulator process exits.
+# AVD while it boots, runs or is shut down by this script. The wait for the phone emulator to be ready is bounded by ELAPSED
+# time, 5 minutes (each adb look is itself limited to 10 seconds, so it ends close to that), and the script stops at once when
+# the emulator process it started exits. Whatever is listed under the serial it uses, in ANY state (also offline or still
+# booting), is somebody else's emulator, not a free port: the script never starts a second emulator on a listed port, waits for
+# the listed one to become ready (the same bound) or stops with a message, and only ever stops an emulator it started itself.
 #
 # The device. The tests reach the Firebase emulators at 10.0.2.2, so they run on an Android EMULATOR, and only on one: the script
 # exports ANDROID_SERIAL for Gradle (without it Gradle runs the tests on every attached device, a real phone or watch
@@ -31,7 +34,7 @@
 # emulator somebody else started):
 #  - ANDROID_SERIAL=emulator-NNNN is honoured (that emulator is used, or started on that port when it is not running); any
 #    other serial is refused;
-#  - ANDROID_SERIAL not set: emulator-5562, used when it is attached and started otherwise. The script does not look at the other
+#  - ANDROID_SERIAL not set: emulator-5562, used when it is attached (and ready) and started otherwise. The script does not look at the other
 #    attached devices at all (no adb call is made to them).
 #
 # Before the tests the debug app and the test app are built, and both emulators get one trivial request each, so that the first
@@ -46,7 +49,8 @@
 # ACCOUNTS_E2E_PHONE_PORT, ACCOUNTS_E2E_PHONE_AVD, ACCOUNTS_E2E_BOOT_TRIES (3-second tries before the boot is given up),
 # ACCOUNTS_E2E_EMULATORS_CMD (the command that starts the Firebase emulators, default `npm run emulators`, run in firebase/),
 # ACCOUNTS_E2E_START_TRIES (1-second tries for the Firebase emulators to listen, default 90), ACCOUNTS_E2E_ADB (the adb binary),
-# ACCOUNTS_E2E_SELECT_ONLY (print the device that would be used and stop, before anything is started).
+# ACCOUNTS_E2E_SELECT_ONLY (print the device that would be used and stop, before anything is started),
+# ACCOUNTS_E2E_STOP_AFTER_PHONE (stop with success after the phone emulator step, before anything is built).
 set -euo pipefail
 source "$(dirname "$0")/_env.sh"
 
@@ -61,7 +65,7 @@ fi
 PHONE_AVD="${ACCOUNTS_E2E_PHONE_AVD:-1_Pixel_8_API_33}"; PHONE_PORT="${ACCOUNTS_E2E_PHONE_PORT:-5562}"
 EMULATOR="${ACCOUNTS_E2E_EMULATOR:-$EMULATOR}"
 ADB="${ACCOUNTS_E2E_ADB:-$ADB}"
-BOOT_TRIES="${ACCOUNTS_E2E_BOOT_TRIES:-100}"
+BOOT_LIMIT=$(( ${ACCOUNTS_E2E_BOOT_TRIES:-100} * 3 ))   # seconds of elapsed time (the hook counts 3-second tries)
 EMULATORS_CMD="${ACCOUNTS_E2E_EMULATORS_CMD:-npm run emulators}"
 START_TRIES="${ACCOUNTS_E2E_START_TRIES:-90}"
 CALLER_SERIAL="${ACCOUNTS_E2E_CALLER_SERIAL:-}"
@@ -163,8 +167,10 @@ cleanup() {
       sleep 1
       signal_ours KILL
     fi
-    if [ -n "$AVD_PID" ]; then
-      # we started the AVD: ask it nicely, then make sure the process itself is gone (it may never have reached adb)
+    if [ -n "$AVD_PID" ] && kill -0 "$AVD_PID" 2>/dev/null; then
+      # we started the AVD and our process is still there: ask it nicely (the serial is ours only while that process lives; if it
+      # had exited, whoever answers to the serial is somebody else's emulator and is left alone), then make sure the process
+      # itself is gone (it may never have reached adb)
       "$ADB" -s "$PHONE" emu kill >/dev/null 2>&1 || true
       for _ in 1 2 3 4 5; do kill -0 "$AVD_PID" 2>/dev/null || break; sleep 1; done
       kill -TERM "$AVD_PID" 2>/dev/null || true
@@ -196,23 +202,39 @@ fi
 step "Phone emulator"
 # bounded: an emulator that accepts adb and then never answers must not hang the run while it holds the phone lock
 boot_done() { [ "$(perl -e 'alarm 10; exec @ARGV' "$ADB" -s "$PHONE" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; }
-if "$ADB" devices | grep -q "^$PHONE[[:space:]]*device"; then
-  echo "   already running"
+listed="$("$ADB" devices | awk -v serial="$PHONE" 'NR > 1 && $1 == serial { print $2 }')"
+waited=$SECONDS
+if [ "$listed" = "device" ]; then
+  echo "   already running (not started by this script: it will not stop it)"
+elif [ -n "$listed" ]; then
+  # the serial is listed but not ready (offline, still starting, ...): somebody else's emulator, never ours to replace
+  echo "   $PHONE is listed as '$listed' (not started by this script); waiting for it to become ready"
+  until [ "$("$ADB" devices | awk -v serial="$PHONE" 'NR > 1 && $1 == serial { print $2 }')" = "device" ] && boot_done; do
+    [ $((SECONDS - waited)) -le "$BOOT_LIMIT" ] || die "$PHONE is listed as '$listed' and did not become ready within $BOOT_LIMIT seconds. It is not started or stopped by this script (a second emulator is never started on a listed port): wait for it, close it, or use another ANDROID_SERIAL."
+    sleep 3
+  done
 else
   "$EMULATOR" -avd "$PHONE_AVD" -port "$PHONE_PORT" -no-window -no-audio -no-snapshot -no-boot-anim >"$ROOT/tools/emulator-$PHONE_AVD.log" 2>&1 &
   AVD_PID=$!
-  tries=0
   until boot_done; do
     if ! kill -0 "$AVD_PID" 2>/dev/null; then
       tail -n 20 "$ROOT/tools/emulator-$PHONE_AVD.log" >&2 || true
       AVD_PID=""   # already gone
       die "the $PHONE_AVD emulator process exited before it booted (is the same AVD already running on another port?)"
     fi
-    tries=$((tries + 1))
-    [ "$tries" -le "$BOOT_TRIES" ] || die "$PHONE did not finish booting in $((BOOT_TRIES * 3)) seconds"
+    [ $((SECONDS - waited)) -le "$BOOT_LIMIT" ] || die "$PHONE did not finish booting in $BOOT_LIMIT seconds"
     sleep 3
   done
+  # Something answers to the serial, but is it the emulator this run started? A second emulator on a taken port or with a running
+  # AVD exits within a second or two; a real boot takes far longer than that. So give a failing start of ours time to show, and
+  # if our process is gone, whoever answers is somebody else's.
+  sleep 3
+  if ! kill -0 "$AVD_PID" 2>/dev/null; then
+    AVD_PID=""
+    die "$PHONE answers, but the emulator this script started on that port has exited: another emulator holds the port. Nothing of it is used or stopped."
+  fi
 fi
+if [ -n "${ACCOUNTS_E2E_STOP_AFTER_PHONE:-}" ]; then echo "phone emulator step done"; exit 0; fi
 
 step "Build the debug app and the test app"
 cd "$ROOT"

@@ -15,20 +15,30 @@ signing key on your phone are not touched.
 
 **If the deletion is cut off** (no connection, the app is closed, the phone restarts), the app remembers it. The Account
 screen then shows "Deleting your account was not finished" with **Finish deleting** and **Keep my account**. Sync stays paused
-until you choose. Finish deleting asks for your Google account again. Keep my account turns sync back on and uploads the designs
-on that phone again. Other phones that noticed the deletion (their app was open, or they synced, while it was running) were signed out at that point
-and stay signed out; sign in on them again. A phone that did not notice it is not signed out and simply syncs again.
+on that phone until you choose. Finish deleting asks for your Google account again, wipes whatever is left (also anything another
+phone uploaded in the meantime) and removes the account. Keep my account turns sync back on and uploads the designs on that phone
+again. Other phones that noticed the deletion (between its start and Keep my account) were signed out at that point and stay signed
+out; sign in on them again. A phone that did not notice it is not signed out and simply syncs again.
 
-**If you lose the phone that started a cut-off deletion** (it is lost, reset, or the app's data is cleared), the app can no longer
-finish or undo the deletion: the cloud still says that the account is being deleted, so every phone that signs in to it is signed
-out again. Write to **[OWNER: contact email]** from the address you signed in with, and we clear the mark or finish the deletion by
-hand.
+What a cut-off deletion looks like depends on where it stopped. **Early** (the cloud data is being removed): the cloud says that the
+account is being deleted, phones are signed out when they notice it, and the cloud accepts nothing new. **At the very end** (the
+cloud data and the account record are gone, but the sign-in itself is not yet removed): the account is, in effect, a live account
+with nothing in it. A phone that has not seen the account record before, or one that was signed out of the account earlier and
+signs in again, finds the sign-in still there, creates the account record again and syncs: the account simply works again on that
+phone, empty, and that phone uploads what it holds. Finish deleting, on the phone that started the deletion, wipes all of that
+again and removes the sign-in; every phone that had seen the account record is then signed out with the notice.
+
+**If you lose the phone that started a cut-off deletion** (it is lost, reset, or the app's data is cleared), no other phone can
+finish or undo it from the app. If the cut came early, the cloud still says that the account is being deleted, so every phone that
+signs in to it is signed out again: write to **[OWNER: contact email]** from the address you signed in with, and we clear the mark
+or finish the deletion by hand. If the cut came at the very end, the cloud data is already gone and the account simply works again,
+empty, on any phone that signs in: use it, or choose **Delete account and cloud data** again.
 
 **Without the app.** Email **[OWNER: contact email]** from the address you signed in with, with the subject "Delete my Analog
 Plus account". We delete the account and its data within **[OWNER: number of days, for example 30]** days and reply when it is
 done. **[OWNER: you do this by hand in the Firebase console, in this order: 1. in Firestore, `users/<uid>/meta/account`: set `deleted`
-to `true` (create the document if it is missing; `deleted` must be a boolean, not the text "true"), so that other phones stop
-writing; 2. delete the documents in `designs`, `state` and `backup`; 3. delete the user under Authentication; 4. delete `meta` (the
+to `true` (create the document if it is missing; `deleted` must be a real boolean, `true` here and `false` below, never the text "true"
+or "false": a text value cannot be read and stops sync on every phone), so that other phones stop writing; 2. delete the documents in `designs`, `state` and `backup`; 3. delete the user under Authentication; 4. delete `meta` (the
 account record), last, so that nobody who signs in meanwhile finds the account without a record. Deleting the user alone does not
 delete the Firestore data. To clear an abandoned deletion for a person who wants to keep the account, set `deleted` back to `false`
 instead.]**
@@ -47,22 +57,30 @@ remove it earlier. Deleting the account removes it.
 your other phones. Each other phone that is signed in to the account is signed out of it the next time it checks: while its app is
 open and syncing, or when its next sync is refused. It keeps its local designs and its signing key. This is a sign-out inside the
 app, not a cancellation of the sign-in itself: the sign-in token that Google issued to that phone stays valid until it expires
-(up to an hour) and cannot be cancelled from your phone. The cloud simply has no data left for it and accepts nothing from it (apart from the gap described under "What stays").
-A phone that had synced with the account and whose app was closed during the deletion is signed out when you open it again. A phone whose app has not run online for
+(up to an hour) and cannot be cancelled from your phone. The cloud simply has no data left for it and accepts nothing from it (apart from the case described under "What stays").
+A phone that had synced with the account and whose app was closed during the deletion is signed out when you open it again (unless a phone created the account record again first, see "What stays"). A phone whose app has not run online for
 more than about an hour (closed or offline) may be signed out by Google's own sign-in first, because its sign-in can no longer be
 renewed for an account that does not exist; it then shows a plain signed-out screen without the notice. Its designs and signing key
 stay in both cases.
 
-**What stays.** Nothing about you stays in our cloud after deletion, with one narrow exception, which is only a gap of a second or two. A phone that has
-never seen this account's record before (for example one that signed in shortly before the deletion and has not looked at the account yet) first asks Google's sign-in whether the
-account still exists. If it is gone, that phone is signed out with the notice and writes nothing. If there is no answer, it writes
-nothing and tries again later. What is left is the moment between the deletion removing the account record and removing the sign-in
-itself: a first-time phone that looks at the account exactly then still finds the sign-in, creates the account record again (a flag
-and a time, under your account id) and can then upload what that phone holds (its saved designs, the design being edited with its
-photo, the name of the phone, the random installation id, and a signing-key backup made in that session) until its own sign-in
-runs out, up to an hour; it is signed out later without a notice. Write to **[OWNER: contact email]** and we remove such data. The
-cloud refuses new data from your other phones from the moment the deletion starts, apart from that gap. Google may keep backup copies of its databases for a
-limited time, on its own schedule. Designs you shared with other people as links or QR codes are theirs.
+**What stays.** Nothing about you stays in our cloud after deletion, with the exceptions below. They exist because the deletion
+takes several steps: it marks the account deleted, removes the data, removes the account record, and only then removes the
+sign-in itself.
+
+- Before a phone creates the account record (for the sync, or for a signing-key backup) it asks Google's sign-in whether the
+  account still exists, every time it is about to create it, until it has seen the record once. If the account is gone, that phone
+  writes nothing and is signed out with the notice. If there is no answer, it writes nothing and tries again later.
+- What is left is the time between the deletion removing the account record and removing the sign-in itself. It is normally short.
+  If the deletion is cut off exactly between those two steps it lasts until you tap **Finish deleting** (see above). In that time a
+  phone that has not seen the record finds the sign-in still there, creates the record again (a flag and a time, under your account
+  id) and syncs. It can upload what it holds: its saved designs, the design being edited with its photo, the name of the phone, the
+  random installation id and a signing-key backup made in that session; other phones of yours that had seen the record and are
+  opened meanwhile then sync into it too. Such a phone is signed out when its own sign-in runs out (up to an hour), without a
+  notice. Finish deleting removes all of it; otherwise write to **[OWNER: contact email]** and we remove it.
+
+The cloud refuses new data from your other phones from the moment the deletion starts, apart from that case. Google may keep
+backup copies of its databases for a limited time, on its own schedule. Designs you shared with other people as links or QR codes
+are theirs.
 
 **Warning about the signing key.** If you delete the backup and later lose your phone, the watch face already installed on your
 watch can no longer be updated from a new phone: the watch only accepts updates signed with the original key. Designs and the key
