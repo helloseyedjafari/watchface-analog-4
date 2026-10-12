@@ -301,9 +301,10 @@ class CloudDecisionsTest {
         assertEquals(5, secondsToWait(remainingWaitMs(start.untilMs, start.nowMs)))
     }
 
-    @Test fun aFirstShowingWithAReadingOfTheClockThatRunsAheadOfTheWaitIsStillTheSameSecond() {
-        // the dialog now reads the clock once for `until` and `now`: the first remaining wait IS the wait, so "5 seconds" is the first value
-        // and stays news; a reading a few ms ahead (the old two readings) made it "6 seconds" for a frame and the real 5 was never first
+    @Test fun aFirstValueAFewMillisecondsTooLongMakesTheRealFirstSecondNotNewsWhileTheExactOneIsNews() {
+        // documents `countdownIsNews`: with the first remaining wait equal to the wait, "5 seconds" is news; a first value a few ms longer
+        // (what two clock readings gave) made the real 5 s not news. That the dialog takes one reading is pinned on a device, by
+        // AccountSectionTest's countdown test
         assertTrue(countdownIsNews(firstRemainingMs = 5_000, remainingMs = 5_000))
         assertFalse("the old defect: a first value of 5 007 ms made the real 5 s not news", countdownIsNews(firstRemainingMs = 5_007, remainingMs = 5_000))
     }

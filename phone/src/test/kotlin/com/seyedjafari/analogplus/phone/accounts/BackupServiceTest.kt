@@ -1180,4 +1180,31 @@ class BackupServiceTest {
         val plan = run { s.plan("u1") }
         assertTrue(run { s.restore("u1", "a passphrase ending in " + 0xDC00.toChar(), plan) } is RestoreResult.WrongPassphrase)
     }
+
+    // ---- stage 3 round 2, B2-4: the first backup of an account whose marker was not created yet ----------------------------
+
+    @Test fun aFirstBackupOfABrandNewAccountMakesSureTheAccountMarkerExistsSoTheRulesAcceptTheWrite() {
+        val strict = FakeRemoteStore(strictMarkers = true)                     // the real rules refuse every write without a marker
+        val r = run { BackupService(strict, vault, FakeKeySource(pemA), limiter, Dispatchers.Unconfined).upload("u1", passphrase, SameKey) }
+        assertEquals(UploadResult.Ok(keyFingerprint(pemA)), r)
+        assertEquals(AccountMarker.ACTIVE, strict.markerOf("u1"))
+    }
+
+    @Test fun aPhoneThatAlreadySawTheMarkerLiveNeverCreatesItAgainForABackup() {
+        val strict = FakeRemoteStore(strictMarkers = true)                     // the account was wiped: no marker
+        val s = BackupService(strict, vault, FakeKeySource(pemA), limiter, Dispatchers.Unconfined) { true }
+        val r = run { s.upload("u1", passphrase, SameKey) }
+        assertEquals(UploadResult.Failed(RemoteErrorKind.PERMISSION, "the rules refuse the write: the account marker is ABSENT"), r)
+        assertEquals(AccountMarker.ABSENT, strict.markerOf("u1"))
+        assertTrue(strict.markerWrites.isEmpty())
+    }
+
+    @Test fun anOfflineMarkerCheckIsAPlainFailedBackupBeforeAnyKeyWork() {
+        val strict = FakeRemoteStore(strictMarkers = true)
+        strict.failMarkerWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        val keys = FakeKeySource(null)
+        val r = run { BackupService(strict, vault, keys, limiter, Dispatchers.Unconfined).upload("u1", passphrase, SameKey) }
+        assertEquals(UploadResult.Failed(RemoteErrorKind.OFFLINE, "offline"), r)
+        assertFalse("no key was made for a backup that could not start", keys.hasKey())
+    }
 }

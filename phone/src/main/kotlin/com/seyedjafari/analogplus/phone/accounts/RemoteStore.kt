@@ -71,6 +71,12 @@ enum class AccountMarker {
 
     /** The account is being deleted: every write is refused (reads and deletes still work, the wipe needs them). */
     DELETED,
+
+    /**
+     * A marker exists but does not say `deleted: true` or `deleted: false` (a later schema, an edit in the console). Neither
+     * live nor deleted: a phone writes nothing and signs nobody out on a doubt.
+     */
+    UNREADABLE,
 }
 
 enum class RemoteErrorKind {

@@ -6,6 +6,7 @@ import com.seyedjafari.analogplus.facegen.design.DesignJson
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
 import com.seyedjafari.analogplus.phone.ChangeOrigin
 import com.seyedjafari.analogplus.phone.SavedChange
+import com.seyedjafari.analogplus.phone.KeyValueStore
 import com.seyedjafari.analogplus.phone.Store
 import com.seyedjafari.analogplus.phone.StoreObserver
 import java.io.File
@@ -176,7 +177,7 @@ class SyncEngineTest {
         val remote: FakeRemoteStore, scope: CoroutineScope, val id: String, var now: () -> Long,
         engineRemote: RemoteStore = remote, photos: PhotoDownscaler = PhotoDownscaler { it },
         io: CoroutineDispatcher = Dispatchers.Unconfined, random: () -> Double = { 1.0 },
-        val journalKv: MemoryKeyValueStore = MemoryKeyValueStore(), currentDebounceMs: Long = 1_000, copyLabel: String = "Phone $id",
+        val journalKv: KeyValueStore = MemoryKeyValueStore(), currentDebounceMs: Long = 1_000, copyLabel: String = "Phone $id",
     ) {
         val store = Store(MemoryKeyValueStore(), File(tmp.newFolder(), "background.jpg"))
         val journal = SyncJournal(journalKv) { now() }
@@ -195,7 +196,7 @@ class SyncEngineTest {
     private fun TestScope.phone(
         remote: FakeRemoteStore, id: String, clock: () -> Long = { testScheduler.currentTime + 5_000_000 },
         engineRemote: RemoteStore = remote, photos: PhotoDownscaler = PhotoDownscaler { it }, io: CoroutineDispatcher = Dispatchers.Unconfined,
-        random: () -> Double = { 1.0 }, journalKv: MemoryKeyValueStore = MemoryKeyValueStore(), currentDebounceMs: Long = 1_000,
+        random: () -> Double = { 1.0 }, journalKv: KeyValueStore = MemoryKeyValueStore(), currentDebounceMs: Long = 1_000,
         copyLabel: String = "Phone $id",
     ) = Phone(remote, backgroundScope, id, clock, engineRemote, photos, io, random, journalKv, currentDebounceMs, copyLabel)
 
@@ -1778,6 +1779,7 @@ class SyncEngineTest {
         a.engine.stop()
         a.store.saveCurrent(day)                              // marks the journal
         remote.deleteAllUserData("u2")
+        remote.seedMarker("u2", AccountMarker.ACTIVE)         // "Keep my account": the cloud lost its documents, the account stands
         a.current = day
         a.engine.start("u2"); runCurrent()
         advanceTimeBy(3_000); runCurrent()
@@ -2022,4 +2024,92 @@ class SyncEngineTest {
         assertEquals(SyncStatus.Error(SyncProblem.REFUSED), a.engine.status.value)
     }
 
+    // ---- stage 3 fix round U ----------------------------------------------------------------------------------------------
+
+    /** A key-value store whose writes can be made to fail the way a full or broken disk does. */
+    private class FailingKv(val inner: MemoryKeyValueStore = MemoryKeyValueStore()) : KeyValueStore by inner {
+        var failing = false
+        override fun putString(key: String, value: String) { if (failing) throw IllegalStateException("disk"); inner.putString(key, value) }
+        override fun putStringChecked(key: String, value: String): Boolean { putString(key, value); return true }
+    }
+
+    /**
+     * A3-1 (pinned): a reconcile of the designs' listener that fails with nothing waiting to go up must leave the designs "not
+     * done", so a pass for the design in the editor alone does not read the designs as finished and say "synced" over them.
+     */
+    @Test fun aListenerReconcileThatFailedHalfwayIsNotCoveredBySyncedByAPassForTheCurrentDesignAlone() = runTest {
+        val remote = FakeRemoteStore()
+        val kv = FailingKv()
+        val a = phone(remote, "a", journalKv = kv)
+        a.engine.start("u1"); runCurrent()
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+        kv.failing = true
+        // a design arrives from another phone; saving it works, writing it down in the journal does not
+        remote.seedDesign("u1", RemoteDesign(designId("Night"), "Night", DesignJson.toJson(night), 9_000_000, DesignState.LIVE, 1)); runCurrent()
+        assertEquals(SyncStatus.Error(SyncProblem.FAILED, detail = "disk"), a.engine.status.value)
+        a.current = day
+        a.engine.onCurrentSaved(day, ChangeOrigin.USER)                  // only the design being edited changes now
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals("still the failure, not 'synced'", SyncStatus.Error(SyncProblem.FAILED, detail = "disk"), a.engine.status.value)
+        assertEquals("and the current design was not reported as given to the cloud", 0, remote.currentWrites.size)
+        kv.failing = false                                                // the disk works again: the retry finishes everything
+        advanceTimeBy(400_000); runCurrent()
+        assertTrue(a.engine.status.value is SyncStatus.Idle)
+        assertEquals(listOf(day), remote.currentWrites.map { DesignJson.fromJson(it.designJson) })
+        assertEquals(listOf("Night"), a.journal.entries().values.map { it.name })
+    }
+
+    /**
+     * A3r2-3: when the name planned for a kept-both copy is taken at the same moment, the next name also avoids the names of this
+     * phone's own designs: an unsynced design that has the next free name must not be overwritten by the copy.
+     */
+    @Test fun aCopyWhoseNameWasTakenAtOnceDoesNotTakeTheNameOfAnUnsyncedDesignOfThisPhone() = runTest {
+        val remote = FakeRemoteStore()
+        val other = phone(remote, "b")
+        other.store.saveNamed("Night", night.copy(accent = "#FF333333"))
+        other.engine.start("u1"); runCurrent()
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky, copyLabel = "Pixel 8")
+        val c = phone(remote, "c", copyLabel = "Pixel 8")
+        a.store.saveNamed("Night", night.copy(accent = "#FF111111"))
+        a.store.saveNamed("Night (Pixel 8) 2", day.copy(accent = "#FF444444"))   // never synced: the name the retry would pick
+        c.store.saveNamed("Night", night.copy(accent = "#FF222222"))
+        val gate = CompletableDeferred<Unit>()
+        flaky.putGate = gate
+        a.engine.start("u1"); runCurrent()                                      // a planned "Night (Pixel 8)" and waits to create it
+        c.engine.start("u1"); runCurrent()                                      // c created the same name meanwhile
+        gate.complete(Unit); runCurrent(); advanceTimeBy(3_000); runCurrent()
+        val inCloud = remote.designsOf("u1").values.associate { it.name to DesignJson.fromJson(it.designJson).accent }
+        val onPhone = a.store.savedDesigns().associate { it.name to it.design.accent }
+        assertEquals(
+            "the copy never even tried the name of a design that is on this phone",
+            listOf("Night (Pixel 8)", "Night (Pixel 8) 3", "Night (Pixel 8) 2"), flaky.attemptedNames,
+        )
+        assertEquals("c's copy is untouched", "#FF222222", inCloud["Night (Pixel 8)"])
+        assertEquals("a's unsynced design keeps its name and its content, in the cloud ...", "#FF444444", inCloud["Night (Pixel 8) 2"])
+        assertEquals("... and on the phone", "#FF444444", onPhone["Night (Pixel 8) 2"])
+        assertEquals("the copy took the first name that nobody held", "#FF111111", inCloud["Night (Pixel 8) 3"])
+        assertEquals("#FF111111", onPhone["Night (Pixel 8) 3"])
+        assertEquals("#FF333333", onPhone["Night"])
+    }
+
+    /**
+     * A3r2-3: a design with the copy's name appeared on the phone while the copy was being made in the cloud: the copy is not
+     * saved over it. Every version still exists afterwards (the next pass treats the two designs of that name like any other
+     * conflict).
+     */
+    @Test fun aDesignOfTheCopysNameThatAppearedMeanwhileIsNotOverwrittenByTheCopy() = runTest {
+        val remote = FakeRemoteStore()
+        remote.seedDesign("u1", RemoteDesign(designId("Night"), "Night", DesignJson.toJson(night.copy(accent = "#FF333333")), 9_000_000, DesignState.LIVE, 1))
+        val flaky = FlakyRemote(remote)
+        val a = phone(remote, "a", engineRemote = flaky, copyLabel = "Pixel 8")
+        a.store.saveNamed("Night", night.copy(accent = "#FF111111"))
+        // the person saves a design of the very name the copy gets, while the cloud is being asked to create it
+        flaky.onPutDesign = { a.store.saveNamed("Night (Pixel 8)", day.copy(accent = "#FF555555")) }
+        a.engine.start("u1"); runCurrent(); advanceTimeBy(5_000); runCurrent()
+        assertEquals("no version is lost: the person's new design, the phone's Night and the cloud's Night all exist",
+            setOf("#FF111111", "#FF555555", "#FF333333"), a.store.savedDesigns().map { it.design.accent }.toSet())
+        val inCloud = remote.designsOf("u1").values.map { DesignJson.fromJson(it.designJson).accent }.toSet()
+        assertEquals("and the phone and the cloud agree", a.store.savedDesigns().map { it.design.accent }.toSet(), inCloud)
+    }
 }

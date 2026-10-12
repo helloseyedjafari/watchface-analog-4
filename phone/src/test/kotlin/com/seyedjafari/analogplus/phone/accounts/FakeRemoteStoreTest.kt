@@ -184,6 +184,17 @@ class FakeRemoteStoreTest {
         assertEquals(AccountMarker.ABSENT, store.markerOf("u"))
     }
 
+    @Test fun aMarkerThatCannotBeReadRefusesEveryWriteLikeTheRulesAndEnsureNeitherOverwritesNorRepairsIt() {
+        val store = FakeRemoteStore()
+        store.seedMarker("u", AccountMarker.UNREADABLE)
+        refused { store.putDesign("u", "a", "n", "{}", DesignState.LIVE, 1) }
+        refused { store.putCurrent("u", "{}", "d", "Pixel") }
+        assertEquals(AccountMarker.UNREADABLE, runBlocking { store.ensureAccountMarker("u") })
+        assertEquals(AccountMarker.UNREADABLE, runBlocking { store.getAccountMarker("u") })
+        runBlocking { store.setAccountDeleted("u", false) }                 // the deleting phone's own Keep rewrites it properly
+        assertEquals(AccountMarker.ACTIVE, store.markerOf("u"))
+    }
+
     @Test fun aMarkerFailureIsOneShot() {
         val store = FakeRemoteStore()
         store.failMarkerWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")

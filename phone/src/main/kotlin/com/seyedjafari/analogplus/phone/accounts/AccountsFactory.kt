@@ -100,7 +100,7 @@ object AccountsFactory {
         val tokens = PromptAwareTokenSource(rawTokens, PromptWatch.process)
         val accounts = FirebaseAccountManager(FirebaseAuth.getInstance(), tokens, credentialManager)
         closeWhenScopeEnds(scope, accounts)
-        val backup = BackupService(remote, KeyVault(), KeyStoreKeySource(keyStore), AttemptLimiter(syncKv))
+        val backup = BackupService(remote, KeyVault(), KeyStoreKeySource(keyStore), AttemptLimiter(syncKv), markerSeenLive = journal::markerSeenLive)
         return AccountsController(setup.availability, accounts, engine, backup, AccountDeletion(accounts, remote, engine, journal, DeletionMarks(syncKv)), scope)
     }
 

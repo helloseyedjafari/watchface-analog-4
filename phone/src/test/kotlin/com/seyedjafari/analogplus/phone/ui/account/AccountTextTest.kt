@@ -189,7 +189,7 @@ class AccountTextTest {
         assertEquals(R.string.account_backup_title, AccountText.SECTION_TITLE)
         assertTrue(en(AccountText.SIGNED_OUT_BENEFIT).contains("Everything works without signing in."))
         // what the cloud really holds (the privacy policy draft lists the same): email, the name and picture Google sends, the designs
-        // and the names of deleted or renamed ones, the encrypted key backup, the phone model and a random device ID
+        // and the names of deleted or renamed ones, the encrypted key backup, the phone's name (the name set in Settings, else the model) and a random device ID
         val privacy = en(AccountText.SIGNED_OUT_PRIVACY)
         for (word in listOf(
             "email address", "name and the link to your profile picture from your Google account", "your designs",

@@ -124,10 +124,14 @@ class FirestoreRemoteStore(
     private fun backupDoc(uid: String) = user(uid).collection("backup").document("signingKey")
     private fun markerDoc(uid: String) = user(uid).collection("meta").document("account")
 
-    private fun toMarker(d: DocumentSnapshot): AccountMarker = when {
-        !d.exists() -> AccountMarker.ABSENT
-        d.getBoolean("deleted") == false -> AccountMarker.ACTIVE
-        else -> AccountMarker.DELETED   // `true`, or a marker we cannot read as live: nothing is written on a doubt
+    /** Only `deleted: true` is the deleted state and only `deleted: false` is live; any other marker is [AccountMarker.UNREADABLE]. */
+    private fun toMarker(d: DocumentSnapshot): AccountMarker {
+        if (!d.exists()) return AccountMarker.ABSENT
+        return when (d.get("deleted")) {
+            false -> AccountMarker.ACTIVE
+            true -> AccountMarker.DELETED
+            else -> AccountMarker.UNREADABLE   // missing, null or not a boolean
+        }
     }
 
     /**

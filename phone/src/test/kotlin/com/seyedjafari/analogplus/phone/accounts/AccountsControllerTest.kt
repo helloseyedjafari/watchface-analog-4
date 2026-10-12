@@ -1266,6 +1266,44 @@ class AccountsControllerTest {
         assertEquals(Busy.NONE, c.ui.value.busy)
     }
 
+    @Test fun aSignOutBecauseTheAccountWasDeletedKeepsItsNoticeWhileABackupWasRunning() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        val gate = CompletableDeferred<Unit>().also { remote.putGate = it }
+        val job = launch { c.upload(passphrase, BackupExpectation.None) }
+        assertEquals(Busy.BACKING_UP, c.ui.value.busy)
+        sync.accountWasRemoved("u1")                                    // the marker flips while the upload runs: this waits behind it
+        gate.complete(Unit)
+        job.join()
+        assertEquals(AccountState.SignedOut, c.ui.value.account)
+        assertEquals("the running action's own notice must not take its place", Notice.SignedOutAccountDeleted, c.ui.value.notice)
+        assertEquals(Busy.NONE, c.ui.value.busy)
+    }
+
+    @Test fun aRemovalDuringTheOwnDeleteConfirmationIsNotActedOnButSyncStartsAgainWhenTheDeletionIsCancelled() = runTest(UnconfinedTestDispatcher()) {
+        val prompt = CompletableDeferred<ReauthResult>()
+        val prompting = object : AccountManager by accounts {
+            override suspend fun reauthenticate(uid: String): ReauthResult = prompt.await()
+        }
+        accounts.force(AccountState.SignedIn("u1", "me@example.com"))
+        val c = controller(prompting)
+        assertEquals(listOf("u1"), sync.started)
+        var result: DeletionResult? = null
+        val job = launch { result = c.deleteAccount() }
+        assertEquals(Busy.DELETING, c.ui.value.busy)
+        assertTrue("no deletion is pending yet: only the running one protects the phone", !marks.isPending("u1"))
+        sync.accountWasRemoved("u1")                                    // another phone's deletion stopped this engine meanwhile
+        assertEquals(AccountState.SignedIn("u1", "me@example.com"), c.ui.value.account)
+        assertNull(c.ui.value.notice)
+        prompt.complete(ReauthResult.Cancelled)
+        job.join()
+        assertEquals(DeletionResult.Cancelled, result)
+        assertEquals("sync starts again, so that it finds the marker and the phone is signed out then", listOf("u1", "u1"), sync.started)
+        sync.accountWasRemoved("u1")                                    // the new session found it
+        assertEquals(AccountState.SignedOut, c.ui.value.account)
+        assertEquals(Notice.SignedOutAccountDeleted, c.ui.value.notice)
+    }
+
     // ---- stage 3 review B: an old key read must not cover a fresher status (S3B-4) ----------------------------------------
 
     @Test fun aSlowKeyReadThatWasOverTakenByAFresherCheckIsDropped() {

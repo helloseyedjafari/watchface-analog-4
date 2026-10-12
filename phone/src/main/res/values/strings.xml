@@ -446,7 +446,7 @@
     <string name="account_msg_delete_account_failed">Your cloud data is deleted but your account could not be deleted. Choose Finish deleting to try again, or keep your account.</string>
     <string name="account_msg_account_kept">Your account was kept. Sync is on again and the designs on this phone are uploaded again.</string>
     <string name="account_msg_keep_not_reached">Your account could not be kept because the cloud could not be reached. Check your connection and try again; the deletion is still unfinished.</string>
-    <string name="account_msg_signed_out_account_deleted">This account was deleted on another phone, so this phone was signed out. The designs and the signing key on this phone are kept.</string>
+    <string name="account_msg_signed_out_account_deleted">This account is being deleted, or was deleted, on another phone, so this phone was signed out. The designs and the signing key on this phone are kept.</string>
     <string name="account_msg_keep_not_saved">Your choice could not be saved on this phone, so the deletion is still unfinished. Try again.</string>
     <string name="account_msg_status_stale">The backup line above was out of date, so nothing was changed. It has been read again: look at it, then choose again.</string>
     <string name="account_msg_nothing_pending">There was no unfinished deletion to end.</string>

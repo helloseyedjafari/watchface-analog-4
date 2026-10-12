@@ -65,6 +65,7 @@ const val TOMBSTONE_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
 class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long = System::currentTimeMillis) : StoreObserver {
     private class Data(
         var boundUid: String? = null,
+        var markerSeenUid: String? = null,
         var currentSeenRemoteAtMs: Long = 0,
         var currentModifiedAtMs: Long = 0,
         var currentMark: SyncMark = SyncMark.CLEAN,
@@ -76,6 +77,20 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
     fun boundUid(): String? = synchronized(LOCK) { read().boundUid }
 
     fun currentSeenRemoteAtMs(): Long = synchronized(LOCK) { read().currentSeenRemoteAtMs }
+
+    /**
+     * True when this phone, bound to [uid], has seen the account marker of [uid] live. It survives a restart: a marker that
+     * is missing after that means the account was wiped by the phone that deleted it, never a new account, and this phone
+     * must not create the marker again (it would write into an account whose Auth user is gone). Keyed by the uid, so a
+     * re-created account (a new uid) starts without it; [bindTo] of another account and [unbind] clear it too.
+     */
+    fun markerSeenLive(uid: String): Boolean = synchronized(LOCK) { val d = read(); d.boundUid == uid && d.markerSeenUid == uid }
+
+    /** Remembers [markerSeenLive] for [uid]; only while the journal is bound to it (a late call of an older session does nothing). */
+    fun markMarkerSeenLive(uid: String) = synchronized(LOCK) {
+        val d = read()
+        if (d.boundUid == uid && d.markerSeenUid != uid) { d.markerSeenUid = uid; write(d) }
+    }
 
     /** True when the design being edited was saved (or the account is new) and the cloud has not been given it since. */
     fun currentDirty(): Boolean = synchronized(LOCK) { read().currentMark == SyncMark.DIRTY }
@@ -123,6 +138,7 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
         val d = read()
         if (d.boundUid == uid) return BindResult.SAME_ACCOUNT
         d.boundUid = uid
+        d.markerSeenUid = null
         d.currentSeenRemoteAtMs = 0
         markCurrentDirty(d)
         for ((id, e) in d.entries.toMap()) d.entries[id] = e.copy(baseRemoteAtMs = null, mark = SyncMark.DIRTY)
@@ -166,6 +182,7 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
     fun unbind() = synchronized(LOCK) {
         val d = read()
         d.boundUid = null
+        d.markerSeenUid = null
         d.currentSeenRemoteAtMs = 0
         markCurrentDirty(d)
         for ((id, e) in d.entries.toMap()) d.entries[id] = e.copy(baseRemoteAtMs = null, mark = SyncMark.DIRTY)
@@ -283,6 +300,7 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
             val o = Json.parseToJsonElement(text).jsonObject
             val data = Data(
                 boundUid = o["boundUid"]?.jsonPrimitive?.contentOrNull,
+                markerSeenUid = o["markerSeenUid"]?.jsonPrimitive?.contentOrNull,
                 currentSeenRemoteAtMs = o["currentSeenRemoteAtMs"]?.jsonPrimitive?.longOrNull ?: 0,
                 currentModifiedAtMs = o["currentModifiedAtMs"]?.jsonPrimitive?.longOrNull ?: 0,
                 currentMark = try { SyncMark.valueOf(o["currentMark"]!!.jsonPrimitive.content) } catch (e: Exception) { SyncMark.CLEAN },
@@ -312,6 +330,7 @@ class SyncJournal(private val kv: KeyValueStore, private val clock: () -> Long =
     private fun encode(d: Data): String {
         val o = buildJsonObject {
             put("boundUid", d.boundUid?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("markerSeenUid", d.markerSeenUid?.let { JsonPrimitive(it) } ?: JsonNull)
             put("currentSeenRemoteAtMs", d.currentSeenRemoteAtMs)
             put("currentModifiedAtMs", d.currentModifiedAtMs)
             put("currentMark", d.currentMark.name)

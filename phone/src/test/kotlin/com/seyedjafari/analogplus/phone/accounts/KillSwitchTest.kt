@@ -1,11 +1,14 @@
 package com.seyedjafari.analogplus.phone.accounts
 
 import com.seyedjafari.analogplus.facegen.design.DesignSettings
+import com.seyedjafari.analogplus.phone.ChangeOrigin
 import com.seyedjafari.analogplus.phone.Store
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
@@ -33,12 +36,23 @@ class KillSwitchTest {
     private val day = DesignSettings(name = "Day", accent = "#FFFFAA00")
     private val remote = FakeRemoteStore(strictMarkers = true)
 
-    private inner class Phone(scope: CoroutineScope, clock: () -> Long, engineRemote: RemoteStore = remote, id: String = "a") {
-        val store = Store(MemoryKeyValueStore(), File(tmp.newFolder(), "background.jpg"))
-        val journalKv = MemoryKeyValueStore()
+    /**
+     * One phone. [storeKv], [journalKv] and [folder] are what lives on its disk: [restarted] builds a new phone (new engine,
+     * new journal object) over the same ones, which is what a process that was killed and opened again is. [die] ends
+     * everything the old process was running.
+     */
+    private inner class Phone(
+        parent: CoroutineScope, val clock: () -> Long, val engineRemote: RemoteStore = remote, val id: String = "a",
+        val storeKv: MemoryKeyValueStore = MemoryKeyValueStore(), val journalKv: MemoryKeyValueStore = MemoryKeyValueStore(),
+        val folder: File = tmp.newFolder(),
+    ) {
+        val parentScope = parent
+        val scope = CoroutineScope(parent.coroutineContext + Job(parent.coroutineContext[Job]))
+        val store = Store(storeKv, File(folder, "background.jpg"))
         val journal = SyncJournal(journalKv) { clock() }
+        var current = DesignSettings()
         val engine = SyncEngine(
-            store, journal, engineRemote, scope, PhotoDownscaler { it }, { }, { DesignSettings() },
+            store, journal, engineRemote, scope, PhotoDownscaler { it }, { }, { current },
             deviceId = id, deviceLabel = "Phone $id", copySuffix = " (this phone)", clock = clock, io = Dispatchers.Unconfined,
             debounceMs = 1_000, currentDebounceMs = 1_000, retryMs = 30_000, maxRetryMs = 300_000, callTimeoutMs = 20_000, random = { 1.0 },
         )
@@ -53,6 +67,12 @@ class KillSwitchTest {
 
         fun deletion(cloud: RemoteStore = remote) = AccountDeletion(manager, cloud, engine, journal, marks, Dispatchers.Unconfined)
         fun names() = store.savedDesigns().map { it.name }.sorted()
+
+        /** The process is gone: no coroutine of this phone runs any more, and nothing was said to the cloud (no sign-out, no stop). */
+        fun die() { scope.cancel() }
+
+        /** The app opened again: a new engine over what the old one left on the disk. */
+        fun restarted(engineRemote: RemoteStore = this.engineRemote) = Phone(parentScope, clock, engineRemote, id, storeKv, journalKv, folder)
     }
 
     private fun TestScope.phone(engineRemote: RemoteStore = remote, id: String = "a") =
@@ -178,7 +198,8 @@ class KillSwitchTest {
         b.store.saveNamed("Night", night); b.store.saveNamed("Day", day)
         b.engine.start("u1"); runCurrent()
         assertTrue(b.removed.isEmpty())
-        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 2, "Day"), b.engine.status.value.let { if (it is SyncStatus.Error) it.copy(detail = "Day") else it })
+        // both designs were refused and skipped; the detail is the cloud's own reason of the first refusal, not a sign-out
+        assertEquals(SyncStatus.Error(SyncProblem.DESIGNS_SKIPPED, 2, "refused"), b.engine.status.value)
         // the first pass ensured the marker; the two refused designs together made the marker be read once
         assertEquals(1, cloud.markerReads)
     }
@@ -222,18 +243,17 @@ class KillSwitchTest {
         val watching = object : RemoteStore by remote {
             override suspend fun deleteAllUserData(uid: String) { wipeSeenMarker = remote.markerOf(uid); remote.deleteAllUserData(uid) }
         }
+        val writesBefore = remote.designWrites.size
         assertEquals(DeletionResult.Done, a.deletion(watching).delete("u1"))
         runCurrent()
         assertEquals("the marker said deleted when the wipe began", AccountMarker.DELETED, wipeSeenMarker)
         assertEquals(listOf("u1"), b.removed)                       // b signs out
-        assertTrue("a does not sign itself out: it is the one deleting", a.removed.isEmpty() || a.manager.state.value is AccountState.SignedOut)
+        assertEquals("a's account is gone (the guard that a's own engine is not signed out is the controller's: AccountsControllerTest)",
+            AccountState.SignedOut, a.manager.state.value)
         assertEquals(listOf("Night"), b.names())                    // b keeps its designs
         assertEquals(AccountMarker.ABSENT, remote.markerOf("u1"))   // and the marker went last
-        // a write of b would have been refused from the start of the deletion
-        remote.seedMarker("u1", AccountMarker.DELETED)
-        var refused: RemoteException? = null
-        try { remote.putDesign("u1", "x", "n", "{}", DesignState.LIVE, 1) } catch (e: RemoteException) { refused = e }
-        assertEquals(RemoteErrorKind.PERMISSION, refused?.kind)
+        assertEquals("nobody wrote a design from the start of the deletion on", writesBefore, remote.designWrites.size)
+        assertTrue("and nothing was written back into the wiped account", remote.designsOf("u1").isEmpty())
     }
 
     @Test fun theDeletingPhoneItselfIsNotSignedOutByItsOwnMarker() = runTest {
@@ -261,5 +281,152 @@ class KillSwitchTest {
         a.store.saveNamed("Day", day)
         advanceTimeBy(5_000); runCurrent()
         assertTrue(remote.designsOf("u1").values.any { it.name == "Day" })
+    }
+
+    // ---- a phone that was not running when the account was deleted (it remembers across a restart) ----------------------------
+
+    @Test fun aPhoneThatRestartsAfterTheAccountWasDeletedIsSignedOutAndNeverCreatesTheMarkerAgain() = runTest {
+        val a = phone(id = "a")
+        a.store.saveNamed("Night", night)
+        a.engine.start("u1"); runCurrent()
+        assertTrue("the first live look is written down", a.journal.markerSeenLive("u1"))
+        a.die()                                                    // Android kills the process: nothing is told to the cloud
+        val c = phone(id = "c")                                    // another phone deletes the account, all the way
+        c.engine.start("u1"); runCurrent()
+        assertEquals(DeletionResult.Done, c.deletion().delete("u1"))
+        assertEquals(AccountMarker.ABSENT, remote.markerOf("u1"))
+        val markerWrites = remote.markerWrites.size
+        val documentWrites = remote.designWrites.size + remote.currentWrites.size
+        // the person opens the app on the first phone; its ID token still works, and it has an edit that was never sent
+        val again = a.restarted()
+        again.current = night
+        again.journal.onCurrentSaved(night, ChangeOrigin.USER)
+        again.engine.start("u1"); runCurrent(); advanceTimeBy(60_000); runCurrent()
+        assertEquals("signed out with the notice, not synced into a gone account", listOf("u1"), again.removed)
+        assertEquals("the marker is not created again", markerWrites, remote.markerWrites.size)
+        assertEquals(AccountMarker.ABSENT, remote.markerOf("u1"))
+        assertEquals("nothing is written into the deleted account", documentWrites, remote.designWrites.size + remote.currentWrites.size)
+        assertEquals("the designs on the phone are kept", listOf("Night"), again.names())
+        assertEquals(SyncStatus.Off, again.engine.status.value)
+    }
+
+    @Test fun aPhoneThatNeverSawTheMarkerLiveStillCreatesItAfterARestart() = runTest {
+        val a = phone(id = "a")
+        a.store.saveNamed("Night", night)
+        remote.failMarkerWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")      // the first look never got through
+        a.engine.start("u1"); runCurrent()
+        assertTrue(!a.journal.markerSeenLive("u1"))
+        a.die()
+        val again = a.restarted()
+        again.engine.start("u1"); runCurrent()
+        assertTrue("a new account is still a new account", again.removed.isEmpty())
+        assertEquals(AccountMarker.ACTIVE, remote.markerOf("u1"))
+        assertTrue(again.journal.markerSeenLive("u1"))
+        assertEquals(1, remote.designsOf("u1").size)
+    }
+
+    @Test fun aNewAccountOnAPhoneWithTheHistoryOfAnOldOneStartsFresh() = runTest {
+        val a = phone(id = "a")
+        a.store.saveNamed("Night", night)
+        a.engine.start("u1"); runCurrent()
+        a.die()
+        remote.deleteAllUserData("u1")                                // the account is gone
+        val again = a.restarted()
+        again.engine.start("u1"); runCurrent()
+        assertEquals(listOf("u1"), again.removed)
+        // the person signs in with the same Google account again: a new uid, a new account
+        again.journal.unbindIf("u1")
+        again.engine.start("u2"); runCurrent()
+        assertEquals("the new account gets its marker and its designs", AccountMarker.ACTIVE, remote.markerOf("u2"))
+        assertEquals(1, remote.designsOf("u2").size)
+        assertTrue(again.journal.markerSeenLive("u2"))
+        assertTrue("and the old one is not remembered", !again.journal.markerSeenLive("u1"))
+    }
+
+    @Test fun theMarkerSeenLiveNoteIsPerAccountAndIsClearedByABindToAnotherOneAndByAnUnbind() {
+        val kv = MemoryKeyValueStore()
+        val j = SyncJournal(kv)
+        assertTrue(!j.markerSeenLive("u1"))
+        j.markMarkerSeenLive("u1")
+        assertTrue("not bound to it: a late call of an older session does nothing", !j.markerSeenLive("u1"))
+        j.bindTo("u1")
+        j.markMarkerSeenLive("u1")
+        assertTrue(SyncJournal(kv).markerSeenLive("u1"))             // another journal object over the same disk (a restart)
+        assertTrue("another account's history is not this account's", !j.markerSeenLive("u2"))
+        j.markLiveUnsent("u1")
+        assertTrue("keeping the account does not forget it", j.markerSeenLive("u1"))
+        j.bindTo("u2")
+        assertTrue(!j.markerSeenLive("u1") && !j.markerSeenLive("u2"))
+        j.markMarkerSeenLive("u2")
+        assertTrue(j.markerSeenLive("u2"))
+        j.unbind()
+        assertTrue(!j.markerSeenLive("u2"))
+        j.bindTo("u2")
+        j.markMarkerSeenLive("u2")
+        assertTrue(j.unbindIf("u2"))
+        assertTrue(!j.markerSeenLive("u2"))
+    }
+
+    // ---- a marker that is neither live nor deleted -----------------------------------------------------------------------------
+
+    @Test fun aMarkerThatCannotBeReadWritesNothingSignsNobodyOutAndIsRetriedUntilItIsFixed() = runTest {
+        remote.seedMarker("u1", AccountMarker.UNREADABLE)
+        val b = phone(id = "b")
+        b.store.saveNamed("Night", night)
+        b.engine.start("u1"); runCurrent()
+        assertTrue("nobody is signed out on a doubt", b.removed.isEmpty())
+        assertEquals(SyncStatus.Error(SyncProblem.FAILED, detail = "The account marker could not be read"), b.engine.status.value)
+        assertTrue("and nothing is written on one", remote.designWrites.isEmpty() && remote.currentWrites.isEmpty())
+        assertEquals("the marker is not touched", AccountMarker.UNREADABLE, remote.markerOf("u1"))
+        advanceTimeBy(100_000); runCurrent()
+        assertTrue(remote.designWrites.isEmpty())
+        remote.seedMarker("u1", AccountMarker.ACTIVE)                   // someone fixes the document
+        advanceTimeBy(400_000); runCurrent()
+        assertEquals("the retry goes through", 1, remote.designsOf("u1").size)
+        assertTrue(b.engine.status.value is SyncStatus.Idle)
+        assertTrue(b.removed.isEmpty())
+    }
+
+    @Test fun aMarkerThatBecomesUnreadableDuringASessionSignsNobodyOut() = runTest {
+        val b = phone(id = "b")
+        b.engine.start("u1"); runCurrent()
+        remote.seedMarker("u1", AccountMarker.UNREADABLE)
+        runCurrent()
+        assertTrue(b.removed.isEmpty())
+        assertTrue(b.engine.status.value !is SyncStatus.Off)
+    }
+
+    // ---- the pass ends at once when a refused write turns out to be the kill switch ----------------------------------------------
+
+    /**
+     * The person opens the app again, or keeps the account, at the very moment the old session stops itself: with the status as the
+     * hook this restart happens inside the old pass, between its stop and whatever it would still do. The old pass must not speak
+     * for the new session (a refusal, "synced", skipped designs).
+     */
+    @Test fun aPassThatFoundTheAccountRemovedLeavesNothingBehindForTheSessionThatStartsRightAfterIt() = runTest {
+        remote.seedMarker("u1", AccountMarker.DELETED)
+        val stale = object : RemoteStore by remote {
+            // a view from before the deletion: the check before the pass says live, and the writes are what get refused
+            override suspend fun ensureAccountMarker(uid: String): AccountMarker = AccountMarker.ACTIVE
+            override suspend fun putCurrent(uid: String, designJson: String, deviceId: String, deviceLabel: String): RemoteCurrent =
+                throw RemoteException(RemoteErrorKind.PERMISSION, "refused")
+        }
+        val b = phone(stale, "b")
+        b.current = night
+        b.journal.onCurrentSaved(night, ChangeOrigin.USER)
+        var restarted = false
+        val seen = ArrayList<SyncStatus>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            b.engine.status.collect { s ->
+                seen += s
+                if (s == SyncStatus.Off && !restarted && b.removed.isNotEmpty()) { restarted = true; b.engine.start("u1") }
+            }
+        }
+        b.engine.start("u1"); runCurrent()
+        assertTrue("the hook ran: the session was started again inside the old pass", restarted)
+        assertTrue(
+            "the old pass said nothing about the new session (no refusal, no failure): $seen",
+            seen.none { it is SyncStatus.Error },
+        )
     }
 }

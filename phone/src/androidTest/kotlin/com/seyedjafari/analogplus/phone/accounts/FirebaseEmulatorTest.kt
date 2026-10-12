@@ -162,6 +162,28 @@ class FirebaseEmulatorTest {
         } finally { c.disconnect() }
     }
 
+    /** Creates a document of any shape with the owner token, which skips the rules (a console edit, a later schema). */
+    private fun createRaw(collectionPath: String, docId: String, body: String) {
+        val url = URL("http://${FirebaseProvider.EMULATOR_HOST}:${FirebaseProvider.FIRESTORE_EMULATOR_PORT}/v1/projects/$projectId/databases/(default)/documents/$collectionPath?documentId=$docId")
+        val c = url.openConnection() as HttpURLConnection
+        c.requestMethod = "POST"
+        c.doOutput = true
+        c.setRequestProperty("Authorization", "Bearer owner")
+        c.setRequestProperty("Content-Type", "application/json")
+        try {
+            c.outputStream.use { it.write(body.toByteArray()) }
+            check(c.responseCode == 200) { "REST create of $collectionPath/$docId answered ${c.responseCode}" }
+        } finally { c.disconnect() }
+    }
+
+    private fun deleteRaw(path: String) {
+        val url = URL("http://${FirebaseProvider.EMULATOR_HOST}:${FirebaseProvider.FIRESTORE_EMULATOR_PORT}/v1/projects/$projectId/databases/(default)/documents/$path")
+        val c = url.openConnection() as HttpURLConnection
+        c.requestMethod = "DELETE"
+        c.setRequestProperty("Authorization", "Bearer owner")
+        try { check(c.responseCode == 200) { "REST delete of $path answered ${c.responseCode}" } } finally { c.disconnect() }
+    }
+
     // ---- Auth ---------------------------------------------------------------------------------------------------
 
     /** The class the app itself uses in emulator mode (`EmulatorSetup.tokenSource`), not a lambda that imitates it. */
@@ -979,6 +1001,26 @@ class FirebaseEmulatorTest {
         remote.setAccountDeleted(uid, false)
         assertEquals(AccountMarker.ACTIVE, remote.getAccountMarker(uid))
         assertTrue(exists("users/$uid/meta/account"))
+    }
+
+    @Test fun aMarkerThatSaysNeitherDeletedTrueNorFalseIsUnreadableNeverDeletedAndNeverOverwrittenByEnsure() = inTest {
+        val uid = signInWithoutMarker(unique("marker-odd"))
+        val shapes = listOf(
+            """{"fields":{"schema":{"integerValue":"1"}}}""",                                           // no `deleted` at all
+            """{"fields":{"deleted":{"nullValue":null},"schema":{"integerValue":"1"}}}""",
+            """{"fields":{"deleted":{"stringValue":"yes"},"schema":{"integerValue":"1"}}}""",
+        )
+        for (body in shapes) {
+            createRaw("users/$uid/meta", "account", body)
+            assertEquals(body, AccountMarker.UNREADABLE, remote.getAccountMarker(uid))
+            assertEquals("a plain start never repairs it", AccountMarker.UNREADABLE, remote.ensureAccountMarker(uid))
+            assertEquals(body, AccountMarker.UNREADABLE, remote.getAccountMarker(uid))
+            deleteRaw("users/$uid/meta/account")
+        }
+        createRaw("users/$uid/meta", "account", """{"fields":{"deleted":{"booleanValue":true},"schema":{"integerValue":"1"}}}""")
+        assertEquals(AccountMarker.DELETED, remote.getAccountMarker(uid))
+        deleteRaw("users/$uid/meta/account")
+        assertEquals(AccountMarker.ACTIVE, remote.ensureAccountMarker(uid))
     }
 
     @Test fun settingTheMarkerOnAnAccountWithoutOneCreatesItFirst() = inTest {

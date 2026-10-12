@@ -1,9 +1,7 @@
 package com.seyedjafari.analogplus.phone.accounts
 
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
-import android.view.accessibility.AccessibilityWindowInfo
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
@@ -18,8 +16,6 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
-import android.graphics.Rect
 import com.seyedjafari.analogplus.phone.ui.account.AccountTags
 import com.seyedjafari.analogplus.phone.ui.account.SetPassphraseDialog
 import com.seyedjafari.analogplus.phone.ui.theme.AnalogTheme

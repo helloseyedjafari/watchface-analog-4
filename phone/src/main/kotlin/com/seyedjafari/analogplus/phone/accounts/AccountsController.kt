@@ -284,11 +284,28 @@ class AccountsController(
      */
     private suspend fun onAccountRemoved(who: String) {
         if (uid() != who) return
-        if (deletingUid == who || deletion.isPending(who)) return
+        if (deletion.isPending(who)) return
+        if (deletingUid == who) {
+            // The engine stopped itself and will not tell again. If this phone's own deletion ends without touching the cloud
+            // (cancelled at the Google prompt, say), sync must start again so that it finds the marker and signs this phone out.
+            syncedUid = null
+            return
+        }
         deletion.forgetRemovedAccount(who)
-        noticeUid = null   // belongs to no account: the sign-out must not take it away
+        showSignedOutNotice()
+        actionLock.withLock {
+            if (uid() != who) return@withLock
+            // again, now that no action runs any more: one that was running (a backup refused by the same marker, say) has put
+            // its own notice over the first one, and the sign-out must not leave the person without the reason
+            showSignedOutNotice()
+            accounts.signOut()
+        }
+    }
+
+    /** The kicked-out notice belongs to no account: the sign-out must not take it away. */
+    private fun showSignedOutNotice() {
+        noticeUid = null
         _ui.update { it.copy(notice = Notice.SignedOutAccountDeleted) }
-        actionLock.withLock { if (uid() == who) accounts.signOut() }
     }
 
     fun signIn() { scope.launch { accounts.signIn() } }

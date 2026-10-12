@@ -108,7 +108,7 @@ class AccountMessagesTest {
         Row(Notice.AccountKept, NoticeKind.INFO, "Your account was kept. Sync is on again and the designs on this phone are uploaded again."),
         Row(Notice.KeepNotSaved, NoticeKind.ERROR, "Your choice could not be saved on this phone, so the deletion is still unfinished. Try again."),
         Row(Notice.KeepNotReached, NoticeKind.ERROR, "Your account could not be kept because the cloud could not be reached. Check your connection and try again; the deletion is still unfinished."),
-        Row(Notice.SignedOutAccountDeleted, NoticeKind.INFO, "This account was deleted on another phone, so this phone was signed out. The designs and the signing key on this phone are kept."),
+        Row(Notice.SignedOutAccountDeleted, NoticeKind.INFO, "This account is being deleted, or was deleted, on another phone, so this phone was signed out. The designs and the signing key on this phone are kept."),
         Row(Notice.ActionFailed("NullPointerException"), NoticeKind.ERROR, "Something went wrong and the action did not finish.", "NullPointerException"),
     )
 

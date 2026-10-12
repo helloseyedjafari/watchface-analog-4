@@ -180,12 +180,12 @@ class AccountsEndToEndTest {
     private fun designsInCloud(uid: String) = documentCount("users/$uid/designs?pageSize=100")
 
     /** Nothing at all under the user: no design, no current design, no backup, not even an empty parent document. */
-    private fun assertCloudEmpty(uid: String) {
+    private fun assertCloudEmpty(uid: String, authToo: Boolean = true) {
         assertEquals("designs", 0, documentCount("users/$uid/designs?pageSize=100"))
         assertEquals("state", 0, documentCount("users/$uid/state?pageSize=100"))
         assertEquals("backup", 0, documentCount("users/$uid/backup?pageSize=100"))
         assertEquals("anything under users", 0, documentCount("users?showMissing=true&pageSize=100"))
-        assertEquals("accounts in Auth", 0, authUserCount())
+        if (authToo) assertEquals("accounts in Auth", 0, authUserCount())
     }
 
     @Before fun setUp() {
@@ -584,9 +584,11 @@ class AccountsEndToEndTest {
      * on this phone would also sign the other one out in the middle of its deletion; the engine, the cloud and the controller are
      * the real ones, which is what the kill switch is about.
      */
-    private inner class SecondPhone(uid: String) {
-        val store = Store(MemoryKeyValueStore(), File(context.cacheDir, "e2e-b-$tag.jpg"))
-        val kv = MemoryKeyValueStore()
+    private inner class SecondPhone(uid: String, previous: SecondPhone? = null) {
+        // a phone started over the disk of an earlier one is the same phone after its process was killed and the app opened again
+        val storeKv: MemoryKeyValueStore = previous?.storeKv ?: MemoryKeyValueStore()
+        val store: Store = Store(storeKv, File(context.cacheDir, "e2e-b-$tag.jpg"))
+        val kv: MemoryKeyValueStore = previous?.kv ?: MemoryKeyValueStore()
         val journal = SyncJournal(kv)
         val manager = FakeAccountManager(AccountState.SignedIn(uid, null))
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -651,7 +653,55 @@ class AccountsEndToEndTest {
         }
     }
 
-    @Test fun aPhoneWithNoListenerFindsOutAtTheCheckBeforeItsNextPassAndWritesNothing() {
+    /**
+     * The usual second phone: its app was not running when the account was deleted (Android had ended the process), and its sign-in
+     * is still good (an ID token lives for about an hour, and Firestore does not look at whether the Auth user still exists). The
+     * Auth user is therefore left alone here, as the test's shared sign-in has to stay valid; the deletion is the cloud's part of
+     * it, in the order the app does it: the marker says deleted, every document goes, the marker last.
+     */
+    @Test fun aSecondPhoneWhoseAppWasNotRunningWhenTheAccountWasDeletedIsSignedOutWhenItOpensAndWritesNothing() {
+        val phone1 = Phone(1)
+        show(phone1)
+        val uid = signInThroughTheCard(phone1)
+        phone1.store.saveNamed("Night", night)
+        await("the design in the cloud") { designsInCloud(uid) == 1 }
+        waitUntilSynced(phone1)
+        val phoneB = SecondPhone(uid)
+        var phoneB2: SecondPhone? = null
+        try {
+            await("Night on the second phone") { phoneB.names() == listOf("Night") }
+            await("the second phone to have synced") { phoneB.controller.ui.value.sync is SyncStatus.Idle }
+            assertTrue("it wrote down that it saw the marker live", phoneB.journal.markerSeenLive(uid))
+            phoneB.stop()                                         // the process is gone; the disk stays
+            phoneB.store.saveNamed("Dawn", dawn)                  // an edit that was never sent (made offline, say)
+            onMain { phone1.controller.setForeground(false) }     // the first phone stays out of it (its own sign-out would end the shared session)
+            val cloud = FirestoreRemoteStore(FirebaseFirestore.getInstance())
+            runBlocking { cloud.setAccountDeleted(uid, true); cloud.deleteAllUserData(uid) }
+            assertCloudEmpty(uid, authToo = false)
+            assertEquals("not even the marker is left", 0, documentCount("users/$uid/meta?pageSize=100"))
+
+            phoneB2 = SecondPhone(uid, previous = phoneB)         // the person opens the app on the second phone
+            await("the second phone to be signed out") { phoneB2.manager.state.value == AccountState.SignedOut }
+            assertEquals(Notice.SignedOutAccountDeleted, phoneB2.controller.ui.value.notice)
+            assertEquals(SyncStatus.Off, phoneB2.controller.ui.value.sync)
+            assertEquals("its designs are kept", listOf("Dawn", "Night"), phoneB2.names())
+            assertNull("the binding to the deleted account is forgotten", phoneB2.journal.boundUid())
+            // it neither created the marker again nor wrote anything into the deleted account
+            assertCloudEmpty(uid, authToo = false)
+            assertEquals("no marker", 0, documentCount("users/$uid/meta?pageSize=100"))
+        } finally {
+            phoneB.stop()
+            phoneB2?.stop()
+        }
+    }
+
+    /**
+     * A phone in the background has no listener (they are cancelled first, so the marker cannot be delivered), and its next pass finds
+     * out by itself, by one of two ways that the JVM tests pin one by one: the look at the marker before the pass, or the look after
+     * its first write was refused. Here only the result is asserted, on the real rules: signed out with the notice, and nothing of
+     * the new design reached the cloud.
+     */
+    @Test fun aPhoneInTheBackgroundIsSignedOutByItsNextPassAndWritesNothing() {
         val phone1 = Phone(1)
         show(phone1)
         val uid = signInThroughTheCard(phone1)
@@ -660,10 +710,10 @@ class AccountsEndToEndTest {
         waitUntilSynced(phone1)
         // another phone sets the marker (the first step of a deletion) behind this phone's back, and this phone has an edit to send
         val cloud = FirestoreRemoteStore(FirebaseFirestore.getInstance())
+        onMain { phone1.controller.setForeground(false) }   // no listener runs in the background: nothing can tell it before its own pass
         runBlocking { cloud.setAccountDeleted(uid, true) }
-        onMain { phone1.controller.setForeground(false) }   // no listener tells it: only its own write can find out
         phone1.store.saveNamed("Dawn", dawn)
-        await("this phone to be signed out by the check before its pass") { phone1.ui.account == AccountState.SignedOut }
+        await("this phone to be signed out by its next pass") { phone1.ui.account == AccountState.SignedOut }
         assertEquals(Notice.SignedOutAccountDeleted, phone1.ui.notice)
         assertEquals("the new design never reached the cloud", 1, designsInCloud(uid))
         assertTrue("and it is still on the phone", phone1.store.savedDesigns().any { it.name == "Dawn" })

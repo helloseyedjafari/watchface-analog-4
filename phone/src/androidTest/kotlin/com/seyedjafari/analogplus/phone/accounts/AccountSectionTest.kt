@@ -1,7 +1,10 @@
 package com.seyedjafari.analogplus.phone.accounts
 
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -315,8 +318,10 @@ class AccountSectionTest {
         waitForTag(AccountTags.PASSPHRASE)
         repeat(3) { wrongTry(f, "wrong guess $it") }
         waitForText("You can try again in")
-        // the countdown is read out when it first shows, and the first value is "5 seconds" (the single clock reading that makes the first
-        // remaining wait the wait itself is pinned by CloudDecisionsTest: the screen's own tick re-reads the clock before the first frame)
+        // the countdown is read out when it first shows, and the first value is "5 seconds". This test is what pins the dialog's single clock
+        // reading (the screen's own tick re-reads the clock before the first frame, and the clock here runs 7 ms on at every reading): with two
+        // readings the first remaining wait would be 5 007 ms and the LiveRegion assert below would fail. CloudDecisionsTest pins only the
+        // helpers (startCountdown reads once; countdownIsNews), not that the dialog uses them.
         waitForText("You can try again in 5 seconds")
         f.clock.addAndGet(40)
         rule.waitForIdle()
@@ -714,6 +719,28 @@ class AccountSectionTest {
         assertEquals("dark=$dark", scheme.onErrorContainer, rule.onNodeWithTag(AccountTags.KEEP_ACCOUNT).colourOfText())
     }
 
+    /** The button's outline is drawn in the same colour as its label (the default outline is 2.7:1 on the error container). */
+    private fun keepMyAccountOutlineColour(dark: Boolean) {
+        val f = fixture(pending = true)
+        f.show(rule, dark = dark)
+        waitForTag(AccountTags.KEEP_ACCOUNT)
+        val scheme = if (dark) com.seyedjafari.analogplus.phone.ui.theme.DarkScheme else com.seyedjafari.analogplus.phone.ui.theme.LightScheme
+        val image = rule.onNodeWithTag(AccountTags.KEEP_ACCOUNT).performScrollTo()
+            .captureToImage().asAndroidBitmap()
+        // the middle of the top edge: the outline (a hairline, drawn inside the shape) covers the first pixel row there
+        val pixel = image.getPixel(image.width / 2, 0)
+        val expected = scheme.onErrorContainer.toArgb()
+        for (shift in listOf(16, 8, 0)) {
+            val got = (pixel shr shift) and 0xFF
+            val want = (expected shr shift) and 0xFF
+            assertTrue("dark=$dark: the outline pixel ${Integer.toHexString(pixel)} is not the label colour ${Integer.toHexString(expected)}", kotlin.math.abs(got - want) <= 8)
+        }
+    }
+
+    @Test fun theKeepMyAccountOutlineIsDrawnInTheLabelColourInTheLightTheme() = keepMyAccountOutlineColour(dark = false)
+
+    @Test fun theKeepMyAccountOutlineIsDrawnInTheLabelColourInTheDarkTheme() = keepMyAccountOutlineColour(dark = true)
+
     @Test fun theKeepMyAccountLabelIsDrawnInTheColourMadeForTextOnTheErrorContainerInTheLightTheme() = keepMyAccountLabelColour(dark = false)
 
     @Test fun theKeepMyAccountLabelIsDrawnInTheColourMadeForTextOnTheErrorContainerInTheDarkTheme() = keepMyAccountLabelColour(dark = true)
@@ -737,7 +764,7 @@ class AccountSectionTest {
             )
         }
         rule.onNodeWithTag(AccountTags.NOTICE).assertTextContains(
-            "This account was deleted on another phone, so this phone was signed out. The designs and the signing key on this phone are kept.",
+            "This account is being deleted, or was deleted, on another phone, so this phone was signed out. The designs and the signing key on this phone are kept.",
         )
         rule.onNodeWithTag(AccountTags.SIGN_IN).assertExists()
         rule.onNodeWithTag(AccountTags.NOTICE_DISMISS).assertExists()

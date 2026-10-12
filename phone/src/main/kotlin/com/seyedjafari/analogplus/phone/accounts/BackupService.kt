@@ -236,6 +236,13 @@ class BackupService(
     private val keys: KeySource,
     private val limiter: AttemptLimiter,
     private val cpu: CoroutineDispatcher = Dispatchers.Default,
+    /**
+     * Whether this phone has already seen the account's marker live ([SyncJournal.markerSeenLive]). A phone that has not
+     * makes sure the marker exists before the first write of an upload (the rules refuse every write of an account without
+     * one, and a brand-new account's first sync may not have created it yet); one that has never creates it again, because a
+     * marker that is missing then means the account was wiped.
+     */
+    private val markerSeenLive: (String) -> Boolean = { false },
 ) {
     /** One restore at a time: guesses made at the same moment must not slip past the attempt delay. */
     private val restoreLock = Mutex()
@@ -287,6 +294,10 @@ class BackupService(
     suspend fun upload(uid: String, passphrase: String, expecting: BackupExpectation): UploadResult {
         val assessment = assessPassphrase(passphrase)
         if (!assessment.strength.isAcceptable()) return UploadResult.PassphraseRefused(assessment)
+        // before any key work: offline here is a plain "failed", and the write below cannot be refused for a missing marker
+        if (!markerSeenLive(uid)) {
+            try { remote.ensureAccountMarker(uid) } catch (e: RemoteException) { return UploadResult.Failed(e.kind, e.message.orEmpty()) }
+        }
         val first = try { remote.getBackup(uid) } catch (e: RemoteException) {
             return UploadResult.Failed(e.kind, e.message.orEmpty())
         }

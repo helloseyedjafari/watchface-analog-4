@@ -64,8 +64,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  * not read the saved designs again: the designs listener keeps that list current, so the read is skipped when that listener
  * is up, the last pass over the designs got through and no design is waiting to go up.
  *
- * Retrying: a failed pass (offline, sign-in expired, quota used up) or a dead listener (anything but a refusal) asks for one
- * retry after [retryMs] doubled for every failure in a row, up to [maxRetryMs], each wait randomised by [random] (0 to 1:
+ * Retrying: a failed pass (offline, sign-in expired, quota used up, or any other failure: everything but a refusal) or a dead
+ * listener (also anything but a refusal) asks for one retry after [retryMs] doubled for every failure in a row, up to [maxRetryMs], each wait randomised by [random] (0 to 1:
  * the wait is 50% to 100% of the backoff) so that phones do not retry in step. A pass that gets through, or a local edit,
  * starts the backoff over, except that a pass does not while a listener that died of a retried error is still down (it
  * starts over when that listener delivers again), so a listener that keeps dying does not retry every half minute.
@@ -136,8 +136,10 @@ class SyncEngine(
     private val failingListeners: MutableSet<Watch> = ConcurrentHashMap.newKeySet()
 
     /**
-     * True once in this session the account marker was seen to be live. From then on a missing marker means the account was
-     * wiped (by the phone that deleted it), whereas before it means a new account whose marker is still to be created.
+     * True once this phone has seen the account marker live: in this session, or in an earlier one (the journal remembers it
+     * per account, [SyncJournal.markerSeenLive], and a session starts with it). From then on a missing marker means the
+     * account was wiped (by the phone that deleted it), whereas before it means a new account whose marker is still to be
+     * created.
      */
     @Volatile private var markerSeenActive = false
 
@@ -247,6 +249,9 @@ class SyncEngine(
                 restorePending = journal.boundUid() != uid && isEmptyDevice()
                 journal.bindTo(uid)
                 seenCurrentAtMs = journal.currentSeenRemoteAtMs()
+                // a phone that saw this account's marker live in an earlier session (or before a restart) never creates it again:
+                // a marker that is missing now means the account was wiped
+                markerSeenActive = journal.markerSeenLive(uid)
             }
             ready.complete(Unit)
             // The cloud's current design is looked at before the first pass, because that pass would otherwise push an edit
@@ -501,19 +506,20 @@ class SyncEngine(
         // Only real work shows as "Syncing": noting a cloud time (RecordBase) or forgetting a deletion (Drop) is bookkeeping.
         if (actions.any { it !is SyncAction.RecordBase && it !is SyncAction.Drop }) markSyncing(id)
         val byId = local.associateBy { it.id }
+        val remoteNames = remoteList.mapTo(HashSet()) { it.name }
         var skipped = 0
         var firstReason = ""
         for (action in actions) {
             if (uid != id) break   // signed out meanwhile: stop writing for that account
             val outcome = try {
-                execute(id, action, byId[action.id])
+                execute(id, action, byId[action.id], remoteNames)
             } catch (e: RemoteException) {
                 // One document the cloud refuses (rules, a field it does not like) must not block the designs after it, now
                 // or in every later pass. Offline, an expired sign-in and a used-up quota would fail all the others too:
                 // those end the pass.
                 if (e.kind != RemoteErrorKind.PERMISSION && e.kind != RemoteErrorKind.OTHER) throw e
-                // a refusal may be the kill switch of a deleted account: one look at the marker (the loop ends if it says so)
-                if (e.kind == RemoteErrorKind.PERMISSION) refusalMeansRemoval(id)
+                // a refusal may be the kill switch of a deleted account: one look at the marker (the pass ends if it says so)
+                if (e.kind == RemoteErrorKind.PERMISSION) checkRefusalForRemoval(id)
                 if (firstReason.isEmpty()) firstReason = e.message.orEmpty()
                 Outcome.UNSYNCABLE
             } catch (e: IllegalArgumentException) {
@@ -580,7 +586,7 @@ class SyncEngine(
      * [Outcome.LOCAL_CHANGED]: the user changed the design after the plan was made and the cloud copy was not applied over
      * it; the edit schedules the next pass. The calls that decode or encode photos run on [io].
      */
-    private suspend fun execute(uid: String, action: SyncAction, local: LocalDesignEntry?): Outcome {
+    private suspend fun execute(uid: String, action: SyncAction, local: LocalDesignEntry?, remoteNames: Set<String>): Outcome {
         when (action) {
             is SyncAction.PushLive -> {
                 val design = local?.design ?: return Outcome.UNSYNCABLE
@@ -632,16 +638,23 @@ class SyncEngine(
                 if (!withContext(io) { unchangedSince(action.id, local) }) return Outcome.LOCAL_CHANGED
                 // The copy is created in the cloud FIRST, and only where its id is free: another phone of the same model may be
                 // making the same copy right now, and a plain write would overwrite its version. If the name is taken the next
-                // free one ("Night (Pixel 8) 2") is tried. Nothing has changed on the phone until the cloud holds the copy, so
-                // a failure here (offline, say) leaves nothing half done; if the user edits the design meanwhile, the copy that
-                // was just created reaches the phone as a new design at the next pass and the edited version is kept again.
+                // free one ("Night (Pixel 8) 2") is tried: free among the names tried so far AND the names the plan counted as
+                // taken (every design on this phone, saved or only in the journal as a deletion, and every cloud document,
+                // tombstones included), otherwise the copy could be saved over an unsynced design of this phone that has that
+                // name. Nothing has changed on the phone until the cloud holds the copy, so a failure here (offline, say)
+                // leaves nothing half done; if the user edits the design meanwhile, the copy that was just created reaches the
+                // phone as a new design at the next pass and the edited version is kept again.
                 var copyName = action.copyName
                 val tried = HashSet<String>()
                 var written: RemoteDesign? = null
                 while (written == null && tried.size < MAX_COPY_ATTEMPTS) {
                     val name = copyName
                     written = write(json.length) { remote.createDesign(uid, designId(name), name, json, DESIGN_SCHEMA) }
-                    if (written == null) { tried += name; copyName = uniqueName(action.copyName, tried, "") }
+                    if (written == null) {
+                        tried += name
+                        val onPhone = withContext(io) { store.savedDesigns().map { it.name } + journal.entries().values.map { it.name } }
+                        copyName = uniqueName(local.name, tried + onPhone + remoteNames, copySuffix)
+                    }
                 }
                 val created = written ?: return Outcome.LOCAL_CHANGED.also { wake(Wake.FULL) }   // every name was taken at once: plan again
                 writeSeq.incrementAndGet()
@@ -649,6 +662,9 @@ class SyncEngine(
                 val copyId = designId(copyName)
                 val kept = withContext(io) {
                     if (!unchangedSince(action.id, local)) return@withContext false
+                    // a design of that name appeared on the phone meanwhile: it is not overwritten (the copy in the cloud then
+                    // arrives as a new design, and the next pass plans around the name again)
+                    if (store.savedDesigns().any { designId(it.name) == copyId }) return@withContext false
                     store.saveNamed(copyName, mine, ChangeOrigin.SYNC)
                     store.saveNamed(action.remote.name, theirs, ChangeOrigin.SYNC)
                     journal.markApplied(action.id, action.remote.name, EntryState.LIVE, action.remote.updatedAtMs, local.modifiedAtMs)
@@ -726,7 +742,7 @@ class SyncEngine(
         val written = try {
             write(json.length) { remote.putCurrent(uid, json, deviceId, deviceLabel) }
         } catch (e: Throwable) {
-            if (e is RemoteException && e.kind == RemoteErrorKind.PERMISSION) refusalMeansRemoval(uid)
+            if (e is RemoteException && e.kind == RemoteErrorKind.PERMISSION) checkRefusalForRemoval(uid)
             if (this.uid == uid) pendingCurrent.compareAndSet(null, p)   // unless a newer edit arrived, or the session is over
             if (e !is CancellationException) {
                 currentSync = CurrentSync.RETRY_PENDING
@@ -784,16 +800,25 @@ class SyncEngine(
 
     /**
      * Acts on what the account marker says. [AccountMarker.DELETED], or [AccountMarker.ABSENT] after the marker was seen live
-     * (the account was wiped), means another phone deleted the account: this sync stops and [accountRemoved] tells the owner
-     * of the sign-in. Returns true then. Nothing else ever ends the sync here: not an offline error, not a refusal that the
-     * marker does not explain.
+     * (in this session or an earlier one: the account was wiped), means another phone deleted the account: this sync stops
+     * and [accountRemoved] tells the owner of the sign-in. Returns true then. Nothing else ever ends the sync here: not an
+     * offline error, not a refusal that the marker does not explain, not a marker that cannot be read
+     * ([AccountMarker.UNREADABLE]). The first time the marker is seen live it is written down in the journal (before the
+     * pass goes on), so that a restart cannot take a wiped account for a new one.
      */
-    private fun onMarker(id: String, marker: AccountMarker): Boolean {
+    private suspend fun onMarker(id: String, marker: AccountMarker): Boolean {
         if (uid != id) return false
         when (marker) {
-            AccountMarker.ACTIVE -> { markerSeenActive = true; return false }
+            AccountMarker.ACTIVE -> {
+                if (!markerSeenActive) {
+                    markerSeenActive = true
+                    withContext(NonCancellable + io) { journal.markMarkerSeenLive(id) }
+                }
+                return false
+            }
             AccountMarker.DELETED -> return accountRemoved(id)
             AccountMarker.ABSENT -> return if (markerSeenActive) accountRemoved(id) else false
+            AccountMarker.UNREADABLE -> return false
         }
     }
 
@@ -805,25 +830,32 @@ class SyncEngine(
     }
 
     /**
-     * The check at the start of every pass. The first time in a session it ensures the marker (creating it for a new account,
-     * which needs the network: a pass never writes before the marker exists); after the marker was seen live it only reads it
-     * (it must not create it again for an account that was wiped). A failure of the call (offline) is the pass's failure, with
-     * the usual retry. Returns whether the pass may go on.
+     * The check at the start of every pass. A phone that has never seen this account's marker live ensures it (creating it for
+     * a new account, which needs the network: a pass never writes before the marker exists); one that has, in this session or
+     * an earlier one, only reads it (it must not create it again for an account that was wiped). A failure of the call
+     * (offline) is the pass's failure, with the usual retry, and so is a marker that cannot be read: nothing is written on a
+     * doubt, and nobody is signed out on one. Returns whether the pass may go on.
      */
     private suspend fun markerAllowsPass(id: String): Boolean {
         val marker = call { if (markerSeenActive) remote.getAccountMarker(id) else remote.ensureAccountMarker(id) }
+        if (marker == AccountMarker.UNREADABLE) throw RemoteException(RemoteErrorKind.OTHER, MARKER_UNREADABLE)
         return !onMarker(id, marker)
     }
 
+    /** The pass ended because the account turned out to be removed: it unwinds like the stop that already happened. */
+    private class AccountRemovedDuringPass : CancellationException("The account was deleted on another phone")
+
     /**
      * A write was refused (PERMISSION). The rules also refuse writes of a deleted account, so the marker is looked at, once per
-     * pass. An unreadable marker (offline) decides nothing. Returns true when the account turned out to be removed.
+     * pass. An unreadable marker (offline) decides nothing. When the account turned out to be removed the pass ends at once
+     * (an exception that unwinds it like a stop): whatever it would have recorded afterwards (a refusal, skipped designs, a
+     * finished pass) belongs to an account that is gone, and would leak into the next session.
      */
-    private suspend fun refusalMeansRemoval(id: String): Boolean {
-        if (refusalChecked || uid != id) return false
+    private suspend fun checkRefusalForRemoval(id: String) {
+        if (refusalChecked || uid != id) return
         refusalChecked = true
-        val marker = try { call { remote.getAccountMarker(id) } } catch (e: RemoteException) { return false }
-        return onMarker(id, marker)
+        val marker = try { call { remote.getAccountMarker(id) } } catch (e: RemoteException) { return }
+        if (onMarker(id, marker)) throw AccountRemovedDuringPass()
     }
 
     // ---- plumbing -----------------------------------------------------------------------------------------------
@@ -850,8 +882,8 @@ class SyncEngine(
         } else if (current == CurrentSync.TOO_LARGE) {
             setStatus(id, SyncStatus.Error(SyncProblem.CURRENT_TOO_LARGE))
         } else if (current == CurrentSync.RETRY_PENDING) {
-            // the design in the editor still has to go up: a retry is scheduled for offline, sign-in and quota failures; after
-            // a refusal or an unknown error the next edit or "Sync now" tries again
+            // the design in the editor still has to go up: a retry is scheduled for every failure but a refusal (offline,
+            // sign-in, quota and unknown errors); after a refusal the next edit or "Sync now" tries again
             setStatus(id, currentFailure)
         } else {
             setStatus(id, SyncStatus.Idle(clock(), withoutPhoto.size))
@@ -898,8 +930,8 @@ class SyncEngine(
     }
 
     /**
-     * Runs [block], turning failures into [status]; an offline, sign-in or quota failure schedules one retry (with the
-     * backoff).
+     * Runs [block], turning failures into [status]; every failure but a refusal (PERMISSION) schedules one retry (with the
+     * backoff): offline, sign-in, quota and unknown failures alike.
      */
     private suspend fun guarded(id: String, block: suspend () -> Unit) {
         try {
@@ -1026,5 +1058,6 @@ class SyncEngine(
 
     private companion object {
         const val CURRENT = "current"
+        const val MARKER_UNREADABLE = "The account marker could not be read"
     }
 }

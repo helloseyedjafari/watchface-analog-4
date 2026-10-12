@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.map
  * so tests control ordering without sleeping. [failWith] makes every call throw until cleared.
  *
  * It follows the kill-switch rules of `firebase/firestore.rules`: a write of a design, the current design or the backup is
- * refused with [RemoteErrorKind.PERMISSION] while the account marker says `DELETED`, and, with [strictMarkers], also while
+ * refused with [RemoteErrorKind.PERMISSION] while the account marker says `DELETED` (or cannot be read), and, with [strictMarkers], also while
  * there is no marker (what the real rules do). The default is lenient about a MISSING marker so that the many tests of
  * other things need not create one; tests of the kill switch use `strictMarkers = true`. Reads and deletes are never gated.
  */
@@ -28,7 +28,8 @@ class FakeRemoteStore(var serverNow: Long = 1_000_000, val strictMarkers: Boolea
 
     private fun requireWritable(uid: String) {
         val m = markerOf(uid)
-        if (m == AccountMarker.DELETED || (m == AccountMarker.ABSENT && strictMarkers)) {
+        // the rules need `deleted == false`: a marker that says anything else (deleted, or something unreadable) refuses
+        if (m == AccountMarker.DELETED || m == AccountMarker.UNREADABLE || (m == AccountMarker.ABSENT && strictMarkers)) {
             throw RemoteException(RemoteErrorKind.PERMISSION, "the rules refuse the write: the account marker is ${m.name}")
         }
     }
