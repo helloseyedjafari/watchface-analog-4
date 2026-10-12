@@ -152,7 +152,9 @@ emulator against the Firebase Emulator Suite, and the key-reset spike on a Wear 
   uses the emulators again (with the project id and key of the file, only the endpoints redirected, and without App Check). The
   instrumented tests do not depend on this: their runner (`AccountsTestRunner`) writes the marker before the app starts and removes
   it afterwards if it made it.
-- **Tests that need the emulators:** `scripts/accounts_e2e.sh` starts the Firebase emulators and the phone emulator, runs every
+- **Tests that need the emulators:** `scripts/accounts_e2e.sh` (it runs on ONE emulator and exports `ANDROID_SERIAL` for Gradle: the
+  caller's `ANDROID_SERIAL=emulator-NNNN`, else emulator-5562, else the one attached phone emulator; a watch emulator or a real
+  device attached at the same time is ignored) starts the Firebase emulators and the phone emulator, runs every
   instrumented test in the package `com.seyedjafari.analogplus.phone.accounts` (among them `FirebaseEmulatorTest`, the real
   Firestore code against the emulators with `firebase/firestore.rules` loaded, and `AccountsEndToEndTest`, a phone replaced end
   to end through the Account card), with the emulators required, and stops what it started (`--class a.B,c.D` runs only those

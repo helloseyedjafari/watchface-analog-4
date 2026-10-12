@@ -32,8 +32,10 @@ off. Do these in order; each item says what to hand back to the code.
   the account's **marker document** `users/<uid>/meta/account` in Firestore. The app creates the marker itself when it starts
   syncing for an account (you create nothing by hand); the rules then refuse every write of designs, the current design and the
   signing-key backup unless that marker exists and is not marked deleted, and the deletion marks it first. With older rules
-  (without `meta/account`) the app cannot create its marker and sync will report that the cloud refused it; with the rules left in
-  "test mode" sync works, but other phones of a deleted account are **not** stopped. After
+  (without `meta/account`) the app cannot create its marker: sync reports that the cloud refused it, and **Delete account also
+  fails** (marking the account deleted is refused, the deletion stays pending), which matters for Google Play's deletion rule.
+  With the rules left in "test mode" everything works and other phones still sign themselves out when they see the marker, but the
+  server no longer refuses their writes, so an edit from a phone that has not yet noticed still goes through. After
   deploying, open Firestore, Rules in the console and check that the published text contains `meta/account`. This stops the other phones
   from writing and signs them out; it is not a revocation of their Google/Firebase tokens (that would need a Cloud Function on
   the Blaze plan, not built).
@@ -63,8 +65,12 @@ off. Do these in order; each item says what to hand back to the code.
   is in the app (Account, Delete account and cloud data). Host `docs/accounts/account-deletion-page-draft.md` as a public page
   (fill in its `[OWNER: ...]` places) and enter its URL in Play Console, App content, Data deletion. The page promises that a
   request by email is answered by hand: you delete the user under Authentication and the `users/<uid>` data under Firestore
-  yourself (all four collections: `designs`, `state`, `backup` and `meta`, the last one is the account marker), so decide how many
-  days you promise.
+  yourself, in the app's order: 1. in `users/<uid>/meta/account` set `deleted` to `true` (other phones then stop writing); 2. delete
+  the documents in `designs`, `state` and `backup`; 3. delete `meta` (the account marker); 4. delete the user under Authentication.
+  Decide how many days you promise. The same page also tells people to write to you when a cut-off deletion cannot be finished or
+  undone in the app (the phone that started it was lost or reset: every phone that signs in is signed out while the marker says
+  `deleted: true`). To clear such a mark and keep the account, set `deleted` to `false` in `users/<uid>/meta/account`; to finish it,
+  do the four steps above.
 - [ ] **11. Usage watch.** The Spark plan has **no budget alerts**. After launch, look at the Usage tab for Firestore and
   Authentication now and then (quotas change, read them there). For email alerts, upgrade to **Blaze** (pay as you go, still
   keeps the free allowance) and set a budget alert. The number of documents per user is small; the one large document is the design being edited when it has a photo (item 12).
@@ -72,7 +78,7 @@ off. Do these in order; each item says what to hand back to the code.
   used up faster than the document count suggests. **This is an estimate from reading the code at commit c403885, not a
   measurement, and Firebase's allowances change: read the current ones in the console.** What the app sends:
   - **Saved designs carry no photo** (the photo exists only in the design being edited). A saved design is a few kilobytes of
-    text, and the app reads and writes them in pages of 50. So the saved designs cost **document reads**, not data: each full pass
+    text; the app reads them (and deletes them with an account) in pages of 50 and writes them one document at a time. So the saved designs cost **document reads**, not data: each full pass
     (when the app opens, each time it comes back to the front, "Sync now") reads every saved design once (and every record of a
     deleted one), and starting the live updates reads them once more. That is about two reads per saved design per session; 20
     saved designs are about 40 reads. Every write also costs **one extra read**, because the rules look up the account marker

@@ -26,6 +26,7 @@ If you sign in with Google, the following is stored in the cloud:
 |---|---|---|
 | Your email address, an account id (uid), your Google name and the link to your Google profile picture, all sent by Google when you sign in | To know which cloud data is yours | Firebase Authentication (Google) |
 | Your saved designs: the name and the design settings. A saved design carries no background photo | To keep your designs on all your devices | Cloud Firestore (Google), **[OWNER: location]** |
+| A small record of the account itself, stored under your account id: whether the account is in use or is being deleted, the time of the last change and a format number | So that when you delete the account your other phones stop writing and are signed out | Cloud Firestore |
 | A short record for each saved design you delete or rename: its old name, a "deleted" flag and the time, with no design content. It stays until you delete your account (see below) | So your other devices learn that the design is gone | Cloud Firestore |
 | The design you are editing now, with its background photo if it has one (shrunk, see below), the time, a random id of this app installation and the name of your phone (see below) | To offer "use the design from another device" | Cloud Firestore |
 | Your signing key, **encrypted on your phone with a passphrase only you know**, and with it the settings needed to open it again (method name, iteration count, salt, nonce, format version), a short fingerprint of the key (16 hex characters of its hash), a random write id and the time of the write | So a replacement phone can keep updating your watch face | Cloud Firestore |
@@ -99,7 +100,11 @@ Until you delete it. The one exception is the record of a design you deleted or 
 only when you delete your account. In the app: Account, **Delete account and cloud data**. You are asked to choose your Google
 account again. This removes your account (with your name and the profile picture link) and everything stored in the cloud for
 you: your saved designs and the records of deleted ones, the design you were editing, and the signing key backup. Designs and the signing key on your phone stay. If the deletion is cut
-off, the app remembers it and offers **Finish deleting** or **Keep my account**; sync stays off until you choose.
+off, the app remembers it and offers **Finish deleting** or **Keep my account**; sync stays off until you choose. Your other phones were
+signed out when the deletion started and stay signed out after **Keep my account**; sign in on them again. If the phone that started
+a cut-off deletion is lost, reset or has its data cleared, the app can no longer finish or undo it: the cloud still says that the
+account is being deleted, and every phone that signs in to it is signed out again. Write to **[OWNER: contact email]** and we
+clear the mark or finish the deletion by hand.
 
 Without the app: see **[OWNER: URL of the account deletion page]**, or write to **[OWNER: contact email]**.
 
@@ -108,6 +113,9 @@ your other phones. Each other phone that is signed in to the account is signed o
 open and syncing, or when its next sync is refused. It keeps its local designs and its signing key. This is a sign-out inside the
 app, not a cancellation of the sign-in itself: the sign-in token that Google issued to that phone stays valid until it expires
 (up to an hour) and cannot be cancelled from your phone. The cloud simply has no data left for it and accepts nothing from it.
+A phone that had synced with the account and whose app was closed during the deletion is signed out when it is opened again. A phone that was offline for more than an
+hour may be signed out by Google's own sign-in first, without the notice; its designs and signing key stay. Nothing about you stays
+in the cloud after the deletion, with one narrow exception: a phone that has never synced with this account before, and whose very first look at the account comes in the few seconds after another phone finished deleting it, creates the small account record again (a flag and a time, under your account id). It holds no design and nothing else about you; write to **[OWNER: contact email]** and we remove it.
 
 Signing out only stops syncing. Your cloud data stays until you delete it. Google may keep backup copies of its databases for
 a limited time after deletion, on its own schedule.
@@ -147,9 +155,9 @@ other when either changes.
 | Can users request data deletion? | Yes (in the app and on the web page); deleting the account removes everything above |
 | Personal info: Email address | Collected; not shared; optional (only with an account); purpose: account management, app functionality |
 | Personal info: User IDs | Collected (account id; random installation id); not shared; purpose: account management, app functionality |
-| Personal info: Name | Collected (the Google display name, stored by Firebase Authentication); not shared; optional (only with an account); purpose: account management. **[OWNER: confirm]** |
+| Personal info: Name | Collected (the Google display name, stored by Firebase Authentication; and the device name set in Android Settings, see the phone-name row, which can be a person's own name); not shared; optional (only with an account); purpose: account management, app functionality. **[OWNER: confirm, and decide whether the phone-name row below should also be answered here]** |
 | Photos and videos: Photos | Collected (the shrunk background photo inside the design being edited, with its EXIF, XMP and trailing data removed before upload; the link to the Google profile picture stored by Firebase Authentication); not shared; optional; purpose: app functionality, account management. **[OWNER: confirm whether the profile picture link belongs here or under another category the form offers]** |
-| App activity / User-generated content | Collected (watch face designs and the name of each, the names of deleted designs until the account is deleted, and the signing key backup, which is encrypted so that we cannot read it); not shared; optional; purpose: app functionality |
+| App activity / User-generated content | Collected (watch face designs and the name of each, the names of deleted designs until the account is deleted, a small record of whether the account is in use or being deleted, and the signing key backup, which is encrypted so that we cannot read it); not shared; optional; purpose: app functionality |
 | Device or other IDs | Collected (random installation id; Firebase installation id used by App Check and Firebase); not shared; purpose: app functionality, security |
 | Device or other: phone name | Collected (the device name set in Android Settings, or the model when none is set; free text that can contain a person's own name; shown on your other devices as "the design from ..." and inside the name of a kept copy of a design); not shared; optional; purpose: app functionality. In the form this fits under "Device or other IDs" or "App info and performance"; choose what the form offers at submit time. **[OWNER]** |
 | Financial info, location, health, contacts, messages, web history, audio, crash logs, diagnostics | Not collected (the GPS tags of a photo are removed before upload) |

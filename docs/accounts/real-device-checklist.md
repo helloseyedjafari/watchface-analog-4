@@ -69,7 +69,13 @@ Texts below are the English texts of the app (`phone/src/main/res/values/strings
   (swipe it away from recents, or switch airplane mode on). Reopen the app: the card says "Deleting your account was not
   finished" with **Finish deleting** and **Keep my account**, and sync is paused. **Finish deleting** asks for Google again
   and completes (as C1). Repeat once and choose **Keep my account** instead: "Your account was kept. Sync is on again and the
-  designs on this phone are uploaded again." and the designs are back in the console.
+  designs on this phone are uploaded again." and the designs are back in the console. With a second phone signed in to the same
+  account during this: it was signed out when the deletion started (notice as in G1) and stays signed out after Keep; signing in on
+  it again works and it syncs.
+- [ ] **NOT RUN** C4. **Abandoned deletion.** Start the deletion on phone 1 and cut it off (airplane mode while "Deleting your
+  account..."). In the console `users/<uid>/meta/account` says `deleted: true`. Clear phone 1's app data (or reinstall) and sign in
+  again with the same account: the phone is signed out again with the notice, and so is any other phone that signs in. This is the
+  expected, documented limit (the app cannot finish or undo it). Set `deleted` to `false` in the console: signing in works again.
 - [ ] **NOT RUN** C3. The signing-key backup is one of the things C1 removes: after C1 sign in again with the same Google
   account. There is no backup ("Signing key is not backed up").
 
@@ -124,17 +130,22 @@ Texts below are the English texts of the app (`phone/src/main/res/values/strings
 
 ## G. Found by the final review (not tried anywhere)
 
-- [ ] **NOT RUN** G1. **Another phone still signed in during a deletion.** The kill switch (`kill-switch-spec.md`) is built (commit
-  c403885) and tested only against the emulators; the question "Delete your account?" now says that other phones are signed out, and
-  nothing more, the next time they reach the cloud, that their designs and signing keys stay, and that an offline phone stays signed
-  in until it reconnects: read it. Sign in on two
-  phones with the same account and keep phone 2's app open. Delete the account on phone 1. Phone 2 should be signed out of the
-  account on its next check (within about a minute while the app is open, or when it next tries to sync), keep its saved designs and
-  signing key, and show the notice "This account was deleted on another phone, so this phone was signed out. The designs and the
-  signing key on this phone are kept." An edit made on phone 2 after the deletion must not appear in the
-  console (`users/<uid>` stays empty, also after 15 seconds). Also try it with phone 2 offline during the deletion and online
-  afterwards. Phone 2's Google sign-in token itself is not revoked and lasts up to an hour; that is expected, the cloud refuses its
-  writes.
+- [ ] **NOT RUN** G1. **Another phone still signed in during a deletion.** The kill switch (the `users/<uid>/meta/account` marker
+  and its rules in `firebase/firestore.rules`) is built and tested only against the emulators; the project needs those rules
+  deployed (owner-prerequisites item 5). The question "Delete your account?" says that other phones are signed out, and nothing
+  more, the next time they reach the cloud, that their designs and signing keys stay, and that an offline phone stays signed in until
+  it reconnects: read it. Then:
+  1. Sign in on two phones with the same account and keep phone 2's app open. Delete the account on phone 1. Phone 2 should be
+     signed out of the account on its next check (within about a minute while the app is open, or when it next tries to sync), keep
+     its saved designs and signing key, and show the notice "This account is being deleted, or was deleted, on another phone, so
+     this phone was signed out. The designs and the signing key on this phone are kept." An edit made on phone 2 after the deletion
+     must not appear in the console (`users/<uid>` stays empty, also after 15 seconds).
+  2. Repeat with phone 2's app force-stopped (swipe it away) before the deletion and opened only after it finished: it must end
+     signed out with the same notice and must not create anything in the console.
+  3. Repeat with phone 2 offline during the deletion and online afterwards. Within about an hour of its last sign-in the notice
+     shows when it reconnects. After more than an hour its sign-in can no longer be renewed (the account is gone), and Google's own
+     sign-in may sign it out first: it then shows a plain signed-out card WITHOUT the notice. That is expected; designs and key stay.
+  Phone 2's Google sign-in token itself is not revoked and lasts up to an hour; that is expected, the cloud refuses its writes.
 - [ ] **NOT RUN** G2. **Many saved designs on a slow link.** Saved designs carry no photo (a few kilobytes each); the design being
   edited may carry one (up to a few hundred kilobytes). With 100 to 200 saved designs and a design with a photo on a slow
   connection (a poor mobile signal): open the app. Does the first sync show "Offline, will retry" although the connection works?
