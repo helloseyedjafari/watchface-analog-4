@@ -152,12 +152,16 @@ encrypted; designs are not secret).
   its journal that it saw the marker live, so a restart does not turn "marker gone" into "new account". It is a sign-out, **not a
   revocation of the other phone's Firebase token**: that token stays valid until it expires (up to an hour) and a phone cannot revoke
   it; revoking needs the Admin SDK in a Cloud Function (Blaze plan and a backend), which is out of scope and parked. Known limits:
-  (1) a phone offline for more than an hour is signed out by Google's own sign-in first, without the notice; (2) a phone's very first
-  session for an account (it never saw the marker) creates the marker if another phone finished deleting the account just before that
-  first look, which leaves a small record for a uid that no longer exists (removed on request); (3) if a deletion is cut off and the
+  (1) a phone whose app has not run online for more than about an hour (closed or offline) may be signed out by Google's own sign-in
+  first, without the notice; (2) a phone that never saw the marker live first asks the sign-in service whether the user still exists
+  (`AccountManager.checkUser`, a `reload()` of the signed-in user, once per session): gone means signed out with the notice and
+  nothing created or written; no answer means nothing is written and the pass is retried. What is left is only the window between the
+  deletion removing the marker and removing the Auth user (a second or two): a first-time phone that looks then finds the user,
+  creates the marker again and can upload its designs, the design being edited, the phone name and a backup until its token expires
+  (up to an hour), leaving data for a uid that no longer exists, removed on request (owner-prerequisites item 10 says how to find it); (3) if a deletion is cut off and the
   phone that started it is lost, reset or cleared, no phone can finish or undo it from the app, because every phone that sees
-  `deleted: true` is signed out (owner ruling); the owner clears the mark by hand on request (owner-prerequisites item 10); (4) after
-  **Keep my account** the other phones stay signed out and must sign in again. Deployed rules are part of the protection
+  `deleted: true` is signed out (owner ruling); the owner clears the mark by hand on request (owner-prerequisites item 10); (4) other phones that noticed the deletion
+  stay signed out after **Keep my account** and must sign in again (a phone that did not notice it just syncs again). Deployed rules are part of the protection
   (owner-prerequisites item 5). The deletion page and the policy describe this.
 - **Nothing here was run against a real Firebase project, a real Google sign-in, App Check or a real device.**
 

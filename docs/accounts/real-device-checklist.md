@@ -70,14 +70,20 @@ Texts below are the English texts of the app (`phone/src/main/res/values/strings
   finished" with **Finish deleting** and **Keep my account**, and sync is paused. **Finish deleting** asks for Google again
   and completes (as C1). Repeat once and choose **Keep my account** instead: "Your account was kept. Sync is on again and the
   designs on this phone are uploaded again." and the designs are back in the console. With a second phone signed in to the same
-  account during this: it was signed out when the deletion started (notice as in G1) and stays signed out after Keep; signing in on
-  it again works and it syncs.
-- [ ] **NOT RUN** C4. **Abandoned deletion.** Start the deletion on phone 1 and cut it off (airplane mode while "Deleting your
-  account..."). In the console `users/<uid>/meta/account` says `deleted: true`. Clear phone 1's app data (or reinstall) and sign in
-  again with the same account: the phone is signed out again with the notice, and so is any other phone that signs in. This is the
-  expected, documented limit (the app cannot finish or undo it). Set `deleted` to `false` in the console: signing in works again.
+  account whose app is OPEN during the cut-off, and only if the console shows `deleted: true` while it is cut off: that phone was
+  signed out when it noticed (notice as in G1) and stays signed out after Keep; signing in on it again works and it syncs. A phone
+  with its app closed or offline during that time is not signed out and simply syncs again; if the console still shows
+  `deleted: false` the cut came before the account was marked, and no other phone is affected.
 - [ ] **NOT RUN** C3. The signing-key backup is one of the things C1 removes: after C1 sign in again with the same Google
   account. There is no backup ("Signing key is not backed up").
+- [ ] **NOT RUN** C4. **Abandoned deletion.** Do not clear a phone's app data for this: that throws away its signing key, and a cut-off
+  wipe may already have deleted the backup (if that phone pushed the face to your watch, Send then fails for good until
+  `adb shell pm uninstall com.seyedjafari.analogplus.watchfacepush.analog`). Instead: start the deletion on phone 1 and cut it off
+  (airplane mode while "Deleting your account..."). If the console `users/<uid>/meta/account` still says `deleted: false`, the cut
+  came before step one: use **Finish deleting** (or Keep) and repeat. When it says `deleted: true`, sign in with the same account on
+  a second phone (or on an install that does not matter): it is signed out again with the notice, and so is any other phone that
+  signs in. This is the expected, documented limit (the app cannot finish or undo it from a phone without the pending mark). Set
+  `deleted` to `false` in the console: signing in works again.
 
 ## D. First run (onboarding) with accounts
 
@@ -140,11 +146,14 @@ Texts below are the English texts of the app (`phone/src/main/res/values/strings
      its saved designs and signing key, and show the notice "This account is being deleted, or was deleted, on another phone, so
      this phone was signed out. The designs and the signing key on this phone are kept." An edit made on phone 2 after the deletion
      must not appear in the console (`users/<uid>` stays empty, also after 15 seconds).
-  2. Repeat with phone 2's app force-stopped (swipe it away) before the deletion and opened only after it finished: it must end
-     signed out with the same notice and must not create anything in the console.
-  3. Repeat with phone 2 offline during the deletion and online afterwards. Within about an hour of its last sign-in the notice
-     shows when it reconnects. After more than an hour its sign-in can no longer be renewed (the account is gone), and Google's own
-     sign-in may sign it out first: it then shows a plain signed-out card WITHOUT the notice. That is expected; designs and key stay.
+  2. Repeat with phone 2's app force-stopped (swipe it away) before the deletion and opened within the hour after it finished: it
+     must end signed out with the same notice and must not create anything in the console.
+  3. Repeat with phone 2 offline during the deletion and online afterwards. Within about an hour of the last time its app ran
+     online, the notice shows when it reconnects. After more than an hour (also when the app was simply closed that long) its
+     sign-in can no longer be renewed (the account is gone), and Google's own sign-in may sign it out first: it then shows a plain
+     signed-out card WITHOUT the notice. That is expected; designs and key stay.
+  4. A phone that signs in with the same Google account after the deletion finished gets a NEW account (a new uid, empty). Nothing
+     of the deleted account comes back.
   Phone 2's Google sign-in token itself is not revoked and lasts up to an hour; that is expected, the cloud refuses its writes.
 - [ ] **NOT RUN** G2. **Many saved designs on a slow link.** Saved designs carry no photo (a few kilobytes each); the design being
   edited may carry one (up to a few hundred kilobytes). With 100 to 200 saved designs and a design with a photo on a slow

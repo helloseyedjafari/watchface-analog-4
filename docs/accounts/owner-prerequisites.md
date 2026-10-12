@@ -34,11 +34,16 @@ off. Do these in order; each item says what to hand back to the code.
   signing-key backup unless that marker exists and is not marked deleted, and the deletion marks it first. With older rules
   (without `meta/account`) the app cannot create its marker: sync reports that the cloud refused it, and **Delete account also
   fails** (marking the account deleted is refused, the deletion stays pending), which matters for Google Play's deletion rule.
+  **Finish deleting** and **Keep my account** fail the same way (Keep says the cloud could not be reached, which blames the
+  connection wrongly), so a phone with a pending deletion stays stuck, with sync off, until the rules are deployed.
   With the rules left in "test mode" everything works and other phones still sign themselves out when they see the marker, but the
   server no longer refuses their writes, so an edit from a phone that has not yet noticed still goes through. After
   deploying, open Firestore, Rules in the console and check that the published text contains `meta/account`. This stops the other phones
   from writing and signs them out; it is not a revocation of their Google/Firebase tokens (that would need a Cloud Function on
-  the Blaze plan, not built).
+  the Blaze plan, not built). **Never delete `users/<uid>/meta/account` by hand for an account that is still in use, and do not
+  clear Firestore while the Authentication users stay** (for example resetting the database): every phone of that account that had
+  seen the marker takes its absence for a deleted account, is signed out with the deletion notice and keeps its designs and signing
+  key. One sign-in on each phone recovers it (the marker is created again), but it looks like a deletion to the people it happens to.
 - [ ] **6. App Check (Play Integrity).** Build, App Check, Apps, register the Android app with the **Play Integrity** provider
   (needs the app in Play Console and the Cloud project linked to it: Play Console, Test and release, App integrity; the app's
   **app-signing SHA-256** from item 2 must be registered in Project settings).
@@ -65,12 +70,19 @@ off. Do these in order; each item says what to hand back to the code.
   is in the app (Account, Delete account and cloud data). Host `docs/accounts/account-deletion-page-draft.md` as a public page
   (fill in its `[OWNER: ...]` places) and enter its URL in Play Console, App content, Data deletion. The page promises that a
   request by email is answered by hand: you delete the user under Authentication and the `users/<uid>` data under Firestore
-  yourself, in the app's order: 1. in `users/<uid>/meta/account` set `deleted` to `true` (other phones then stop writing); 2. delete
-  the documents in `designs`, `state` and `backup`; 3. delete `meta` (the account marker); 4. delete the user under Authentication.
-  Decide how many days you promise. The same page also tells people to write to you when a cut-off deletion cannot be finished or
+  yourself, in this order: 1. in `users/<uid>/meta/account` set `deleted` to `true` (create the document if it is missing; keep
+  `deleted` a boolean, the text "false" reads as a marker that cannot be read and stops sync on every phone); 2. delete the
+  documents in `designs`, `state` and `backup`; 3. delete the user under Authentication; 4. delete `meta` (the account marker), last.
+  (The app itself deletes the marker before the user, because afterwards it can no longer reach Firestore; by hand the user goes
+  first, so that nobody can sign in to the account while its marker is already gone.) Decide how many days you promise. The same page also tells people to write to you when a cut-off deletion cannot be finished or
   undone in the app (the phone that started it was lost or reset: every phone that signs in is signed out while the marker says
   `deleted: true`). To clear such a mark and keep the account, set `deleted` to `false` in `users/<uid>/meta/account`; to finish it,
   do the four steps above.
+  **Finding leftovers.** In one narrow case (a gap of a second or two while an account is being deleted, see the deletion page)
+  a phone that never saw the account can write a marker and data for a user that no longer exists. If a person reports it, or you
+  look: in Firestore the `users` collection lists such uids (the console shows them although the `users/<uid>` document itself
+  does not exist, only its subcollections); one that is not in the Authentication user list is such a leftover. Delete its
+  `designs`, `state`, `backup` and `meta` (steps 2 and 4 above).
 - [ ] **11. Usage watch.** The Spark plan has **no budget alerts**. After launch, look at the Usage tab for Firestore and
   Authentication now and then (quotas change, read them there). For email alerts, upgrade to **Blaze** (pay as you go, still
   keeps the free allowance) and set a budget alert. The number of documents per user is small; the one large document is the design being edited when it has a photo (item 12).

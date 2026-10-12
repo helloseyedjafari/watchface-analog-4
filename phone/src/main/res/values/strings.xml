@@ -28,7 +28,7 @@
 
     <!-- Sync: appended to the name of the copy that keeps this phone's version when a design with the same name differs in the
          cloud and on the phone (planSync copySuffix): "Night (Pixel 8)", %1$s being the name of the phone that made the copy: the device
-         name set in Settings (cleaned and cut to 40 characters), else the model.
+         name set in Settings (cleaned; inside this suffix cut to 30 characters), else the model.
          The copy is shared with the account's other phones, so it names its maker. The leading space is quoted. -->
     <string name="sync_copy_suffix">" (%1$s)"</string>
     <!-- Sync: stands in for the name in sync_copy_suffix when the phone reports neither a device name nor a model: "Night (copy)" -->

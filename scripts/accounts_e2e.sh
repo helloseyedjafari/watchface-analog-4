@@ -25,13 +25,14 @@
 #
 # The device. The tests reach the Firebase emulators at 10.0.2.2, so they run on an Android EMULATOR, and only on one: the script
 # exports ANDROID_SERIAL for Gradle (without it Gradle runs the tests on every attached device, a real phone or watch
-# included), so other attached devices (the real watch, a watch emulator) do no harm and are never refused. Which emulator:
+# included), so other attached devices (the real watch, a watch emulator, someone else's emulator) do no harm and are never
+# refused. Which emulator: ONLY one it was told to use or the one the machine-wide phone lock stands for, never another emulator
+# it happens to find (the tests install the app on it and Gradle uninstalls it afterwards, which would wipe that app's data on an
+# emulator somebody else started):
 #  - ANDROID_SERIAL=emulator-NNNN is honoured (that emulator is used, or started on that port when it is not running); any
 #    other serial is refused;
-#  - ANDROID_SERIAL not set: emulator-5562 if it is attached; else the one attached PHONE emulator (watch emulators and real
-#    devices are skipped; a watch is told by ro.build.characteristics); with none attached, emulator-5562 is started.
-#    It stops only when it truly cannot choose: several phone emulators are attached and none is emulator-5562; it then lists
-#    them and says to set ANDROID_SERIAL.
+#  - ANDROID_SERIAL not set: emulator-5562, used when it is attached and started otherwise. The script does not look at the other
+#    attached devices at all (no adb call is made to them).
 #
 # Before the tests the debug app and the test app are built, and both emulators get one trivial request each, so that the first
 # Firestore call of the first test is not also the first request the emulator JVM ever served.
@@ -87,20 +88,6 @@ if [ -n "$CALLER_SERIAL" ]; then
   esac
 else
   PHONE="emulator-$PHONE_PORT"
-  phones=""
-  for serial in $("$ADB" devices | awk 'NR > 1 && $2 == "device" && $1 ~ /^emulator-[0-9]+$/ { print $1 }'); do
-    [ "$serial" = "$PHONE" ] && { phones="$serial"; break; }
-    case "$("$ADB" -s "$serial" shell getprop ro.build.characteristics 2>/dev/null | tr -d '\r')" in
-      *watch*) ;;   # a Wear OS emulator is not a phone
-      *) phones="$phones $serial" ;;
-    esac
-  done
-  phones="$(printf '%s' "$phones" | sed 's/^ *//')"
-  case "$(printf '%s' "$phones" | wc -w | tr -d ' ')" in
-    0) ;;                                   # no phone emulator is attached: $PHONE is started below
-    1) PHONE="$phones"; PHONE_PORT="${PHONE#emulator-}" ;;
-    *) die "several phone emulators are attached ($phones) and none is emulator-$PHONE_PORT, so there is no way to know which one to use. Run it as: ANDROID_SERIAL=<one of them> scripts/accounts_e2e.sh" ;;
-  esac
 fi
 export ANDROID_SERIAL="$PHONE"
 if [ -n "${ACCOUNTS_E2E_SELECT_ONLY:-}" ]; then echo "device: $PHONE"; exit 0; fi
@@ -207,7 +194,8 @@ else
 fi
 
 step "Phone emulator"
-boot_done() { [ "$("$ADB" -s "$PHONE" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; }
+# bounded: an emulator that accepts adb and then never answers must not hang the run while it holds the phone lock
+boot_done() { [ "$(perl -e 'alarm 10; exec @ARGV' "$ADB" -s "$PHONE" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; }
 if "$ADB" devices | grep -q "^$PHONE[[:space:]]*device"; then
   echo "   already running"
 else
