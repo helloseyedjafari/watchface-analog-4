@@ -22,11 +22,13 @@ out; sign in on them again. A phone that did not notice it is not signed out and
 
 What a cut-off deletion looks like depends on where it stopped. **Before the cloud was reached** (the app was closed or the
 connection lost right at the start): nothing changed in the cloud, other phones keep syncing, and the account works as before; the
-phone that started it only shows the choice. **Early** (the cloud was marked, and the data is being removed): the cloud says that the
+phone that started it only shows the choice. This state can end by itself: if the connection was lost while the app was marking
+the account and the app keeps running, that mark can still reach the cloud when the connection returns, and the account is then in
+the early state without anyone tapping anything. **Early** (the cloud was marked, and the data is being removed): the cloud says that the
 account is being deleted, phones are signed out when they notice it, and the cloud accepts nothing new. **At the very end** (the
 cloud data and the account record are gone, but the sign-in itself is not yet removed): the account is, in effect, a live account
-with nothing in it. A phone that has not seen the account record before, or one that was signed out of the account earlier and
-signs in again, finds the sign-in still there, creates the account record again and syncs: the account simply works again on that
+with nothing in it. A phone that has not seen the account record before, or one that was signed out of the account by a deletion earlier (a phone the person signed out by hand still remembers the
+account and is signed out with the notice instead) and signs in again, finds the sign-in still there, creates the account record again and syncs: the account simply works again on that
 phone, empty, and that phone uploads what it holds. Finish deleting, on the phone that started the deletion, wipes all of that
 again and removes the sign-in; every phone that had seen the account record is then signed out with the notice the next time it
 checks (one whose app has not run online for about an hour may get the plain signed-out screen instead).
@@ -82,10 +84,11 @@ sign-in itself.
   random installation id and a signing-key backup; other phones of yours that had seen the record and are opened meanwhile then
   sync into it too. In the normal short case such a phone is signed out when its own sign-in runs out (up to an hour), without a
   notice. After a cut-off its sign-in stays valid, because the account still exists, and the phone keeps syncing until you tap
-  Finish deleting, which signs it out with the notice. Finish deleting removes all of it; otherwise write to **[OWNER: contact email]**
+  Finish deleting, which signs it out with the notice (the next time it checks; a phone whose app has not run online for about an hour
+  may get the plain signed-out screen). Finish deleting removes all of it; otherwise write to **[OWNER: contact email]**
   and we remove it.
 
-The cloud refuses new data from your other phones from the moment the deletion starts, apart from that case. Google may keep
+The cloud refuses new data from your other phones from the moment the cloud has marked the account deleted, apart from that case. Google may keep
 backup copies of its databases for a limited time, on its own schedule. Designs you shared with other people as links or QR codes
 are theirs.
 

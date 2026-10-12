@@ -25,10 +25,14 @@
 # and the script stops at once when the emulator process it started exits. Whatever is listed under the serial it uses, in ANY
 # state (also offline or still booting), is somebody else's emulator, not a free port: the script never starts a second emulator
 # on a listed port, waits until the listed one is `device` AND has finished booting (`sys.boot_completed`; the same bound) or
-# stops with a message, and only ever stops an emulator it started itself. "Started itself" is decided by who holds the console
-# port, not by timing: an emulator is accepted as ours only when the process holding the console port (the serial's number) is
-# the one this script started (or its descendant); its start time is recorded and `emu kill` is sent only while that same process
-# still holds the port.
+# stops with a message, and only ever stops an emulator it started itself. "Started itself" is decided by who holds the ports, not
+# by timing: an emulator is accepted as ours only when EVERY process listening on its console port (the serial's number) and on
+# its adb port (the number plus one: adb names the transport after the console port, but `getprop`, the install and the tests go
+# through the adb port) is the one this script started or its descendant, and at least the console port has one. The holder's
+# start time is recorded; `emu kill` is sent only while that same process still holds the port and nobody else listens on
+# either; and the same test is made once more right before the tests start, after the builds (minutes), because the emulator
+# may have died and a foreign one taken the port meanwhile. An emulator of its own that was never accepted (boot bound
+# exceeded, not ours, Ctrl-C) is stopped gracefully (SIGTERM, up to 5 seconds), then killed.
 #
 # The device. The tests reach the Firebase emulators at 10.0.2.2, so they run on an Android EMULATOR, and only on one: the script
 # exports ANDROID_SERIAL for Gradle (without it Gradle runs the tests on every attached device, a real phone or watch
@@ -54,7 +58,10 @@
 # ACCOUNTS_E2E_EMULATORS_CMD (the command that starts the Firebase emulators, default `npm run emulators`, run in firebase/),
 # ACCOUNTS_E2E_START_TRIES (1-second tries for the Firebase emulators to listen, default 90), ACCOUNTS_E2E_ADB (the adb binary),
 # ACCOUNTS_E2E_SELECT_ONLY (print the device that would be used and stop, before anything is started),
-# ACCOUNTS_E2E_STOP_AFTER_PHONE (stop with success after the phone emulator step, before anything is built).
+# ACCOUNTS_E2E_STOP_AFTER_PHONE (stop with success after the phone emulator step, before anything is built),
+# ACCOUNTS_E2E_BUILD_CMD (the build command, default the two Gradle assemble tasks), ACCOUNTS_E2E_STOP_BEFORE_TESTS (stop with
+# success after the builds and the ownership check, before the tests). `scripts/tests/accounts_e2e_script_test.sh` runs the
+# script against fake adb and fake emulator binaries with these hooks.
 set -euo pipefail
 source "$(dirname "$0")/_env.sh"
 
@@ -70,6 +77,7 @@ PHONE_AVD="${ACCOUNTS_E2E_PHONE_AVD:-1_Pixel_8_API_33}"; PHONE_PORT="${ACCOUNTS_
 EMULATOR="${ACCOUNTS_E2E_EMULATOR:-$EMULATOR}"
 ADB="${ACCOUNTS_E2E_ADB:-$ADB}"
 BOOT_LIMIT=$(( ${ACCOUNTS_E2E_BOOT_TRIES:-100} * 3 ))   # seconds of elapsed time (the hook counts 3-second tries)
+BUILD_CMD="${ACCOUNTS_E2E_BUILD_CMD:-./gradlew :phone:assembleDebug :phone:assembleDebugAndroidTest -q}"
 EMULATORS_CMD="${ACCOUNTS_E2E_EMULATORS_CMD:-npm run emulators}"
 START_TRIES="${ACCOUNTS_E2E_START_TRIES:-90}"
 CALLER_SERIAL="${ACCOUNTS_E2E_CALLER_SERIAL:-}"
@@ -151,6 +159,26 @@ signal_ours() {
 # True when process $1 is listening on TCP port $2.
 holds_port() { local p; for p in $(holders "$2"); do [ "$p" = "$1" ] && return 0; done; return 1; }
 
+# True when at least one process listens on the console port and EVERY listener of the console port and of the adb port (the
+# console port + 1) is process $1 or one of its descendants (the emulator this script started).
+only_ours_on_ports() {
+  local port p n=0
+  for port in "$PHONE_PORT" "$((PHONE_PORT + 1))"; do
+    for p in $(holders "$port"); do
+      descends_from "$p" "$1" || return 1
+      [ "$port" = "$PHONE_PORT" ] && n=$((n + 1))
+    done
+  done
+  [ "$n" -gt 0 ]
+}
+
+# True while the emulator this script accepted as its own still is: the recorded holder is the same process (same start time), it
+# still listens on the console port, and nobody else listens on either port.
+still_ours() {
+  [ -n "$AVD_HOLDER" ] && [ "$(started_at "$AVD_HOLDER")" = "$AVD_HOLDER_START" ] && holds_port "$AVD_HOLDER" "$PHONE_PORT" \
+    && only_ours_on_ports "$AVD_PID"
+}
+
 # True while a recorded process is still the same process and alive.
 ours_alive() {
   local n=${#OURS_PID[@]} i=0
@@ -176,14 +204,15 @@ cleanup() {
     fi
     # The AVD this run started. `emu kill` goes to the serial only while the process that holds the console port is still the one
     # recorded when it was accepted as ours (same pid, same start time): after that, whoever answers to the serial is not ours.
-    if [ -n "$AVD_HOLDER" ] && [ "$(started_at "$AVD_HOLDER")" = "$AVD_HOLDER_START" ] && holds_port "$AVD_HOLDER" "$PHONE_PORT"; then
+    if still_ours; then
       "$ADB" -s "$PHONE" emu kill >/dev/null 2>&1 || true
       for _ in 1 2 3 4 5; do kill -0 "$AVD_HOLDER" 2>/dev/null || break; sleep 1; done
     fi
-    # the process this script started, if it is still that process (a reused pid is not signalled)
+    # the process this script started, if it is still that process (a reused pid is not signalled): a graceful stop first (SIGTERM,
+    # up to 5 seconds, so that an emulator that was still booting can close its disk files), then SIGKILL
     if [ -n "$AVD_PID" ] && [ -n "$AVD_START" ] && [ "$(started_at "$AVD_PID")" = "$AVD_START" ]; then
       kill -TERM "$AVD_PID" 2>/dev/null || true
-      sleep 1
+      for _ in 1 2 3 4 5; do kill -0 "$AVD_PID" 2>/dev/null || break; sleep 1; done
       kill -KILL "$AVD_PID" 2>/dev/null || true
     fi
   fi
@@ -240,21 +269,22 @@ else
     [ $((SECONDS - waited)) -le "$BOOT_LIMIT" ] || die "$PHONE did not finish booting in $BOOT_LIMIT seconds"
     sleep 3
   done
-  # Something answers to the serial. It is ours only if the process that holds the console port is the one this script started (or
-  # a child of it: the launcher may hand over to another process). If anything else holds it, whoever answers is somebody else's
-  # emulator: it is not used and not stopped (our own process, which cannot get the port, is stopped by the cleanup).
-  for p in $(holders "$PHONE_PORT"); do
-    if descends_from "$p" "$AVD_PID"; then AVD_HOLDER="$p"; AVD_HOLDER_START="$(started_at "$p")"; fi
-  done
+  # Something answers to the serial. It is ours only if every process listening on the console port and on the adb port is the one
+  # this script started (or a child of it: the launcher may hand over to another process). If anything else listens on either,
+  # whoever answers is somebody else's emulator: it is not used and not stopped (our own process, which cannot get the ports, is
+  # stopped by the cleanup).
+  if only_ours_on_ports "$AVD_PID"; then
+    for p in $(holders "$PHONE_PORT"); do AVD_HOLDER="$p"; AVD_HOLDER_START="$(started_at "$p")"; done
+  fi
   if [ -z "$AVD_HOLDER" ]; then
-    die "$PHONE answers, but the process that holds its console port (port $PHONE_PORT: pid $(holders "$PHONE_PORT")) is not the emulator this script started: another emulator holds the port. Nothing of it is used or stopped."
+    die "$PHONE answers, but the console port ($PHONE_PORT: pid $(holders "$PHONE_PORT")) or the adb port ($((PHONE_PORT + 1)): pid $(holders "$((PHONE_PORT + 1))")) is held by something other than the emulator this script started: another emulator holds a port. Nothing of it is used or stopped."
   fi
 fi
 if [ -n "${ACCOUNTS_E2E_STOP_AFTER_PHONE:-}" ]; then echo "phone emulator step done"; exit 0; fi
 
 step "Build the debug app and the test app"
 cd "$ROOT"
-./gradlew :phone:assembleDebug :phone:assembleDebugAndroidTest -q
+$BUILD_CMD
 
 # One trivial request to each emulator: a Firestore read of a document that does not exist (with the emulator's owner token, which
 # skips the rules) and the Auth emulator's status page. A failure here is not a failure of the run.
@@ -262,6 +292,13 @@ step "Warm up the emulators"
 curl -s -m 30 -o /dev/null -H "Authorization: Bearer owner" \
   "http://127.0.0.1:8080/v1/projects/demo-analogplus/databases/(default)/documents/warmup/ping" && echo "   Firestore answered" || echo "   Firestore did not answer the warm-up request (continuing)"
 curl -s -m 30 -o /dev/null "http://127.0.0.1:9099/" && echo "   Auth answered" || echo "   Auth did not answer the warm-up request (continuing)"
+
+# The builds took minutes. The emulator this script started may have died meanwhile, and something that does not take the phone lock
+# may have started another on the same serial: Gradle would install on it and uninstall afterwards. Check once more.
+if [ -n "$AVD_PID" ] && ! still_ours; then
+  die "the emulator this script started on $PHONE is no longer the one holding its ports (it died, or another emulator took them) while the builds ran. Nothing of the other one is used or stopped."
+fi
+if [ -n "${ACCOUNTS_E2E_STOP_BEFORE_TESTS:-}" ]; then echo "ready for the tests"; exit 0; fi
 
 step "Accounts tests (emulator-backed) on $PHONE"
 if [ -n "$CLASSES" ]; then FILTER="class=$CLASSES"; else FILTER="package=com.seyedjafari.analogplus.phone.accounts"; fi

@@ -155,7 +155,11 @@ emulator against the Firebase Emulator Suite, and the key-reset spike on a Wear 
 - **Tests that need the emulators:** `scripts/accounts_e2e.sh` (it runs on ONE emulator and exports `ANDROID_SERIAL` for Gradle: the
   caller's `ANDROID_SERIAL=emulator-NNNN`, else emulator-5562, started when it is not attached; it never uses any other
   emulator, and a watch emulator or a real device attached at the same time is ignored; an emulator-5562 that is listed but not ready
-  is waited for, never replaced) starts the Firebase emulators and the phone emulator, runs every
+  is waited for, never replaced; it accepts an emulator of its own only when every listener of its console and adb ports is that
+  emulator). `scripts/tests/accounts_e2e_script_test.sh [S|P|F]` tests this script against a fake adb and fake emulator binaries
+  (device choice, foreign emulators on either port, listed-but-not-ready, bounded adb, graceful stop, the ownership check after the
+  builds, a foreign Firebase emulator on one port): about 3 minutes, no Android or Firebase emulator needed, safe next to other
+  sessions (own ports 5598/5599, `ACCOUNTS_E2E_TEST_PORT` changes them; it stops only the processes it started) starts the Firebase emulators and the phone emulator, runs every
   instrumented test in the package `com.seyedjafari.analogplus.phone.accounts` (among them `FirebaseEmulatorTest`, the real
   Firestore code against the emulators with `firebase/firestore.rules` loaded, and `AccountsEndToEndTest`, a phone replaced end
   to end through the Account card), with the emulators required, and stops what it started (`--class a.B,c.D` runs only those

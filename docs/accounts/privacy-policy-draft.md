@@ -105,7 +105,9 @@ removes the account) or **Keep my account**; sync stays off on that phone until 
 (between its start and Keep my account) were signed out at that point and stay signed out after **Keep my account**; sign in on them
 again. A phone that did not notice it is not signed out and simply syncs again. If the phone that started a cut-off deletion is
 lost, reset or has its data cleared, no other phone can finish or undo it from the app. If the cut came before the cloud was reached,
-nothing changed and the account works as before, with all its data. If the cut came early, the cloud still says
+nothing changed and the account works as before, with all its data (unless the connection was lost while the app was marking the
+account and the app keeps running: that mark can still reach the cloud when the connection returns, and the account is then in the
+early state). If the cut came early, the cloud still says
 that the account is being deleted, and every phone that signs in to it is signed out again: write to **[OWNER: contact email]** and
 we clear the mark or finish the deletion by hand. If it came at the very end (the cloud data and the account record are gone but
 the sign-in itself is not yet removed), the account is in effect live and empty: a phone that signs in finds the sign-in, creates
@@ -135,7 +137,8 @@ again (a flag and a time, under your account id) and syncs, and can upload what 
 with its photo, the name of the phone, the random installation id and a signing-key backup); other phones that had seen the record
 and are opened meanwhile sync into it too. In the normal short case such a phone is signed out when its own sign-in runs out (up to
 an hour), without a notice. After a cut-off its sign-in stays valid, because the account still exists, and the phone keeps syncing
-until **Finish deleting**, which signs it out with the notice. Finish deleting removes all of it; otherwise write to **[OWNER: contact
+until **Finish deleting**, which signs it out with the notice (the next time it checks; a phone whose app has not run online for
+about an hour may get the plain signed-out screen). Finish deleting removes all of it; otherwise write to **[OWNER: contact
 email]** and we remove it.
 
 Signing out only stops syncing. Your cloud data stays until you delete it. Google may keep backup copies of its databases for

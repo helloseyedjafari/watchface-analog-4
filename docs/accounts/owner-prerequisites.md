@@ -76,13 +76,17 @@ off. Do these in order; each item says what to hand back to the code.
   3. delete the user under Authentication; 4. delete `meta` (the account marker), last. (The app itself deletes the marker before
   the user, because afterwards it can no longer reach Firestore; by hand the user goes first, so that nobody can sign in to the
   account while its marker is already gone.) Decide how many days you promise. The same page also tells people to write to you when
-  a cut-off deletion cannot be finished or undone in the app (the phone that started it was lost or reset). Three cases: if the
-  cut came before the cloud was reached (`deleted: false` and the data still there), nothing changed and the account works as before;
-  if it came early, every phone that signs in is signed out while the marker says `deleted: true`: to clear the mark and keep the
-  account set `deleted` to `false` in `users/<uid>/meta/account`, to finish it do the four steps above; if it came at the very end (no
-  `meta/account`, the user still in Authentication), the account simply works again, empty, and a phone may already have created the
-  marker again and be syncing: to finish it, if the person wants it gone, do all four steps above (step 1 creates the document if it is
-  missing and stops those phones before their data is deleted).
+  a cut-off deletion cannot be finished or undone in the app (the phone that started it was lost or reset). What you do depends on what the person wants, not on what you
+  find in the console (a cut-off deletion can be in one of three states, and they look alike once a phone has synced into the
+  account again). **If they want the account gone:** do the four steps above, whatever you find (step 1 creates the document if it
+  is missing and stops any phone that is syncing, so its data is deleted too). **If they want to keep it:** if
+  `users/<uid>/meta/account` says `deleted: true`, set it to `false` (a real boolean); otherwise there is nothing to do, the account
+  works (as before, or, if the cut-off came at the very end, again, holding only what phones uploaded since). The three states:
+  the cut came before the cloud was reached (`deleted: false`, the data still there: nothing changed; but if the connection was lost
+  while the app was marking the account and the app is still running, the mark can still arrive later and make it the second
+  state); early (`deleted: true`: every phone that signs in is signed out while it says so); at the very end (no `meta/account`, the
+  user still in Authentication: an empty live account, and a phone may already have created the marker again and be syncing, which
+  then looks like the first state).
   **Finding leftovers.** In one narrow case (a phone that looks at the account in the short moment between the app removing the marker and
   removing the user, see the deletion page) a phone that never saw the account can write a marker and data for a user that no
   longer exists; a cut-off deletion does not leave this behind, because Finish deleting wipes it again, but finishing one by hand
