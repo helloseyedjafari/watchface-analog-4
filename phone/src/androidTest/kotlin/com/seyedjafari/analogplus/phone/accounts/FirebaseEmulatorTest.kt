@@ -1057,6 +1057,18 @@ class FirebaseEmulatorTest {
         assertEquals(UserCheck.GONE, m.checkUser(uid))
     }
 
+    @Test fun aBackupOfAUserThatWasDeletedBehindTheBackOfTheSignedInClientIsAccountGoneAndWritesNothing() = inTest {
+        val m = manager(unique("backup-gone"))
+        m.signIn()
+        val uid = (m.state.value as AccountState.SignedIn).uid
+        deleteAuthUser(uid)
+        val service = backupServiceForTest(remote, KeyVault(iterations = 1_000, minAcceptedIterations = 1_000), FakeKeySource(pem), AttemptLimiter(MemoryKeyValueStore()),
+            userVerifier = m::checkUser)
+        assertEquals(UploadResult.AccountGone, service.upload(uid, passphrase, BackupExpectation.SameKey))
+        assertEquals("no marker was created in the deleted account", false, exists("users/$uid/meta/account"))
+        assertEquals(0, count("users/$uid/backup"))
+    }
+
     @Test fun settingTheMarkerOnAnAccountWithoutOneCreatesItFirst() = inTest {
         val uid = signInWithoutMarker(unique("marker-first"))
         remote.setAccountDeleted(uid, true)

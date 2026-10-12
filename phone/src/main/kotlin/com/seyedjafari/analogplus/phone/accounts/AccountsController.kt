@@ -411,12 +411,17 @@ class AccountsController(
      */
     suspend fun upload(passphrase: String, expecting: BackupExpectation): UploadResult {
         val uid = uid() ?: return UploadResult.NotSignedIn
-        return action(uid, Busy.BACKING_UP, UploadResult.NotSignedIn) {
+        val result = action(uid, Busy.BACKING_UP, UploadResult.NotSignedIn, outlivesAccount = { it == UploadResult.AccountGone }) {
             val result = backup.upload(uid, passphrase, expecting)
-            // the sync engine asks the sign-in service the same question and reports the removal: the phone is signed out with the notice
-            if (result == UploadResult.AccountGone) sync.syncNow()
+            // the notice of a gone account belongs to no account: the sign-in service may have signed this phone out already, which
+            // would clear a notice of the account
             ActionOutcome(result, noticeFor(result))
         }
+        // the user is gone: the same removal as the sync engine reports (the notice, the sign-out if the sign-in service has not done it
+        // yet, the binding forgotten after it). It does not depend on which of the two, this call or the sign-in service's own
+        // sign-out, comes first, and it is the action's turn that has ended, so the lock is free
+        if (result == UploadResult.AccountGone) scope.launch { onAccountRemoved(uid) }
+        return result
     }
 
     suspend fun planRestore(): RestorePlan {
@@ -675,7 +680,10 @@ class AccountsController(
             val journal = SyncJournal(NoPersistKeyValueStore())
             return AccountsController(
                 AccountsAvailability.NOT_CONFIGURED, accounts, sync,
-                BackupService(remote, KeyVault(), NoKeySource(), AttemptLimiter(NoPersistKeyValueStore())),
+                BackupService(
+                    remote, KeyVault(), NoKeySource(), AttemptLimiter(NoPersistKeyValueStore()),
+                    userVerifier = UserVerifier { UserCheck.NOT_ANSWERED },   // nobody can sign in here: never reached
+                ),
                 AccountDeletion(accounts, remote, sync, journal, DeletionMarks(NoPersistKeyValueStore())), scope,
             )
         }

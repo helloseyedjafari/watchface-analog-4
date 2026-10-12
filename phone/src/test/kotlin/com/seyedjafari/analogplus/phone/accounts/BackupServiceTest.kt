@@ -37,7 +37,7 @@ class BackupServiceTest {
     private val passphrase = "correct horse battery staple"
     private val SameKey = BackupExpectation.SameKey
 
-    private fun service(keys: KeySource, store: RemoteStore = remote) = BackupService(store, vault, keys, limiter, Dispatchers.Unconfined)
+    private fun service(keys: KeySource, store: RemoteStore = remote) = backupServiceForTest(store, vault, keys, limiter, Dispatchers.Unconfined)
     private fun <T> run(block: suspend () -> T): T = runBlocking { block() }
 
     /** What the cloud holds for "u1" now, as the service reports it (the key of [pem] and the document's write id). */
@@ -95,7 +95,7 @@ class BackupServiceTest {
                 return remote.putBackup(uid, if (writes == 1) corrupt(sealed) else sealed, writeId, replacing)
             }
         }
-        val r = run { BackupService(corrupting, vault, keys, limiter, Dispatchers.Unconfined).upload("u1", "another passphrase 99", SameKey) }
+        val r = run { backupServiceForTest(corrupting, vault, keys, limiter, Dispatchers.Unconfined).upload("u1", "another passphrase 99", SameKey) }
         assertEquals(UploadResult.SelfTestFailed, r)
         assertEquals(good, remote.backupOf("u1")!!.sealed)
     }
@@ -646,13 +646,13 @@ class BackupServiceTest {
             val limiterThreads = ArrayList<String>()
             val spyLimiter = AttemptLimiter(SpyKeyValueStore(MemoryKeyValueStore(), limiterThreads)) { now }
             val phone = SpyKeySource(FakeKeySource(pemA), keyThreads)
-            val s = BackupService(remote, vault, phone, spyLimiter, cpu)
+            val s = backupServiceForTest(remote, vault, phone, spyLimiter, cpu)
             val caller = Thread.currentThread().name
 
             assertTrue(run { s.upload("u1", passphrase, SameKey) } is UploadResult.Ok)
             run { s.status("u1") }
             val other = SpyKeySource(FakeKeySource(null), keyThreads)
-            val restoring = BackupService(remote, vault, other, spyLimiter, cpu)
+            val restoring = backupServiceForTest(remote, vault, other, spyLimiter, cpu)
             val plan = run { restoring.plan("u1") }
             run { restoring.restore("u1", "bad passphrase 1 xx", plan) }
             assertTrue(run { restoring.restore("u1", passphrase, plan) } is RestoreResult.Restored)
@@ -1185,14 +1185,14 @@ class BackupServiceTest {
 
     @Test fun aFirstBackupOfABrandNewAccountMakesSureTheAccountMarkerExistsSoTheRulesAcceptTheWrite() {
         val strict = FakeRemoteStore(strictMarkers = true)                     // the real rules refuse every write without a marker
-        val r = run { BackupService(strict, vault, FakeKeySource(pemA), limiter, Dispatchers.Unconfined).upload("u1", passphrase, SameKey) }
+        val r = run { backupServiceForTest(strict, vault, FakeKeySource(pemA), limiter, Dispatchers.Unconfined).upload("u1", passphrase, SameKey) }
         assertEquals(UploadResult.Ok(keyFingerprint(pemA)), r)
         assertEquals(AccountMarker.ACTIVE, strict.markerOf("u1"))
     }
 
     @Test fun aPhoneThatAlreadySawTheMarkerLiveNeverCreatesItAgainForABackup() {
         val strict = FakeRemoteStore(strictMarkers = true)                     // the account was wiped: no marker
-        val s = BackupService(strict, vault, FakeKeySource(pemA), limiter, Dispatchers.Unconfined, markerSeenLive = { true })
+        val s = backupServiceForTest(strict, vault, FakeKeySource(pemA), limiter, Dispatchers.Unconfined, markerSeenLive = { true })
         val r = run { s.upload("u1", passphrase, SameKey) }
         assertEquals(UploadResult.Failed(RemoteErrorKind.PERMISSION, "the rules refuse the write: the account marker is ABSENT"), r)
         assertEquals(AccountMarker.ABSENT, strict.markerOf("u1"))
@@ -1203,7 +1203,7 @@ class BackupServiceTest {
         val strict = FakeRemoteStore(strictMarkers = true)
         val signedIn = FakeAccountManager(AccountState.SignedIn("u1", null)).also { it.nextCheck = UserCheck.GONE }
         val keys = FakeKeySource(null)
-        val s = BackupService(strict, vault, keys, limiter, Dispatchers.Unconfined, userVerifier = signedIn::checkUser)
+        val s = backupServiceForTest(strict, vault, keys, limiter, Dispatchers.Unconfined, userVerifier = signedIn::checkUser)
         assertEquals(UploadResult.AccountGone, run { s.upload("u1", passphrase, SameKey) })
         assertEquals(1, signedIn.checkCalls)
         assertEquals("no marker is created in a deleted account", AccountMarker.ABSENT, strict.markerOf("u1"))
@@ -1216,7 +1216,7 @@ class BackupServiceTest {
         val strict = FakeRemoteStore(strictMarkers = true)
         val signedIn = FakeAccountManager(AccountState.SignedIn("u1", null)).also { it.nextCheck = UserCheck.NOT_ANSWERED }
         val keys = FakeKeySource(null)
-        val s = BackupService(strict, vault, keys, limiter, Dispatchers.Unconfined, userVerifier = signedIn::checkUser)
+        val s = backupServiceForTest(strict, vault, keys, limiter, Dispatchers.Unconfined, userVerifier = signedIn::checkUser)
         assertEquals(UploadResult.Failed(RemoteErrorKind.OFFLINE, "The sign-in service did not answer"), run { s.upload("u1", passphrase, SameKey) })
         assertTrue(strict.markerWrites.isEmpty())
         assertFalse(keys.hasKey())
@@ -1226,7 +1226,7 @@ class BackupServiceTest {
         val strict = FakeRemoteStore(strictMarkers = true)
         strict.seedMarker("u1", AccountMarker.ACTIVE)
         val signedIn = FakeAccountManager(AccountState.SignedIn("u1", null)).also { it.nextCheck = UserCheck.GONE }
-        val s = BackupService(strict, vault, FakeKeySource(pemA), limiter, Dispatchers.Unconfined, markerSeenLive = { true }, userVerifier = signedIn::checkUser)
+        val s = backupServiceForTest(strict, vault, FakeKeySource(pemA), limiter, Dispatchers.Unconfined, markerSeenLive = { true }, userVerifier = signedIn::checkUser)
         assertTrue(run { s.upload("u1", passphrase, SameKey) } is UploadResult.Ok)
         assertEquals(0, signedIn.checkCalls)
     }
@@ -1236,7 +1236,7 @@ class BackupServiceTest {
             val strict = FakeRemoteStore(strictMarkers = true)
             strict.seedMarker("u1", state)
             val keys = FakeKeySource(null)
-            val r = run { BackupService(strict, vault, keys, limiter, Dispatchers.Unconfined).upload("u1", passphrase, SameKey) }
+            val r = run { backupServiceForTest(strict, vault, keys, limiter, Dispatchers.Unconfined).upload("u1", passphrase, SameKey) }
             assertEquals(state.name, UploadResult.Failed(RemoteErrorKind.PERMISSION, "the account is not available for writing"), r)
             assertFalse("no key is made for a backup that cannot be stored", keys.hasKey())
             assertNull(strict.backupOf("u1"))
@@ -1248,7 +1248,7 @@ class BackupServiceTest {
         val strict = FakeRemoteStore(strictMarkers = true)
         strict.failMarkerWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
         val keys = FakeKeySource(null)
-        val r = run { BackupService(strict, vault, keys, limiter, Dispatchers.Unconfined).upload("u1", passphrase, SameKey) }
+        val r = run { backupServiceForTest(strict, vault, keys, limiter, Dispatchers.Unconfined).upload("u1", passphrase, SameKey) }
         assertEquals(UploadResult.Failed(RemoteErrorKind.OFFLINE, "offline"), r)
         assertFalse("no key was made for a backup that could not start", keys.hasKey())
     }

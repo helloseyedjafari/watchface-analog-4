@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -863,6 +864,9 @@ class SyncEngine(
             val answer = withContext(NonCancellable) {
                 call { userVerifier.check(id) }.also { if (it == UserCheck.GONE) removalFound(id) }
             }
+            // a stop during the question (this phone's own deletion, a sign-out) ends the pass here: the marker is not created for a
+            // session that is over, whatever the answer (a gone user has been reported inside the block already)
+            currentCoroutineContext().ensureActive()
             when (answer) {
                 UserCheck.STILL_THERE -> Unit
                 UserCheck.GONE -> return false

@@ -182,6 +182,20 @@ class AccountsEndToEndTest {
     private fun designsInCloud(uid: String) = documentCount("users/$uid/designs?pageSize=100")
 
     /** Nothing at all under the user: no design, no current design, no backup, not even an empty parent document. */
+    /** Deletes an Auth user in the Auth emulator (the owner token skips the checks), behind the back of the signed-in client. */
+    private fun deleteAuthUser(uid: String) {
+        val root = "http://${FirebaseProvider.EMULATOR_HOST}:${FirebaseProvider.AUTH_EMULATOR_PORT}"
+        val c = java.net.URL("$root/identitytoolkit.googleapis.com/v1/projects/$projectId/accounts:delete").openConnection() as java.net.HttpURLConnection
+        c.requestMethod = "POST"
+        c.doOutput = true
+        c.setRequestProperty("Authorization", "Bearer owner")
+        c.setRequestProperty("Content-Type", "application/json")
+        try {
+            c.outputStream.use { it.write("""{"localId":"$uid"}""".toByteArray()) }
+            assertEquals(200, c.responseCode)
+        } finally { c.disconnect() }
+    }
+
     private fun assertCloudEmpty(uid: String, authToo: Boolean = true) {
         assertEquals("designs", 0, documentCount("users/$uid/designs?pageSize=100"))
         assertEquals("state", 0, documentCount("users/$uid/state?pageSize=100"))
@@ -621,7 +635,7 @@ class AccountsEndToEndTest {
                 store.addObserver(engine)
                 controller = AccountsController(
                     AccountsAvailability.AVAILABLE, manager, engine,
-                    BackupService(remote, KeyVault(), FakeKeySource(null), AttemptLimiter(kv)),
+                    backupServiceForTest(remote, KeyVault(), FakeKeySource(null), AttemptLimiter(kv)),
                     AccountDeletion(manager, remote, engine, journal, DeletionMarks(kv)), scope,
                 )
             }
@@ -717,8 +731,9 @@ class AccountsEndToEndTest {
      * A phone that never saw the account's marker (its first session for the account) opens its app after the account was deleted;
      * its sign-in is still good for up to an hour. Before it looks at the marker it asks the sign-in service whether the user still
      * exists (a real reload against the Auth emulator, through the real account manager: Firebase signs the phone out by itself
-     * first): gone, so it creates no marker, uploads nothing and is signed out with the notice. The cloud's part of the deletion is done directly and the Auth user is deleted in the Auth emulator behind the
-     * client's back, as another phone's deletion does it.
+     * first): gone, so it creates no marker, uploads nothing and is signed out with the notice. The cloud's part of the
+     * deletion is done directly and the Auth user is deleted in the Auth emulator behind the client's back, as another phone's
+     * deletion does it.
      */
     @Test fun aPhoneOnItsFirstSessionFindsTheUserGoneBeforeItCreatesTheMarkerAndWritesNothing() {
         val phone1 = Phone(1)
@@ -732,12 +747,7 @@ class AccountsEndToEndTest {
         runBlocking { cloud.setAccountDeleted(uid, true); cloud.deleteAllUserData(uid) }
         var phoneB: SecondPhone? = null
         try {
-            val url = java.net.URL("http://${FirebaseProvider.EMULATOR_HOST}:${FirebaseProvider.AUTH_EMULATOR_PORT}/identitytoolkit.googleapis.com/v1/projects/$projectId/accounts:delete")
-            val c = url.openConnection() as java.net.HttpURLConnection
-            c.requestMethod = "POST"; c.doOutput = true
-            c.setRequestProperty("Authorization", "Bearer owner"); c.setRequestProperty("Content-Type", "application/json")
-            c.outputStream.use { it.write("""{"localId":"$uid"}""".toByteArray()) }
-            assertEquals(200, c.responseCode); c.disconnect()
+            deleteAuthUser(uid)
             assertEquals("not a trace of the account in the cloud", 0, documentCount("users/$uid/meta?pageSize=100"))
 
             // the Auth user is deleted, but the client of this process still holds its user (as the other phone's token does): this

@@ -74,7 +74,7 @@ class KeyVaultProviderTest {
     }
 
     @Test fun theBackupRefusesAnEmptyPassphraseWithATypedResultBeforeAnyKeyWork() {
-        val service = BackupService(FakeRemoteStore(), cheap, FakeKeySource(FakeKeySource.samplePem("A")), AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Default)
+        val service = backupServiceForTest(FakeRemoteStore(), cheap, FakeKeySource(FakeKeySource.samplePem("A")), AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Default)
         assertTrue(runBlocking { service.upload("u1", "", BackupExpectation.None) } is UploadResult.PassphraseRefused)
     }
 

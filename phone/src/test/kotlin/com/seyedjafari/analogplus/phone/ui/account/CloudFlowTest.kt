@@ -24,6 +24,7 @@ import com.seyedjafari.analogplus.phone.accounts.RestorePlan
 import com.seyedjafari.analogplus.phone.accounts.SyncJournal
 import com.seyedjafari.analogplus.phone.accounts.UploadResult
 import com.seyedjafari.analogplus.phone.R
+import com.seyedjafari.analogplus.phone.accounts.backupServiceForTest
 import com.seyedjafari.analogplus.phone.accounts.vault.KeyVault
 import com.seyedjafari.analogplus.phone.keyFingerprint
 import kotlinx.coroutines.CompletableDeferred
@@ -75,7 +76,7 @@ class CloudFlowTest {
         }
     }
 
-    private fun service(keys: FakeKeySource, cloud: RemoteStore = remote) = BackupService(cloud, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined)
+    private fun service(keys: FakeKeySource, cloud: RemoteStore = remote) = backupServiceForTest(cloud, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined)
 
     /** The phone of the person; [other] writes to the same cloud, like another phone of the same account. */
     private fun TestScope.phone(keys: FakeKeySource): Pair<AccountsController, CloudFlow> {

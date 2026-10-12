@@ -89,7 +89,8 @@ sealed interface UploadResult {
 
     /**
      * The sign-in service says the user of this account is gone (deleted on another phone). Nothing was written, no marker was
-     * created and no key was made. The controller has the sync engine find out too, which signs the phone out with the notice.
+     * created and no key was made. The controller reports the removal like the sync engine does: the notice, the sign-out (which
+     * the sign-in service may have made already) and the binding forgotten.
      */
     data object AccountGone : UploadResult
 
@@ -257,10 +258,10 @@ class BackupService(
     private val markerSeenLive: (String) -> Boolean = { false },
     /**
      * Asked before the marker is created for the first write of an upload, like the sync engine does: a phone that never saw the
-     * marker live must not re-create the marker of an account whose user is gone and store a key backup in it. (The default,
-     * for tests, always answers "there".)
+     * marker live must not re-create the marker of an account whose user is gone and store a key backup in it. No default on
+     * purpose: a construction site that forgot it would silently opt out (the tests use `backupServiceForTest`).
      */
-    private val userVerifier: UserVerifier = UserVerifier { UserCheck.STILL_THERE },
+    private val userVerifier: UserVerifier,
 ) {
     /** One restore at a time: guesses made at the same moment must not slip past the attempt delay. */
     private val restoreLock = Mutex()

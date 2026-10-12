@@ -101,7 +101,10 @@ object AccountsFactory {
             userVerifier = accounts::checkUser,
         )
         store.addObserver(engine)
-        val backup = BackupService(remote, KeyVault(), KeyStoreKeySource(keyStore), AttemptLimiter(syncKv), markerSeenLive = journal::markerSeenLive, userVerifier = accounts::checkUser)
+        val backup = BackupService(
+            remote, KeyVault(), KeyStoreKeySource(keyStore), AttemptLimiter(syncKv),
+            markerSeenLive = journal::markerSeenLive, userVerifier = accounts::checkUser,
+        )
         return AccountsController(setup.availability, accounts, engine, backup, AccountDeletion(accounts, remote, engine, journal, DeletionMarks(syncKv)), scope)
     }
 

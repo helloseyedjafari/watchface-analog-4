@@ -1,7 +1,5 @@
 package com.seyedjafari.analogplus.phone
 
-import com.seyedjafari.analogplus.phone.accounts.UserCheck
-import com.seyedjafari.analogplus.phone.accounts.UserVerifier
 import androidx.compose.runtime.snapshots.Snapshot
 import com.seyedjafari.analogplus.facegen.design.BackgroundDesign
 import com.seyedjafari.analogplus.facegen.design.BackgroundKind
@@ -17,6 +15,7 @@ import com.seyedjafari.analogplus.phone.accounts.CurrentApplier
 import com.seyedjafari.analogplus.phone.accounts.DeletionMarks
 import com.seyedjafari.analogplus.phone.accounts.FakeAccountManager
 import com.seyedjafari.analogplus.phone.accounts.FakeKeySource
+import com.seyedjafari.analogplus.phone.accounts.backupServiceForTest
 import com.seyedjafari.analogplus.phone.accounts.vault.KeyVault
 import com.seyedjafari.analogplus.phone.accounts.FakeRemoteStore
 import com.seyedjafari.analogplus.phone.accounts.MemoryKeyValueStore
@@ -24,6 +23,8 @@ import com.seyedjafari.analogplus.phone.accounts.PhotoDownscaler
 import com.seyedjafari.analogplus.phone.accounts.RemoteCurrent
 import com.seyedjafari.analogplus.phone.accounts.SyncEngine
 import com.seyedjafari.analogplus.phone.accounts.SyncJournal
+import com.seyedjafari.analogplus.phone.accounts.UserCheck
+import com.seyedjafari.analogplus.phone.accounts.UserVerifier
 import java.io.File
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -107,7 +108,7 @@ class CurrentPersistenceTest {
             val manager = FakeAccountManager(AccountState.SignedIn("u1", null))
             accounts = AccountsController(
                 AccountsAvailability.AVAILABLE, manager, engine,
-                BackupService(remote, KeyVault(), FakeKeySource(null), AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
+                backupServiceForTest(remote, KeyVault(), FakeKeySource(null), AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
                 AccountDeletion(manager, remote, engine, journal, DeletionMarks(MemoryKeyValueStore()), Dispatchers.Unconfined), scope.backgroundScope,
             )
             scope.backgroundScope.launch { autosave(state, persistence, Dispatchers.Unconfined, 400) }

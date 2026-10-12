@@ -94,7 +94,7 @@ internal class AccountUiFixture(
 
     val controller = AccountsController(
         availability, accounts, sync,
-        BackupService(gated, vault, keys, AttemptLimiter(MemoryKeyValueStore(), clock::get), Dispatchers.Default),
+        backupServiceForTest(gated, vault, keys, AttemptLimiter(MemoryKeyValueStore(), clock::get), Dispatchers.Default),
         AccountDeletion(accounts, gated, sync, SyncJournal(MemoryKeyValueStore()), marks, Dispatchers.Default), scope,
     )
 
@@ -105,7 +105,7 @@ internal class AccountUiFixture(
      * read the backup status again, as a sync or a sign-in would; false leaves its line as it was (a change it has not seen yet).
      */
     fun otherPhoneBacksUp(pem: String, expecting: BackupExpectation = BackupExpectation.None, refresh: Boolean = true) {
-        val other = BackupService(remote, vault, FakeKeySource(pem), AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined)
+        val other = backupServiceForTest(remote, vault, FakeKeySource(pem), AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined)
         val result = kotlinx.coroutines.runBlocking { other.upload("u1", passphrase, expecting) }
         check(result is UploadResult.Ok) { "the seeded backup was not written: $result" }
         if (refresh) kotlinx.coroutines.runBlocking { controller.refreshBackup() }

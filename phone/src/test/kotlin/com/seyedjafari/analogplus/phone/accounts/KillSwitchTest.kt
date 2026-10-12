@@ -554,7 +554,7 @@ class KillSwitchTest {
         b.store.saveNamed("Night", night)
         val controller = AccountsController(
             AccountsAvailability.AVAILABLE, b.manager, b.engine,
-            BackupService(remote, com.seyedjafari.analogplus.phone.accounts.vault.KeyVault(iterations = 1_000, minAcceptedIterations = 1_000), FakeKeySource(null), AttemptLimiter(MemoryKeyValueStore())),
+            backupServiceForTest(remote, com.seyedjafari.analogplus.phone.accounts.vault.KeyVault(iterations = 1_000, minAcceptedIterations = 1_000), FakeKeySource(null), AttemptLimiter(MemoryKeyValueStore())),
             b.deletion(), b.scope,
         )
         runCurrent(); advanceTimeBy(60_000); runCurrent()
@@ -598,5 +598,21 @@ class KillSwitchTest {
         assertTrue(remote.designsOf("u1").isEmpty())
         assertEquals(AccountMarker.ABSENT, remote.markerOf("u1"))
         assertEquals(listOf("Dawn"), c.names())
+    }
+
+    /**
+     * This phone's own deletion stops the sync while a first pass is still waiting for the sign-in service; the answer is "still there"
+     * (the user goes last). The marker must not be created for a session that is over: it would stay behind as an orphan.
+     */
+    @Test fun aPassThatWasStoppedDuringTheUserCheckDoesNotCreateTheMarkerWhateverTheAnswer() = runTest {
+        lateinit var b: Phone
+        b = phone(id = "b", verifier = UserVerifier { b.engine.stop(); UserCheck.STILL_THERE })
+        b.store.saveNamed("Night", night)
+        b.engine.start("u1"); runCurrent(); advanceTimeBy(60_000); runCurrent()
+        assertTrue("no marker is created", remote.markerWrites.isEmpty())
+        assertEquals(AccountMarker.ABSENT, remote.markerOf("u1"))
+        assertTrue(remote.designWrites.isEmpty() && remote.currentWrites.isEmpty())
+        assertTrue(b.removed.isEmpty())
+        assertEquals(SyncStatus.Off, b.engine.status.value)
     }
 }

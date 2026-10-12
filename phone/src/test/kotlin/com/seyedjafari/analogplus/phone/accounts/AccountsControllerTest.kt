@@ -81,7 +81,7 @@ class AccountsControllerTest {
         manager: AccountManager = accounts, scope: CoroutineScope = backgroundScope, cloud: CloudSync = sync,
     ) = AccountsController(
         AccountsAvailability.AVAILABLE, manager, cloud,
-        BackupService(remote, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
+        backupServiceForTest(remote, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
         AccountDeletion(manager, remote, cloud, journal, marks, Dispatchers.Unconfined), scope,
     )
 
@@ -298,7 +298,7 @@ class AccountsControllerTest {
         val fresh = FakeKeySource(null)
         val other = AccountsController(
             AccountsAvailability.AVAILABLE, FakeAccountManager(AccountState.SignedIn("u1", null)), FakeCloudSync(),
-            BackupService(remote, vault, fresh, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
+            backupServiceForTest(remote, vault, fresh, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
             AccountDeletion(accounts, remote, sync, journal, marks), backgroundScope,
         )
         val plan = other.planRestore()
@@ -945,7 +945,7 @@ class AccountsControllerTest {
         val refusing = DeletionMarks(Refusing())
         val c = AccountsController(
             AccountsAvailability.AVAILABLE, accounts, sync,
-            BackupService(remote, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
+            backupServiceForTest(remote, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
             AccountDeletion(accounts, remote, sync, journal, refusing, Dispatchers.Unconfined), backgroundScope,
         )
         c.signIn()
@@ -988,7 +988,7 @@ class AccountsControllerTest {
         marks.mark("u1")
         val c = AccountsController(
             AccountsAvailability.AVAILABLE, accounts, sync,
-            BackupService(remote, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
+            backupServiceForTest(remote, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
             AccountDeletion(accounts, remote, sync, SyncJournal(Refusing(memory)), marks, Dispatchers.Unconfined), backgroundScope,
         )
         c.signIn()
@@ -1119,7 +1119,7 @@ class AccountsControllerTest {
         val slowRemote = SlowCheck(remote)
         val slow = AccountsController(
             AccountsAvailability.AVAILABLE, accounts, sync,
-            BackupService(slowRemote, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
+            backupServiceForTest(slowRemote, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
             AccountDeletion(accounts, slowRemote, sync, journal, marks, Dispatchers.Unconfined), backgroundScope,
         )
         slow.signIn()
@@ -1137,7 +1137,7 @@ class AccountsControllerTest {
         val noKey = FakeKeySource(null).also { it.pemFailure = java.io.IOException("No space left on device") }
         val c = AccountsController(
             AccountsAvailability.AVAILABLE, accounts, sync,
-            BackupService(remote, vault, noKey, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
+            backupServiceForTest(remote, vault, noKey, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
             AccountDeletion(accounts, remote, sync, journal, marks, Dispatchers.Unconfined), backgroundScope,
         )
         c.signIn()
@@ -1159,7 +1159,7 @@ class AccountsControllerTest {
         val cut = CutShort(remote)
         val c2 = AccountsController(
             AccountsAvailability.AVAILABLE, FakeAccountManager(AccountState.SignedIn("u1", null)), FakeCloudSync(),
-            BackupService(cut, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
+            backupServiceForTest(cut, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined),
             AccountDeletion(accounts, cut, sync, journal, marks, Dispatchers.Unconfined), backgroundScope,
         )
         assertEquals(UploadResult.Unsettled(RemoteErrorKind.OFFLINE), c2.upload("another passphrase 99", BackupExpectation.SameKey))
@@ -1266,17 +1266,41 @@ class AccountsControllerTest {
         assertEquals(Busy.NONE, c.ui.value.busy)
     }
 
-    @Test fun aBackupThatFindsTheUserGoneHasTheSyncEngineFindOutToo() = runTest(UnconfinedTestDispatcher()) {
-        val gone = BackupService(
-            inner, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined, userVerifier = { UserCheck.GONE },
+    /** A controller whose backup asks [verifier] (the sign-in service) before it creates the marker of a phone that never saw it. */
+    private fun TestScope.controllerWithBackupCheck(bound: Boolean = true, verifier: UserVerifier): AccountsController {
+        accounts.force(AccountState.SignedIn("u1", "me@example.com"))
+        if (bound) journal.bindTo("u1")                                 // this phone is bound to the account, with no note of its marker
+        return AccountsController(
+            AccountsAvailability.AVAILABLE, accounts, sync,
+            backupServiceForTest(inner, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined, userVerifier = verifier),
+            AccountDeletion(accounts, inner, sync, journal, marks, Dispatchers.Unconfined), backgroundScope,
         )
-        val c = AccountsController(
-            AccountsAvailability.AVAILABLE, accounts, sync, gone, AccountDeletion(accounts, inner, sync, journal, marks, Dispatchers.Unconfined), backgroundScope,
-        )
-        c.signIn()
+    }
+
+    @Test fun aBackupThatFindsTheUserGoneAfterTheSignInServiceSignedThePhoneOutStillShowsTheNoticeAndForgetsTheBinding() = runTest(UnconfinedTestDispatcher()) {
+        // what Firebase does on finding the user gone: it signs the phone out first, then fails the call
+        val c = controllerWithBackupCheck { accounts.force(AccountState.SignedOut); UserCheck.GONE }
         assertEquals(UploadResult.AccountGone, c.upload(passphrase, BackupExpectation.None))
-        assertEquals("the engine is asked for a pass, which asks the sign-in service and reports the removal", 1, sync.syncNowCalls)
+        assertEquals(AccountState.SignedOut, c.ui.value.account)
+        assertEquals("the notice outlives the account", Notice.SignedOutAccountDeleted, c.ui.value.notice)
+        assertNull("the binding is forgotten", journal.boundUid())
+        assertNull(inner.backupOf("u1"))
+        assertEquals(AccountMarker.ABSENT, inner.markerOf("u1"))
+    }
+
+    @Test fun theNoticeOfAGoneBackupIsShownEvenWhenThePhoneWasSignedOutFirstAndHadNoBindingToForget() = runTest(UnconfinedTestDispatcher()) {
+        val c = controllerWithBackupCheck(bound = false) { accounts.force(AccountState.SignedOut); UserCheck.GONE }
+        assertEquals(UploadResult.AccountGone, c.upload(passphrase, BackupExpectation.None))
         assertEquals(Notice.SignedOutAccountDeleted, c.ui.value.notice)
+    }
+
+    @Test fun aBackupThatFindsTheUserGoneBeforeTheSignInServiceSignedThePhoneOutSignsItOutWithTheNoticeAndForgetsTheBinding() = runTest(UnconfinedTestDispatcher()) {
+        val c = controllerWithBackupCheck { UserCheck.GONE }            // the service has not signed out yet: the controller's own call does it
+        assertEquals(UploadResult.AccountGone, c.upload(passphrase, BackupExpectation.None))
+        assertEquals(AccountState.SignedOut, c.ui.value.account)
+        assertEquals(Notice.SignedOutAccountDeleted, c.ui.value.notice)
+        assertNull(journal.boundUid())
+        assertEquals(Busy.NONE, c.ui.value.busy)
         assertNull(inner.backupOf("u1"))
     }
 
@@ -1380,12 +1404,12 @@ class AccountsControllerTest {
             val mgr = FakeAccountManager(AccountState.SignedIn("u1", null))
             val c = AccountsController(
                 AccountsAvailability.AVAILABLE, mgr, FakeCloudSync(),
-                BackupService(inner, vault, slowKeys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Default),
+                backupServiceForTest(inner, vault, slowKeys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Default),
                 AccountDeletion(mgr, inner, FakeCloudSync(), journal, marks, Dispatchers.Default), scope,
             )
             kotlinx.coroutines.runBlocking {
                 // another phone backed up pemA; this phone has no key yet: the line says so
-                BackupService(inner, vault, FakeKeySource(pemA), AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined)
+                backupServiceForTest(inner, vault, FakeKeySource(pemA), AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined)
                     .upload("u1", passphrase, BackupExpectation.None)
                 c.refreshBackup()
                 assertEquals(KeyMatch.NO_LOCAL_KEY, (c.ui.value.backup as BackupStatus.BackedUp).match)
