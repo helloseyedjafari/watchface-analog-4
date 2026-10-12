@@ -104,7 +104,8 @@ off, the app remembers it and offers **Finish deleting** (wipes whatever is left
 removes the account) or **Keep my account**; sync stays off on that phone until you choose. Other phones that noticed the deletion
 (between its start and Keep my account) were signed out at that point and stay signed out after **Keep my account**; sign in on them
 again. A phone that did not notice it is not signed out and simply syncs again. If the phone that started a cut-off deletion is
-lost, reset or has its data cleared, no other phone can finish or undo it from the app. If the cut came early, the cloud still says
+lost, reset or has its data cleared, no other phone can finish or undo it from the app. If the cut came before the cloud was reached,
+nothing changed and the account works as before, with all its data. If the cut came early, the cloud still says
 that the account is being deleted, and every phone that signs in to it is signed out again: write to **[OWNER: contact email]** and
 we clear the mark or finish the deletion by hand. If it came at the very end (the cloud data and the account record are gone but
 the sign-in itself is not yet removed), the account is in effect live and empty: a phone that signs in finds the sign-in, creates
@@ -112,8 +113,8 @@ the account record again and syncs, and the account simply works again, empty; y
 
 Without the app: see **[OWNER: URL of the account deletion page]**, or write to **[OWNER: contact email]**.
 
-When the deletion starts, the cloud marks the account as deleted first, and from then on it refuses every new write from
-your other phones. Each other phone that is signed in to the account is signed out of it the next time it checks: while its app is
+When the deletion starts, the cloud marks the account as deleted first, and from the moment it has done so it refuses every new
+write from your other phones. Each other phone that is signed in to the account is signed out of it the next time it checks: while its app is
 open and syncing, or when its next sync is refused. It keeps its local designs and its signing key. This is a sign-out inside the
 app, not a cancellation of the sign-in itself: the sign-in token that Google issued to that phone stays valid until it expires
 (up to an hour) and cannot be cancelled from your phone. The cloud simply has no data left for it and accepts nothing from it (apart
@@ -125,14 +126,17 @@ offline) may be signed out by Google's own sign-in first, without the notice; it
 Nothing about you stays in the cloud after the deletion, with these exceptions, which exist because the deletion takes several steps
 (mark the account deleted, remove the data, remove the account record, remove the sign-in). Before a phone creates the account
 record (for the sync, or for a signing-key backup) it asks Google's sign-in whether the account still exists, every time it is
-about to create it, until it has seen the record once; if the account is gone it writes nothing and is signed out with the notice,
-and if there is no answer it writes nothing and tries again later. What is left is the time between the deletion removing the
+about to create it, until it has seen the record once; if the account is gone it writes nothing and is signed out with the notice
+(also when it was making a signing-key backup), and if there is no answer it writes nothing and the sync tries again later (for a
+backup you try again). What is left is the time between the deletion removing the
 account record and removing the sign-in itself. It is normally short; if the deletion is cut off exactly between those two steps it
 lasts until **Finish deleting**. In that time a phone that has not seen the record finds the sign-in still there, creates the record
 again (a flag and a time, under your account id) and syncs, and can upload what it holds (its saved designs, the design being edited
-with its photo, the name of the phone, the random installation id and a signing-key backup made in that session); other phones that
-had seen the record and are opened meanwhile sync into it too. Such a phone is signed out when its own sign-in runs out (up to an
-hour), without a notice. Finish deleting removes all of it; otherwise write to **[OWNER: contact email]** and we remove it.
+with its photo, the name of the phone, the random installation id and a signing-key backup); other phones that had seen the record
+and are opened meanwhile sync into it too. In the normal short case such a phone is signed out when its own sign-in runs out (up to
+an hour), without a notice. After a cut-off its sign-in stays valid, because the account still exists, and the phone keeps syncing
+until **Finish deleting**, which signs it out with the notice. Finish deleting removes all of it; otherwise write to **[OWNER: contact
+email]** and we remove it.
 
 Signing out only stops syncing. Your cloud data stays until you delete it. Google may keep backup copies of its databases for
 a limited time after deletion, on its own schedule.

@@ -156,14 +156,16 @@ encrypted; designs are not secret).
   first, without the notice; (2) a phone that never saw the marker live asks the sign-in service whether the user still exists
   (`AccountManager.checkUser`, a `reload()` of the signed-in user) before EVERY attempt to create the marker, until the marker has
   been seen live once (`SyncEngine.markerAllowsPass`, and `BackupService.upload` before it creates the marker for an upload): gone
-  means nothing created or written, a sign-out and the notice; no answer means nothing is written and the pass (or the upload,
-  `Failed(OFFLINE)`) is retried. What is left is the time between the deletion removing the marker and removing the Auth user,
+  means nothing created or written, a sign-out and the notice; no answer means nothing is written and the sync pass is retried (an upload
+  is `Failed(OFFLINE)` and the person tries again). What is left is the time between the deletion removing the marker and removing the Auth user,
   normally short; a deletion cut off exactly between those two steps (cloud data and marker gone, `deleteUser` not done) leaves an
   account that is live in effect and empty until **Finish deleting** is tapped. In that time a phone that never saw the marker (or one
   signed out earlier that signs in again) finds the user, creates the marker and syncs, and can upload its designs, the design being
-  edited, the phone name and a backup until its token expires (up to an hour); phones with the note that are opened meanwhile read
-  ACTIVE and sync into it too. Finish deleting sets the marker deleted, wipes everything again and removes the user, and every phone
-  with the note is signed out. Not closed in code: the only way would be to leave a marker behind after the wipe, and the marker of
+  edited, the phone name and a backup until its token expires (up to an hour) in the normal short case, or, after a cut-off (the user
+  still exists, so the token keeps renewing), until Finish deleting; phones with the note that are opened meanwhile read ACTIVE and
+  sync into it too. Finish deleting sets the marker deleted, wipes everything again and removes the user, and every phone
+  with the note is signed out with the notice the next time it checks (one that has not run online for about an hour may get the plain
+  card). Not closed in code: the only way would be to leave a marker behind after the wipe, and the marker of
   a removed user cannot be deleted afterwards. Data left for a uid that no longer exists is removed on request (owner-prerequisites
   item 10 says how to find it); (3) if a deletion is cut off EARLY (marker `deleted: true`) and the phone that started it is lost,
   reset or cleared, no phone can finish or undo it from the app, because every phone that sees `deleted: true` is signed out (owner

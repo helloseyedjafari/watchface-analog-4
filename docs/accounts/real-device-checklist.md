@@ -84,7 +84,10 @@ Texts below are the English texts of the app (`phone/src/main/res/values/strings
   sign in with the same account on a second phone (or on an install that does not matter): it is signed out again with the notice,
   and so is any other phone that signs in. This is the expected, documented limit (the app cannot finish or undo it from a phone
   without the pending mark). Set `deleted` to `false` in the console (a real boolean, not the text "false"): signing in works
-  again. Phone 1 still holds its pending deletion: on phone 1 tap **Keep my account** (or **Finish deleting**) to settle it.
+  again. Phone 1 still holds its pending deletion: turn its connection back on (it is still in airplane mode from the cut, and Keep
+  and Finish need the cloud), then tap **Keep my account** (or **Finish deleting**) to settle it. If `users/<uid>/meta/account` is
+  missing altogether (and the user is still in Authentication), the cut came at the very end: continue with C5 from "Sign in".
+  If the user is already gone from Authentication the deletion completed: start over with another throwaway account.
 - [ ] **NOT RUN** C5. **Abandoned deletion, cut off at the very end** (no signing key is lost). Use an account that does not matter.
   Start the deletion on phone 1 and cut it off early as in C4 (`deleted: true`). In the console delete the documents in `designs`,
   `state` and `backup` and then `meta` (the account record), and leave the user in Authentication: this is the state of a deletion
@@ -92,7 +95,9 @@ Texts below are the English texts of the app (`phone/src/main/res/values/strings
   that was signed out earlier): it finds the user, creates `meta/account` again (`deleted: false`) and syncs; the account works
   again, empty, and that phone's designs are uploaded. Then on phone 1 tap **Finish deleting**: the console empties again (also what
   phone 2 uploaded), the user disappears from Authentication, and phone 2 is signed out (with the notice if its app is open; an app
-  that is only opened later after more than an hour may show a plain signed-out card).
+  that is only opened later after more than an hour may show a plain signed-out card). Turn phone 1's connection back on before
+  tapping Finish deleting (it is still in airplane mode from the cut). If the cut gave `deleted: false` (it came before the cloud was
+  reached) or the user is already gone from Authentication, this state was not reached: start over with another throwaway account.
 
 ## D. First run (onboarding) with accounts
 
@@ -155,8 +160,10 @@ Texts below are the English texts of the app (`phone/src/main/res/values/strings
      its saved designs and signing key, and show the notice "This account is being deleted, or was deleted, on another phone, so
      this phone was signed out. The designs and the signing key on this phone are kept." An edit made on phone 2 after the deletion
      must not appear in the console (`users/<uid>` stays empty, also after 15 seconds).
-  2. Repeat with phone 2's app force-stopped (swipe it away) before the deletion and opened within an hour of being stopped (and
-     after the deletion finished): it must end signed out with the same notice and must not create anything in the console.
+  2. Repeat with phone 2's app force-stopped (swipe it away) before the deletion. Wait for the visible end of the deletion (the
+     console shows no `users/<uid>` documents and the user is gone from Authentication), then open phone 2 a few minutes after you
+     stopped it (so well within the hour its sign-in lasts): it must end signed out with the same notice and must not create
+     anything in the console.
   3. Repeat with phone 2 offline during the deletion and online afterwards. Within about an hour of the last time its app ran
      online, the notice shows when it reconnects. After more than an hour (also when the app was simply closed that long) its
      sign-in can no longer be renewed (the account is gone), and Google's own sign-in may sign it out first: it then shows a plain

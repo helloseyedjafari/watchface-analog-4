@@ -76,13 +76,17 @@ off. Do these in order; each item says what to hand back to the code.
   3. delete the user under Authentication; 4. delete `meta` (the account marker), last. (The app itself deletes the marker before
   the user, because afterwards it can no longer reach Firestore; by hand the user goes first, so that nobody can sign in to the
   account while its marker is already gone.) Decide how many days you promise. The same page also tells people to write to you when
-  a cut-off deletion cannot be finished or undone in the app (the phone that started it was lost or reset). Two cases: if the
-  cut-off came early, every phone that signs in is signed out while the marker says `deleted: true`; to clear the mark and keep the
-  account set `deleted` to `false` in `users/<uid>/meta/account`, to finish it do the four steps above. If the cut-off came at the very end (no
-  `meta/account`, the user still in Authentication), the account simply works again, empty; finish it with steps 2 to 4 if the person
-  wants it gone.
-  **Finding leftovers.** In one narrow case (an account being deleted, cut off between removing the marker and removing the user,
-  see the deletion page) phones that never saw the account can write a marker and data for a user that no longer exists. If a
+  a cut-off deletion cannot be finished or undone in the app (the phone that started it was lost or reset). Three cases: if the
+  cut came before the cloud was reached (`deleted: false` and the data still there), nothing changed and the account works as before;
+  if it came early, every phone that signs in is signed out while the marker says `deleted: true`: to clear the mark and keep the
+  account set `deleted` to `false` in `users/<uid>/meta/account`, to finish it do the four steps above; if it came at the very end (no
+  `meta/account`, the user still in Authentication), the account simply works again, empty, and a phone may already have created the
+  marker again and be syncing: to finish it, if the person wants it gone, do all four steps above (step 1 creates the document if it is
+  missing and stops those phones before their data is deleted).
+  **Finding leftovers.** In one narrow case (a phone that looks at the account in the short moment between the app removing the marker and
+  removing the user, see the deletion page) a phone that never saw the account can write a marker and data for a user that no
+  longer exists; a cut-off deletion does not leave this behind, because Finish deleting wipes it again, but finishing one by hand
+  without step 1 can. If a
   person reports it, or you look: in Firestore the `users` collection lists such uids (the console shows them although the
   `users/<uid>` document itself does not exist, only its subcollections); one that is not in the Authentication user list is such a
   leftover. Delete its `designs`, `state`, `backup` and `meta` (steps 2 and 4 above).
