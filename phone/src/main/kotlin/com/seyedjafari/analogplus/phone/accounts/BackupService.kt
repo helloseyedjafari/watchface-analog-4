@@ -88,6 +88,12 @@ sealed interface UploadResult {
     data object NotSignedIn : UploadResult
 
     /**
+     * The sign-in service says the user of this account is gone (deleted on another phone). Nothing was written, no marker was
+     * created and no key was made. The controller has the sync engine find out too, which signs the phone out with the notice.
+     */
+    data object AccountGone : UploadResult
+
+    /**
      * The passphrase does not meet the rule (the UI checks it first; this is the service's own guard). Nothing was
      * done: no key generated, nothing written.
      */
@@ -219,6 +225,9 @@ sealed interface DiscardResult {
 /** The detail (data, never shown as it is) of a key that has the shape of a key file but is not a real key. */
 private const val NOT_A_USABLE_KEY = "not a usable signing key"
 
+/** The detail (data, not UI text) of a backup that could not start because the sign-in service did not answer. */
+private const val USER_NOT_ANSWERED = "The sign-in service did not answer"
+
 /** The detail (data, not UI text) of a backup refused up front because the account marker is not live. */
 private const val ACCOUNT_NOT_LIVE = "the account is not available for writing"
 
@@ -246,6 +255,12 @@ class BackupService(
      * marker that is missing then means the account was wiped.
      */
     private val markerSeenLive: (String) -> Boolean = { false },
+    /**
+     * Asked before the marker is created for the first write of an upload, like the sync engine does: a phone that never saw the
+     * marker live must not re-create the marker of an account whose user is gone and store a key backup in it. (The default,
+     * for tests, always answers "there".)
+     */
+    private val userVerifier: UserVerifier = UserVerifier { UserCheck.STILL_THERE },
 ) {
     /** One restore at a time: guesses made at the same moment must not slip past the attempt delay. */
     private val restoreLock = Mutex()
@@ -299,6 +314,13 @@ class BackupService(
         if (!assessment.strength.isAcceptable()) return UploadResult.PassphraseRefused(assessment)
         // before any key work: offline here is a plain "failed", and the write below cannot be refused for a missing marker
         if (!withContext(cpu) { markerSeenLive(uid) }) {   // reads the journal: not on the caller's thread
+            // the user must still exist before the marker is created: gone is told apart so that the controller can have the sync
+            // engine find out too (it signs the phone out with the notice); no answer is a plain "offline", nothing is written
+            when (userVerifier.check(uid)) {
+                UserCheck.STILL_THERE -> Unit
+                UserCheck.GONE -> return UploadResult.AccountGone
+                UserCheck.NOT_ANSWERED -> return UploadResult.Failed(RemoteErrorKind.OFFLINE, USER_NOT_ANSWERED)
+            }
             val marker = try { remote.ensureAccountMarker(uid) } catch (e: RemoteException) {
                 return UploadResult.Failed(e.kind, e.message.orEmpty())
             }

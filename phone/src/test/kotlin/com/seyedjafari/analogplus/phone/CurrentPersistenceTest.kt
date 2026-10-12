@@ -1,5 +1,7 @@
 package com.seyedjafari.analogplus.phone
 
+import com.seyedjafari.analogplus.phone.accounts.UserCheck
+import com.seyedjafari.analogplus.phone.accounts.UserVerifier
 import androidx.compose.runtime.snapshots.Snapshot
 import com.seyedjafari.analogplus.facegen.design.BackgroundDesign
 import com.seyedjafari.analogplus.facegen.design.BackgroundKind
@@ -90,6 +92,7 @@ class CurrentPersistenceTest {
             store, journal, remote, scope.backgroundScope, PhotoDownscaler { it }, CurrentApplier { state.replaceWholeDesign(it) },
             { state.design }, deviceId = "a", deviceLabel = "Phone", copySuffix = " (Phone)",
             clock = { scope.testScheduler.currentTime + 5_000_000 }, io = Dispatchers.Unconfined, debounceMs = 1_000, currentDebounceMs = 1_000,
+            userVerifier = UserVerifier { UserCheck.STILL_THERE },
         )
         /** The controller of the app over this engine: it starts sync for the signed-in account and is what the photo read reports to. */
         val accounts: AccountsController

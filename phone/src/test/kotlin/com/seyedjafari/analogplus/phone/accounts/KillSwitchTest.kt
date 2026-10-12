@@ -489,19 +489,37 @@ class KillSwitchTest {
         assertTrue(b.engine.status.value is SyncStatus.Idle)
     }
 
-    @Test fun aSessionThatFailedAfterTheUserWasConfirmedDoesNotAskAgainOnItsRetry() = runTest {
+    @Test fun aRetryAfterAFailedMarkerLookAsksAgainBeforeItCreatesTheMarker() = runTest {
         val verifier = Verifier(UserCheck.STILL_THERE)
         val b = phone(id = "b", verifier = verifier)
         b.store.saveNamed("Night", night)
         remote.failMarkerWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")       // the marker call that follows fails once
         b.engine.start("u1"); runCurrent()
         assertEquals(SyncStatus.Offline, b.engine.status.value)
+        assertEquals(1, verifier.calls)
         advanceTimeBy(100_000); runCurrent()                                                // the retry goes through
         assertEquals(AccountMarker.ACTIVE, remote.markerOf("u1"))
-        assertEquals("the user was already confirmed in this session", 1, verifier.calls)
+        assertEquals("the answer of the failed pass is not kept: every attempt to create the marker asks", 2, verifier.calls)
     }
 
-    @Test fun theUserIsAskedOncePerSessionAndNotAtAllByAPhoneThatSawTheMarkerLive() = runTest {
+    @Test fun aRetryAfterAFailedMarkerLookThatFindsTheUserGoneCreatesNoMarkerAndWritesNothing() = runTest {
+        val verifier = Verifier(UserCheck.STILL_THERE)
+        val b = phone(id = "b", verifier = verifier)
+        b.store.saveNamed("Night", night)
+        b.current = night
+        b.journal.onCurrentSaved(night, ChangeOrigin.USER)
+        remote.failMarkerWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")
+        b.engine.start("u1"); runCurrent()
+        assertEquals(SyncStatus.Offline, b.engine.status.value)
+        verifier.answer = UserCheck.GONE                                                    // the account is deleted while the phone retries
+        advanceTimeBy(100_000); runCurrent()
+        assertEquals(listOf("u1"), b.removed)
+        assertEquals(AccountMarker.ABSENT, remote.markerOf("u1"))
+        assertTrue(remote.markerWrites.isEmpty() && remote.designWrites.isEmpty() && remote.currentWrites.isEmpty())
+        assertEquals(listOf("Night"), b.names())
+    }
+
+    @Test fun theUserIsAskedBeforeEachAttemptToCreateTheMarkerAndNeverOnceThePhoneHasSeenItLive() = runTest {
         val verifier = Verifier(UserCheck.STILL_THERE)
         val b = phone(id = "b", verifier = verifier)
         b.store.saveNamed("Night", night)
@@ -515,5 +533,70 @@ class KillSwitchTest {
         again.engine.start("u1"); runCurrent()
         assertEquals("... but the marker is live and this phone knows it: it only reads the marker", 1, verifier.calls)
         assertTrue(again.removed.isEmpty())
+    }
+
+    // ---- the sign-in service signs the phone out before it tells that the user is gone -------------------------------------------
+
+    /**
+     * What Firebase does when it finds the user gone: it signs the phone out first (the controller stops the sync) and only then
+     * fails the call. The engine must still report the removal, and the person must be told. (The same order, against the Auth
+     * emulator, is in AccountsEndToEndTest.)
+     */
+    @Test fun aGoneAnswerThatComesBackAfterTheSignInServiceSignedThePhoneOutIsStillToldWithTheNotice() = runTest {
+        lateinit var manager: FakeAccountManager
+        val verifier = UserVerifier {
+            manager.force(AccountState.SignedOut)       // Firebase signs out first ...
+            kotlinx.coroutines.delay(1)                 // ... the controller sees it and stops the sync ...
+            UserCheck.GONE                              // ... and only then does the call answer
+        }
+        val b = phone(id = "b", verifier = verifier)
+        manager = b.manager
+        b.store.saveNamed("Night", night)
+        val controller = AccountsController(
+            AccountsAvailability.AVAILABLE, b.manager, b.engine,
+            BackupService(remote, com.seyedjafari.analogplus.phone.accounts.vault.KeyVault(iterations = 1_000, minAcceptedIterations = 1_000), FakeKeySource(null), AttemptLimiter(MemoryKeyValueStore())),
+            b.deletion(), b.scope,
+        )
+        runCurrent(); advanceTimeBy(60_000); runCurrent()
+        assertEquals(AccountState.SignedOut, controller.ui.value.account)
+        assertEquals("the phone is told, although the sync was stopped before the answer", Notice.SignedOutAccountDeleted, controller.ui.value.notice)
+        assertEquals("the binding to the dead account is forgotten", null, b.journal.boundUid())
+        assertEquals(listOf("Night"), b.names())
+        assertTrue("and nothing was created or written", remote.markerWrites.isEmpty() && remote.designWrites.isEmpty())
+    }
+
+    // ---- a deletion cut off between the wipe and the removal of the user: what a first phone then does ----------------------
+
+    /**
+     * The wipe took the marker (last), but the Auth user is still there (the deletion came back "sign in again" and is pending on the
+     * phone that started it). Without a marker the account looks like a new one: a phone that never saw the marker creates it live and
+     * syncs, the account simply works again on that phone. The phone that started the deletion still shows Finish / Keep; Finish
+     * deletes everything again (what the other phone uploaded too) and signs that phone out.
+     */
+    @Test fun aDeletionCutOffBeforeTheUserIsRemovedLetsAFirstPhoneCreateTheMarkerAndFinishDeletesItAllAgain() = runTest {
+        val a = phone(id = "a")
+        a.store.saveNamed("Night", night)
+        a.engine.start("u1"); runCurrent()
+        a.manager.nextDelete = DeleteUserResult.NeedsRecentLogin
+        val cut = a.deletion().delete("u1")
+        assertTrue(cut is DeletionResult.AccountFailed)
+        assertTrue(a.marks.isPending("u1"))
+        assertEquals("the wipe took the marker last", AccountMarker.ABSENT, remote.markerOf("u1"))
+        assertTrue(remote.designsOf("u1").isEmpty())
+        // another phone, never signed in to this account before, opens the app: the user still exists
+        val c = phone(id = "c")
+        c.store.saveNamed("Dawn", day)
+        c.engine.start("u1"); runCurrent()
+        assertTrue(c.removed.isEmpty())
+        assertEquals("the account works again on that phone", AccountMarker.ACTIVE, remote.markerOf("u1"))
+        assertEquals(listOf("Dawn"), remote.designsOf("u1").values.map { it.name })
+        // the phone that started the deletion finishes it: the marker says deleted, everything goes, the other phone is signed out
+        a.manager.nextDelete = DeleteUserResult.Deleted
+        assertEquals(DeletionResult.Done, a.deletion().finish("u1"))
+        runCurrent()
+        assertEquals(listOf("u1"), c.removed)
+        assertTrue(remote.designsOf("u1").isEmpty())
+        assertEquals(AccountMarker.ABSENT, remote.markerOf("u1"))
+        assertEquals(listOf("Dawn"), c.names())
     }
 }

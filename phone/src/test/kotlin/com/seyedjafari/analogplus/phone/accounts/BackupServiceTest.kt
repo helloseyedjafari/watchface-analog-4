@@ -1192,11 +1192,43 @@ class BackupServiceTest {
 
     @Test fun aPhoneThatAlreadySawTheMarkerLiveNeverCreatesItAgainForABackup() {
         val strict = FakeRemoteStore(strictMarkers = true)                     // the account was wiped: no marker
-        val s = BackupService(strict, vault, FakeKeySource(pemA), limiter, Dispatchers.Unconfined) { true }
+        val s = BackupService(strict, vault, FakeKeySource(pemA), limiter, Dispatchers.Unconfined, markerSeenLive = { true })
         val r = run { s.upload("u1", passphrase, SameKey) }
         assertEquals(UploadResult.Failed(RemoteErrorKind.PERMISSION, "the rules refuse the write: the account marker is ABSENT"), r)
         assertEquals(AccountMarker.ABSENT, strict.markerOf("u1"))
         assertTrue(strict.markerWrites.isEmpty())
+    }
+
+    @Test fun aBackupOfAPhoneThatNeverSawTheMarkerAsksTheSignInServiceFirstAndAGoneUserGetsNoMarkerNoKeyAndNoBackup() {
+        val strict = FakeRemoteStore(strictMarkers = true)
+        val signedIn = FakeAccountManager(AccountState.SignedIn("u1", null)).also { it.nextCheck = UserCheck.GONE }
+        val keys = FakeKeySource(null)
+        val s = BackupService(strict, vault, keys, limiter, Dispatchers.Unconfined, userVerifier = signedIn::checkUser)
+        assertEquals(UploadResult.AccountGone, run { s.upload("u1", passphrase, SameKey) })
+        assertEquals(1, signedIn.checkCalls)
+        assertEquals("no marker is created in a deleted account", AccountMarker.ABSENT, strict.markerOf("u1"))
+        assertTrue(strict.markerWrites.isEmpty())
+        assertFalse("no key is made", keys.hasKey())
+        assertNull(strict.backupOf("u1"))
+    }
+
+    @Test fun aBackupThatCannotAskTheSignInServiceIsAPlainOfflineFailureAndWritesNothing() {
+        val strict = FakeRemoteStore(strictMarkers = true)
+        val signedIn = FakeAccountManager(AccountState.SignedIn("u1", null)).also { it.nextCheck = UserCheck.NOT_ANSWERED }
+        val keys = FakeKeySource(null)
+        val s = BackupService(strict, vault, keys, limiter, Dispatchers.Unconfined, userVerifier = signedIn::checkUser)
+        assertEquals(UploadResult.Failed(RemoteErrorKind.OFFLINE, "The sign-in service did not answer"), run { s.upload("u1", passphrase, SameKey) })
+        assertTrue(strict.markerWrites.isEmpty())
+        assertFalse(keys.hasKey())
+    }
+
+    @Test fun aBackupOfAPhoneThatSawTheMarkerLiveNeverAsksTheSignInService() {
+        val strict = FakeRemoteStore(strictMarkers = true)
+        strict.seedMarker("u1", AccountMarker.ACTIVE)
+        val signedIn = FakeAccountManager(AccountState.SignedIn("u1", null)).also { it.nextCheck = UserCheck.GONE }
+        val s = BackupService(strict, vault, FakeKeySource(pemA), limiter, Dispatchers.Unconfined, markerSeenLive = { true }, userVerifier = signedIn::checkUser)
+        assertTrue(run { s.upload("u1", passphrase, SameKey) } is UploadResult.Ok)
+        assertEquals(0, signedIn.checkCalls)
     }
 
     @Test fun aBackupOfAnAccountWhoseMarkerIsNotLiveFailsAtOnceBeforeAnyKeyWork() {

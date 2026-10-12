@@ -588,8 +588,11 @@ class AccountsEndToEndTest {
      */
     private inner class SecondPhone(
         uid: String, previous: SecondPhone? = null,
-        /** What the engine asks before it first looks at the marker; the real one is the sign-in service's, through [FirebaseAccountManager]. */
-        verifier: UserVerifier = UserVerifier { UserCheck.STILL_THERE },
+        /**
+         * The real [FirebaseAccountManager] on the process-wide sign-in (the Auth emulator) instead of a fake: what the engine asks
+         * before it first looks at the marker is then the real `reload()`, and Firebase's own sign-out reaches this phone's controller.
+         */
+        realAccounts: Boolean = false,
         /** Designs the phone already had on its disk before the app started (made while it was signed out, say). */
         designs: Map<String, DesignSettings> = emptyMap(),
     ) {
@@ -599,7 +602,8 @@ class AccountsEndToEndTest {
         val kv: MemoryKeyValueStore = previous?.kv ?: MemoryKeyValueStore()
         init { designs.forEach { (name, design) -> store.saveNamed(name, design) } }
         val journal = SyncJournal(kv)
-        val manager = FakeAccountManager(AccountState.SignedIn(uid, null))
+        val manager: AccountManager =
+            if (realAccounts) FirebaseAccountManager(FirebaseAuth.getInstance(), IdTokenSource { null }, null) else FakeAccountManager(AccountState.SignedIn(uid, null))
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val current = AtomicReference(DesignSettings())
         lateinit var controller: AccountsController
@@ -610,7 +614,8 @@ class AccountsEndToEndTest {
                 val engine = SyncEngine(
                     store, journal, remote, scope, AndroidPhotoDownscaler(),
                     CurrentApplier { design -> current.set(design) }, { current.get() },
-                    deviceId = "e2e-b-$tag", deviceLabel = "Phone B", copySuffix = " (copy)", userVerifier = verifier,
+                    deviceId = "e2e-b-$tag", deviceLabel = "Phone B", copySuffix = " (copy)",
+                    userVerifier = UserVerifier { manager.checkUser(it) },
                 )
                 store.addObserver(journal)
                 store.addObserver(engine)
@@ -623,7 +628,11 @@ class AccountsEndToEndTest {
         }
 
         fun names() = store.savedDesigns().map { it.name }.sorted()
-        fun stop() { scope.coroutineContext[Job]?.cancel(); File(context.cacheDir, "e2e-b-$tag.jpg").delete() }
+        fun stop() {
+            scope.coroutineContext[Job]?.cancel()
+            (manager as? AutoCloseable)?.close()
+            File(context.cacheDir, "e2e-b-$tag.jpg").delete()
+        }
     }
 
     @Test fun deletingTheAccountOnOnePhoneSignsTheOtherPhoneOutAndLeavesItsDesignsAndTheCloudEmpty() {
@@ -705,16 +714,10 @@ class AccountsEndToEndTest {
     }
 
     /**
-     * A phone in the background has no listener (they are cancelled first, so the marker cannot be delivered), and its next pass finds
-     * out by itself, by one of two ways that the JVM tests pin one by one: the look at the marker before the pass, or the look after
-     * its first write was refused. Here only the result is asserted, on the real rules: signed out with the notice, and nothing of
-     * the new design reached the cloud.
-     */
-    /**
      * A phone that never saw the account's marker (its first session for the account) opens its app after the account was deleted;
      * its sign-in is still good for up to an hour. Before it looks at the marker it asks the sign-in service whether the user still
-     * exists (a real reload against the Auth emulator): gone, so it creates no marker, uploads nothing and is signed out with the
-     * notice. The cloud's part of the deletion is done directly and the Auth user is deleted in the Auth emulator behind the
+     * exists (a real reload against the Auth emulator, through the real account manager: Firebase signs the phone out by itself
+     * first): gone, so it creates no marker, uploads nothing and is signed out with the notice. The cloud's part of the deletion is done directly and the Auth user is deleted in the Auth emulator behind the
      * client's back, as another phone's deletion does it.
      */
     @Test fun aPhoneOnItsFirstSessionFindsTheUserGoneBeforeItCreatesTheMarkerAndWritesNothing() {
@@ -727,8 +730,6 @@ class AccountsEndToEndTest {
         onMain { phone1.controller.setForeground(false) }         // the first phone stays out of it
         val cloud = FirestoreRemoteStore(FirebaseFirestore.getInstance())
         runBlocking { cloud.setAccountDeleted(uid, true); cloud.deleteAllUserData(uid) }
-        // the Auth user is deleted, but the client of this process still holds its user (the other phone's token)
-        val asker = FirebaseAccountManager(FirebaseAuth.getInstance(), IdTokenSource { null }, null)
         var phoneB: SecondPhone? = null
         try {
             val url = java.net.URL("http://${FirebaseProvider.EMULATOR_HOST}:${FirebaseProvider.AUTH_EMULATOR_PORT}/identitytoolkit.googleapis.com/v1/projects/$projectId/accounts:delete")
@@ -739,19 +740,26 @@ class AccountsEndToEndTest {
             assertEquals(200, c.responseCode); c.disconnect()
             assertEquals("not a trace of the account in the cloud", 0, documentCount("users/$uid/meta?pageSize=100"))
 
-            phoneB = SecondPhone(uid, verifier = UserVerifier { asker.checkUser(it) }, designs = mapOf("Dawn" to dawn))
+            // the Auth user is deleted, but the client of this process still holds its user (as the other phone's token does): this
+            // phone's real account manager finds it gone on its first check, and Firebase signs it out BEFORE the call fails
+            phoneB = SecondPhone(uid, realAccounts = true, designs = mapOf("Dawn" to dawn))
             await("the phone to be signed out") { phoneB.manager.state.value == AccountState.SignedOut }
-            assertEquals(Notice.SignedOutAccountDeleted, phoneB.controller.ui.value.notice)
+            // Firebase's sign-out comes first, and the notice and the forgotten binding a moment later (when the engine's answer is in)
+            await("the phone to be told why") { phoneB.controller.ui.value.notice == Notice.SignedOutAccountDeleted && phoneB.journal.boundUid() == null }
             assertEquals(listOf("Dawn"), phoneB.names())
-            assertNull(phoneB.journal.boundUid())
             assertCloudEmpty(uid, authToo = false)
             assertEquals("no marker was created", 0, documentCount("users/$uid/meta?pageSize=100"))
         } finally {
             phoneB?.stop()
-            asker.close()
         }
     }
 
+    /**
+     * A phone in the background has no listener (they are cancelled first, so the marker cannot be delivered), and its next pass finds
+     * out by itself, by one of two ways that the JVM tests pin one by one: the look at the marker before the pass, or the look after
+     * its first write was refused. Here only the result is asserted, on the real rules: signed out with the notice, and nothing of
+     * the new design reached the cloud.
+     */
     @Test fun aPhoneInTheBackgroundIsSignedOutByItsNextPassAndWritesNothing() {
         val phone1 = Phone(1)
         show(phone1)

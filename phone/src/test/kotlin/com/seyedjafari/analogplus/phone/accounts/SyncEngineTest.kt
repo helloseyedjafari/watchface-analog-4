@@ -187,7 +187,7 @@ class SyncEngineTest {
             store, journal, engineRemote, scope, photos, { applied += it; current = it }, { current },
             deviceId = id, deviceLabel = "Phone $id", copySuffix = copyNameSuffix(copyLabel, { " ($it)" }, "copy"), clock = { now() }, io = io,
             debounceMs = 1_000, currentDebounceMs = currentDebounceMs, retryMs = 30_000, maxRetryMs = 300_000,
-            callTimeoutMs = 20_000, random = random,
+            callTimeoutMs = 20_000, random = random, userVerifier = UserVerifier { UserCheck.STILL_THERE },
         )
         init { store.addObserver(journal); store.addObserver(engine) }
         fun names() = store.savedDesigns().map { it.name }.sorted()

@@ -104,11 +104,11 @@ class SyncEngine(
     private val writeTimeoutMsPerKb: Long = 20,
     private val random: () -> Double = { Math.random() },
     /**
-     * Asked once per session, before the first look at the account marker, by a phone that has never seen that marker live (see
-     * [markerAllowsPass]): the sign-in the phone holds can outlive the account by an hour, and such a phone would otherwise create
-     * the marker of a deleted account again and write into it.
+     * Asked before every attempt to create the account marker (see [markerAllowsPass]): the sign-in the phone holds can outlive the
+     * account by an hour, and a phone that has never seen the marker live would otherwise create the marker of a deleted account
+     * again and write into it. No default on purpose: a construction site that forgot it would silently opt out.
      */
-    private val userVerifier: UserVerifier = UserVerifier { UserCheck.STILL_THERE },
+    private val userVerifier: UserVerifier,
 ) : CloudSync, StoreObserver {
 
     private val _status = MutableStateFlow<SyncStatus>(SyncStatus.Off)
@@ -148,9 +148,6 @@ class SyncEngine(
      * created.
      */
     @Volatile private var markerSeenActive = false
-
-    /** True once in this session the signed-in user was confirmed to exist (see [userVerifier]). */
-    @Volatile private var userConfirmed = false
 
     /** True after the marker was looked at because a write was refused, until the next pass: one look per pass, not one per refusal. */
     @Volatile private var refusalChecked = false
@@ -241,7 +238,6 @@ class SyncEngine(
         currentKnown = false
         currentPushWanted = false
         markerSeenActive = false
-        userConfirmed = false
         refusalChecked = false
         _status.value = SyncStatus.Syncing
         val channel = Channel<Unit>(Channel.CONFLATED)
@@ -318,7 +314,6 @@ class SyncEngine(
         seenCurrentAtMs = 0
         restorePending = false
         markerSeenActive = false
-        userConfirmed = false
         refusalChecked = false
         withoutPhoto.clear()
         _offer.value = null
@@ -835,9 +830,18 @@ class SyncEngine(
 
     private fun accountRemoved(id: String): Boolean {
         if (uid != id) return false
-        _accountRemoved.tryEmit(id)   // before the stop: the event is buffered whatever happens next
-        stop()
+        removalFound(id)
         return true
+    }
+
+    /**
+     * The account [id] is gone, as found by the sign-in service: told to the owner of the sign-in whether or not this session is
+     * still the current one (the sign-in service may have signed the phone out and stopped it already), and stops this session if it
+     * is. The controller ignores the event when another account is signed in.
+     */
+    private fun removalFound(id: String) {
+        _accountRemoved.tryEmit(id)   // before the stop: the event is buffered whatever happens next
+        if (uid == id) stop()
     }
 
     /**
@@ -850,12 +854,18 @@ class SyncEngine(
     private suspend fun markerAllowsPass(id: String): Boolean {
         // A phone that has never seen this account's marker live (a first session for the account, or one whose first look never got
         // through) is the only one that may create it, and its sign-in can be an hour older than the account: ask whether the user
-        // still exists first. Gone: the account is removed (nothing is created or written). No answer: the pass fails like any
-        // offline one (retried, nothing written); never a sign-out on a doubt.
-        if (!markerSeenActive && !userConfirmed) {
-            when (call { userVerifier.check(id) }) {
-                UserCheck.STILL_THERE -> userConfirmed = true
-                UserCheck.GONE -> { accountRemoved(id); return false }
+        // still exists before EVERY attempt to create the marker (not once per session: a retry minutes later, after a failed
+        // look, must not create the marker of an account that was deleted meanwhile). Gone: the account is removed (nothing is
+        // created or written). No answer: the pass fails like any offline one (retried, nothing written); never a sign-out on a
+        // doubt. The question is not cancelled by a stop: the sign-in service signs the phone out itself when it finds the user
+        // gone, which stops this engine before the answer comes back, and the answer must still be reported (with the notice).
+        if (!markerSeenActive) {
+            val answer = withContext(NonCancellable) {
+                call { userVerifier.check(id) }.also { if (it == UserCheck.GONE) removalFound(id) }
+            }
+            when (answer) {
+                UserCheck.STILL_THERE -> Unit
+                UserCheck.GONE -> return false
                 UserCheck.NOT_ANSWERED -> throw RemoteException(RemoteErrorKind.OFFLINE, USER_NOT_ANSWERED)
             }
         }

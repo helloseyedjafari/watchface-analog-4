@@ -280,7 +280,10 @@ class AccountsController(
     /**
      * The sync found that another phone deleted the account [who]. This phone is signed out, its binding to the account is
      * forgotten and the person is told. Not when this phone is the one deleting it (its own engine sees the marker it just
-     * set), nor while a deletion of it is pending here. The designs on the phone are not touched.
+     * set), nor while a deletion of it is pending here (both checks are for the signed-in case only). The designs on the phone
+     * are not touched. When nobody is signed in any more (the sign-in service signed this phone out first, on finding the user
+     * gone) the binding is forgotten and the person is told if this phone was bound to [who]; an event for another account than the
+     * signed-in one is ignored. The binding is forgotten only after the sign-out.
      */
     private suspend fun onAccountRemoved(who: String) {
         val signedIn = uid()
@@ -410,6 +413,8 @@ class AccountsController(
         val uid = uid() ?: return UploadResult.NotSignedIn
         return action(uid, Busy.BACKING_UP, UploadResult.NotSignedIn) {
             val result = backup.upload(uid, passphrase, expecting)
+            // the sync engine asks the sign-in service the same question and reports the removal: the phone is signed out with the notice
+            if (result == UploadResult.AccountGone) sync.syncNow()
             ActionOutcome(result, noticeFor(result))
         }
     }
@@ -635,6 +640,7 @@ class AccountsController(
     private fun noticeFor(r: UploadResult): Notice = when (r) {
         is UploadResult.Ok -> Notice.KeyBackedUp(r.fingerprint)
         UploadResult.NotSignedIn -> Notice.SignInFirst
+        UploadResult.AccountGone -> Notice.SignedOutAccountDeleted
         is UploadResult.PassphraseRefused -> Notice.PassphraseNotAccepted(r.assessment)
         is UploadResult.BackupDiffers -> Notice.BackupChanged
         is UploadResult.KeyUnreadable -> Notice.KeyUnreadable(r.message)

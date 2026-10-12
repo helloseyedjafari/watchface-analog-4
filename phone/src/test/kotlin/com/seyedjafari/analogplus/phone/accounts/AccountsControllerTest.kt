@@ -1266,6 +1266,20 @@ class AccountsControllerTest {
         assertEquals(Busy.NONE, c.ui.value.busy)
     }
 
+    @Test fun aBackupThatFindsTheUserGoneHasTheSyncEngineFindOutToo() = runTest(UnconfinedTestDispatcher()) {
+        val gone = BackupService(
+            inner, vault, keys, AttemptLimiter(MemoryKeyValueStore()), Dispatchers.Unconfined, userVerifier = { UserCheck.GONE },
+        )
+        val c = AccountsController(
+            AccountsAvailability.AVAILABLE, accounts, sync, gone, AccountDeletion(accounts, inner, sync, journal, marks, Dispatchers.Unconfined), backgroundScope,
+        )
+        c.signIn()
+        assertEquals(UploadResult.AccountGone, c.upload(passphrase, BackupExpectation.None))
+        assertEquals("the engine is asked for a pass, which asks the sign-in service and reports the removal", 1, sync.syncNowCalls)
+        assertEquals(Notice.SignedOutAccountDeleted, c.ui.value.notice)
+        assertNull(inner.backupOf("u1"))
+    }
+
     @Test fun aSignOutBecauseTheAccountWasDeletedKeepsItsNoticeWhileABackupWasRunning() = runTest(UnconfinedTestDispatcher()) {
         val c = controller()
         c.signIn()
@@ -1312,7 +1326,7 @@ class AccountsControllerTest {
         assertEquals(AccountState.SignedOut, c.ui.value.account)
     }
 
-    @Test fun aRemovalOfAnAccountThatIsNotTheOnesignedInIsIgnoredEvenWhenTheJournalIsBoundToIt() = runTest(UnconfinedTestDispatcher()) {
+    @Test fun aRemovalOfAnAccountThatIsNotTheOneSignedInIsIgnoredEvenWhenTheJournalIsBoundToIt() = runTest(UnconfinedTestDispatcher()) {
         val c = controller()
         c.signIn()
         journal.bindTo("u9")

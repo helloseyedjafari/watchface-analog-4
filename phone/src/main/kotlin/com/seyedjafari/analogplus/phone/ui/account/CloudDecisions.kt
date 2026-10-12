@@ -254,7 +254,7 @@ fun discardNext(result: DiscardResult): DiscardNext = when (result) {
  */
 fun afterUpload(result: UploadResult): CloudDialog = when (result) {
     is UploadResult.BackupDiffers -> reAsk(result)
-    is UploadResult.Ok, UploadResult.NotSignedIn, is UploadResult.PassphraseRefused, is UploadResult.KeyUnreadable,
+    is UploadResult.Ok, UploadResult.NotSignedIn, UploadResult.AccountGone, is UploadResult.PassphraseRefused, is UploadResult.KeyUnreadable,
     is UploadResult.KeyNotMade, is UploadResult.Unsettled, UploadResult.SelfTestFailed, is UploadResult.Failed -> CloudDialog.None
 }
 

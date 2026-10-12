@@ -360,6 +360,7 @@ class CloudDecisionsTest {
         val others = listOf(
             UploadResult.Ok(cloudFp), UploadResult.NotSignedIn, UploadResult.PassphraseRefused(assessment), UploadResult.KeyUnreadable("x"),
             UploadResult.SelfTestFailed, UploadResult.Failed(RemoteErrorKind.OFFLINE, "x"), UploadResult.Unsettled(RemoteErrorKind.OFFLINE), UploadResult.KeyNotMade("x"),
+            UploadResult.AccountGone,
         )
         for (r in others) assertEquals("$r", CloudDialog.None, afterUpload(r))
         assertSealedCovered(UploadResult::class.java, others + diff(CloudBackup.Absent, KeyOnPhone.None))

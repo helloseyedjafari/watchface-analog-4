@@ -42,6 +42,7 @@ class KeepAccountResyncTest {
             store, journal, remote, scope, PhotoDownscaler { it }, { current = it }, { current },
             deviceId = "a", deviceLabel = "Phone", copySuffix = " (Phone)", clock = clock, io = Dispatchers.Unconfined,
             debounceMs = 1_000, currentDebounceMs = 1_000, retryMs = 30_000, maxRetryMs = 300_000, callTimeoutMs = 20_000, random = { 1.0 },
+            userVerifier = UserVerifier { UserCheck.STILL_THERE },
         )
         val deletion = AccountDeletion(accounts, remote, engine, journal, marks, Dispatchers.Unconfined)
 
