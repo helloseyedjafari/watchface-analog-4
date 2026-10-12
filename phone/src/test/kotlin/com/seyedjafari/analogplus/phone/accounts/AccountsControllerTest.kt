@@ -1280,6 +1280,48 @@ class AccountsControllerTest {
         assertEquals(Busy.NONE, c.ui.value.busy)
     }
 
+    @Test fun theBindingAndTheNoteThatTheMarkerWasLiveSurviveUntilThePhoneIsSignedOut() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        journal.bindTo("u1"); journal.markMarkerSeenLive("u1")
+        val gate = CompletableDeferred<Unit>().also { remote.putGate = it }
+        val job = launch { c.upload(passphrase, BackupExpectation.None) }
+        assertEquals(Busy.BACKING_UP, c.ui.value.busy)
+        sync.accountWasRemoved("u1")                                    // the removal is found while the backup runs
+        // here the process may die: what is on the disk must still make the next start find the removal, not create the marker
+        assertEquals("u1", journal.boundUid())
+        assertTrue(journal.markerSeenLive("u1"))
+        assertEquals(AccountState.SignedIn("u1", "me@example.com"), c.ui.value.account)
+        gate.complete(Unit)
+        job.join()
+        assertEquals(AccountState.SignedOut, c.ui.value.account)
+        assertNull("only after the sign-out is the binding forgotten", journal.boundUid())
+        assertTrue(!journal.markerSeenLive("u1"))
+        assertEquals(Notice.SignedOutAccountDeleted, c.ui.value.notice)
+    }
+
+    @Test fun aRemovalThatTheSignInServiceMadeBeforeTheEngineToldIsStillToldAndForgotten() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        journal.bindTo("u1"); journal.markMarkerSeenLive("u1")
+        accounts.signOut()                                              // the user was found gone: the service signed this phone out first
+        assertNull(c.ui.value.notice)
+        sync.accountWasRemoved("u1")
+        assertEquals(Notice.SignedOutAccountDeleted, c.ui.value.notice)
+        assertNull(journal.boundUid())
+        assertEquals(AccountState.SignedOut, c.ui.value.account)
+    }
+
+    @Test fun aRemovalOfAnAccountThatIsNotTheOnesignedInIsIgnoredEvenWhenTheJournalIsBoundToIt() = runTest(UnconfinedTestDispatcher()) {
+        val c = controller()
+        c.signIn()
+        journal.bindTo("u9")
+        sync.accountWasRemoved("u9")
+        assertEquals(AccountState.SignedIn("u1", "me@example.com"), c.ui.value.account)
+        assertEquals("u9", journal.boundUid())
+        assertNull(c.ui.value.notice)
+    }
+
     @Test fun aRemovalDuringTheOwnDeleteConfirmationIsNotActedOnButSyncStartsAgainWhenTheDeletionIsCancelled() = runTest(UnconfinedTestDispatcher()) {
         val prompt = CompletableDeferred<ReauthResult>()
         val prompting = object : AccountManager by accounts {

@@ -1199,6 +1199,19 @@ class BackupServiceTest {
         assertTrue(strict.markerWrites.isEmpty())
     }
 
+    @Test fun aBackupOfAnAccountWhoseMarkerIsNotLiveFailsAtOnceBeforeAnyKeyWork() {
+        for (state in listOf(AccountMarker.DELETED, AccountMarker.UNREADABLE)) {
+            val strict = FakeRemoteStore(strictMarkers = true)
+            strict.seedMarker("u1", state)
+            val keys = FakeKeySource(null)
+            val r = run { BackupService(strict, vault, keys, limiter, Dispatchers.Unconfined).upload("u1", passphrase, SameKey) }
+            assertEquals(state.name, UploadResult.Failed(RemoteErrorKind.PERMISSION, "the account is not available for writing"), r)
+            assertFalse("no key is made for a backup that cannot be stored", keys.hasKey())
+            assertNull(strict.backupOf("u1"))
+            assertEquals("the marker is left as it was", state, strict.markerOf("u1"))
+        }
+    }
+
     @Test fun anOfflineMarkerCheckIsAPlainFailedBackupBeforeAnyKeyWork() {
         val strict = FakeRemoteStore(strictMarkers = true)
         strict.failMarkerWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")

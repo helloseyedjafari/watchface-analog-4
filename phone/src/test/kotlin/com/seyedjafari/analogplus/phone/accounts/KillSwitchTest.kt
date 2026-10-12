@@ -44,7 +44,7 @@ class KillSwitchTest {
     private inner class Phone(
         parent: CoroutineScope, val clock: () -> Long, val engineRemote: RemoteStore = remote, val id: String = "a",
         val storeKv: MemoryKeyValueStore = MemoryKeyValueStore(), val journalKv: MemoryKeyValueStore = MemoryKeyValueStore(),
-        val folder: File = tmp.newFolder(),
+        val folder: File = tmp.newFolder(), val verifier: UserVerifier = UserVerifier { UserCheck.STILL_THERE },
     ) {
         val parentScope = parent
         val scope = CoroutineScope(parent.coroutineContext + Job(parent.coroutineContext[Job]))
@@ -55,6 +55,7 @@ class KillSwitchTest {
             store, journal, engineRemote, scope, PhotoDownscaler { it }, { }, { current },
             deviceId = id, deviceLabel = "Phone $id", copySuffix = " (this phone)", clock = clock, io = Dispatchers.Unconfined,
             debounceMs = 1_000, currentDebounceMs = 1_000, retryMs = 30_000, maxRetryMs = 300_000, callTimeoutMs = 20_000, random = { 1.0 },
+            userVerifier = verifier,
         )
         val removed = ArrayList<String>()
         val manager = FakeAccountManager(AccountState.SignedIn("u1", null))
@@ -72,11 +73,26 @@ class KillSwitchTest {
         fun die() { scope.cancel() }
 
         /** The app opened again: a new engine over what the old one left on the disk. */
-        fun restarted(engineRemote: RemoteStore = this.engineRemote) = Phone(parentScope, clock, engineRemote, id, storeKv, journalKv, folder)
+        fun restarted(engineRemote: RemoteStore = this.engineRemote) = Phone(parentScope, clock, engineRemote, id, storeKv, journalKv, folder, verifier)
     }
 
-    private fun TestScope.phone(engineRemote: RemoteStore = remote, id: String = "a") =
-        Phone(backgroundScope, { testScheduler.currentTime + 5_000_000 }, engineRemote, id)
+    private fun TestScope.phone(engineRemote: RemoteStore = remote, id: String = "a", verifier: UserVerifier = UserVerifier { UserCheck.STILL_THERE }) =
+        Phone(backgroundScope, { testScheduler.currentTime + 5_000_000 }, engineRemote, id, verifier = verifier)
+
+    /** Counts the saved-design writes a phone ATTEMPTS (the fake only records the ones that went through). */
+    private class CountingPuts(val inner: RemoteStore) : RemoteStore by inner {
+        var designPuts = 0
+        override suspend fun putDesign(uid: String, id: String, name: String, designJson: String, state: DesignState, schema: Int): RemoteDesign {
+            designPuts++
+            return inner.putDesign(uid, id, name, designJson, state, schema)
+        }
+    }
+
+    /** What the sign-in service answers, and how often it was asked. */
+    private class Verifier(var answer: UserCheck = UserCheck.STILL_THERE) : UserVerifier {
+        var calls = 0
+        override suspend fun check(uid: String): UserCheck { calls++; return answer }
+    }
 
     // ---- a pass and the marker --------------------------------------------------------------------------------------
 
@@ -233,25 +249,32 @@ class KillSwitchTest {
 
     @Test fun deletingOnOnePhoneRefusesTheOtherPhonesWritesAndSignsItOutWithItsDesignsIntact() = runTest {
         val a = phone(id = "a")
-        val b = phone(id = "b")
+        val counting = CountingPuts(remote)
+        val b = phone(counting, "b")
         a.store.saveNamed("Night", night)
         a.engine.start("u1"); runCurrent()
         b.engine.start("u1"); runCurrent()
         assertEquals(listOf("Night"), b.names())                   // b has it from the cloud
-        // a deletes the account; its pending-deletion mark and the sign-in belong to a
+        // a deletes the account; its pending-deletion mark and the sign-in belong to a. While the wipe runs, the person makes a new
+        // design on b, which has not been told yet: b has something to send, and must not even try once it finds out.
         var wipeSeenMarker: AccountMarker? = null
         val watching = object : RemoteStore by remote {
-            override suspend fun deleteAllUserData(uid: String) { wipeSeenMarker = remote.markerOf(uid); remote.deleteAllUserData(uid) }
+            override suspend fun deleteAllUserData(uid: String) {
+                wipeSeenMarker = remote.markerOf(uid)
+                b.store.saveNamed("Day", day)
+                remote.deleteAllUserData(uid)
+            }
         }
         val writesBefore = remote.designWrites.size
         assertEquals(DeletionResult.Done, a.deletion(watching).delete("u1"))
-        runCurrent()
+        runCurrent(); advanceTimeBy(10_000); runCurrent()
         assertEquals("the marker said deleted when the wipe began", AccountMarker.DELETED, wipeSeenMarker)
         assertEquals(listOf("u1"), b.removed)                       // b signs out
         assertEquals("a's account is gone (the guard that a's own engine is not signed out is the controller's: AccountsControllerTest)",
             AccountState.SignedOut, a.manager.state.value)
-        assertEquals(listOf("Night"), b.names())                    // b keeps its designs
+        assertEquals(listOf("Day", "Night"), b.names())             // b keeps its designs, the new one too
         assertEquals(AccountMarker.ABSENT, remote.markerOf("u1"))   // and the marker went last
+        assertEquals("b did not even try to write the new design: it had stopped", 0, counting.designPuts)
         assertEquals("nobody wrote a design from the start of the deletion on", writesBefore, remote.designWrites.size)
         assertTrue("and nothing was written back into the wiped account", remote.designsOf("u1").isEmpty())
     }
@@ -428,5 +451,69 @@ class KillSwitchTest {
             "the old pass said nothing about the new session (no refusal, no failure): $seen",
             seen.none { it is SyncStatus.Error },
         )
+    }
+
+    // ---- a first session: is the signed-in user still there? (the sign-in outlives the account by up to an hour) ----------------
+
+    @Test fun aFirstSessionWhoseUserIsGoneCreatesNoMarkerWritesNothingAndIsSignedOut() = runTest {
+        val verifier = Verifier(UserCheck.GONE)
+        val b = phone(id = "b", verifier = verifier)
+        b.store.saveNamed("Night", night)
+        b.current = night
+        b.journal.onCurrentSaved(night, ChangeOrigin.USER)             // an edit that was never sent, with a photo and all
+        b.engine.start("u1"); runCurrent(); advanceTimeBy(60_000); runCurrent()
+        assertEquals(listOf("u1"), b.removed)
+        assertEquals("the marker of the dead account is not created", AccountMarker.ABSENT, remote.markerOf("u1"))
+        assertTrue(remote.markerWrites.isEmpty())
+        assertTrue("and nothing is written into it", remote.designWrites.isEmpty() && remote.currentWrites.isEmpty())
+        assertEquals("the designs on the phone are kept", listOf("Night"), b.names())
+        assertEquals(SyncStatus.Off, b.engine.status.value)
+        assertEquals(1, verifier.calls)
+    }
+
+    @Test fun aFirstSessionThatCannotAskIsRetriedAndWritesNothingUntilItCan() = runTest {
+        val verifier = Verifier(UserCheck.NOT_ANSWERED)
+        val b = phone(id = "b", verifier = verifier)
+        b.store.saveNamed("Night", night)
+        b.engine.start("u1"); runCurrent()
+        assertTrue("no answer is no reason to sign out", b.removed.isEmpty())
+        assertEquals(SyncStatus.Offline, b.engine.status.value)
+        assertTrue(remote.markerWrites.isEmpty() && remote.designWrites.isEmpty() && remote.currentWrites.isEmpty())
+        advanceTimeBy(100_000); runCurrent()
+        assertTrue("still nothing, and it keeps trying", verifier.calls >= 2 && remote.markerWrites.isEmpty() && remote.designWrites.isEmpty())
+        verifier.answer = UserCheck.STILL_THERE
+        advanceTimeBy(400_000); runCurrent()
+        assertEquals(AccountMarker.ACTIVE, remote.markerOf("u1"))
+        assertEquals(1, remote.designsOf("u1").size)
+        assertTrue(b.removed.isEmpty())
+        assertTrue(b.engine.status.value is SyncStatus.Idle)
+    }
+
+    @Test fun aSessionThatFailedAfterTheUserWasConfirmedDoesNotAskAgainOnItsRetry() = runTest {
+        val verifier = Verifier(UserCheck.STILL_THERE)
+        val b = phone(id = "b", verifier = verifier)
+        b.store.saveNamed("Night", night)
+        remote.failMarkerWith = RemoteException(RemoteErrorKind.OFFLINE, "offline")       // the marker call that follows fails once
+        b.engine.start("u1"); runCurrent()
+        assertEquals(SyncStatus.Offline, b.engine.status.value)
+        advanceTimeBy(100_000); runCurrent()                                                // the retry goes through
+        assertEquals(AccountMarker.ACTIVE, remote.markerOf("u1"))
+        assertEquals("the user was already confirmed in this session", 1, verifier.calls)
+    }
+
+    @Test fun theUserIsAskedOncePerSessionAndNotAtAllByAPhoneThatSawTheMarkerLive() = runTest {
+        val verifier = Verifier(UserCheck.STILL_THERE)
+        val b = phone(id = "b", verifier = verifier)
+        b.store.saveNamed("Night", night)
+        b.engine.start("u1"); runCurrent()
+        assertEquals(1, verifier.calls)
+        b.store.saveNamed("Day", day); advanceTimeBy(5_000); runCurrent()   // more passes of the same session
+        assertEquals(1, verifier.calls)
+        b.die()
+        verifier.answer = UserCheck.GONE                                 // would end a session that asked ...
+        val again = b.restarted()
+        again.engine.start("u1"); runCurrent()
+        assertEquals("... but the marker is live and this phone knows it: it only reads the marker", 1, verifier.calls)
+        assertTrue(again.removed.isEmpty())
     }
 }

@@ -219,6 +219,9 @@ sealed interface DiscardResult {
 /** The detail (data, never shown as it is) of a key that has the shape of a key file but is not a real key. */
 private const val NOT_A_USABLE_KEY = "not a usable signing key"
 
+/** The detail (data, not UI text) of a backup refused up front because the account marker is not live. */
+private const val ACCOUNT_NOT_LIVE = "the account is not available for writing"
+
 /**
  * Backs the signing key up (encrypted by [KeyVault]) and restores it. The plain key never leaves [KeySource] except
  * inside this class's stack frames and is never logged or put in a result; the passphrase is never stored or logged.
@@ -295,8 +298,13 @@ class BackupService(
         val assessment = assessPassphrase(passphrase)
         if (!assessment.strength.isAcceptable()) return UploadResult.PassphraseRefused(assessment)
         // before any key work: offline here is a plain "failed", and the write below cannot be refused for a missing marker
-        if (!markerSeenLive(uid)) {
-            try { remote.ensureAccountMarker(uid) } catch (e: RemoteException) { return UploadResult.Failed(e.kind, e.message.orEmpty()) }
+        if (!withContext(cpu) { markerSeenLive(uid) }) {   // reads the journal: not on the caller's thread
+            val marker = try { remote.ensureAccountMarker(uid) } catch (e: RemoteException) {
+                return UploadResult.Failed(e.kind, e.message.orEmpty())
+            }
+            // a marker that says deleted (or cannot be read) means every write would be refused: no key is made and no time is
+            // spent on key derivation for a backup that cannot be stored
+            if (marker != AccountMarker.ACTIVE) return UploadResult.Failed(RemoteErrorKind.PERMISSION, ACCOUNT_NOT_LIVE)
         }
         val first = try { remote.getBackup(uid) } catch (e: RemoteException) {
             return UploadResult.Failed(e.kind, e.message.orEmpty())

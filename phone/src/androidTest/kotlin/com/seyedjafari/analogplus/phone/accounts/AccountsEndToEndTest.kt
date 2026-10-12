@@ -33,7 +33,9 @@ import com.seyedjafari.analogplus.phone.R
 import com.seyedjafari.analogplus.phone.SHELL_WINDOW_TAG
 import com.seyedjafari.analogplus.phone.Store
 import com.seyedjafari.analogplus.phone.accounts.firebase.EmulatorSetup
+import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseAccountManager
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseMode
+import com.seyedjafari.analogplus.phone.accounts.firebase.IdTokenSource
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirebaseProvider
 import com.seyedjafari.analogplus.phone.accounts.firebase.FirestoreRemoteStore
 import com.seyedjafari.analogplus.phone.accounts.vault.KeyVault
@@ -584,11 +586,18 @@ class AccountsEndToEndTest {
      * on this phone would also sign the other one out in the middle of its deletion; the engine, the cloud and the controller are
      * the real ones, which is what the kill switch is about.
      */
-    private inner class SecondPhone(uid: String, previous: SecondPhone? = null) {
+    private inner class SecondPhone(
+        uid: String, previous: SecondPhone? = null,
+        /** What the engine asks before it first looks at the marker; the real one is the sign-in service's, through [FirebaseAccountManager]. */
+        verifier: UserVerifier = UserVerifier { UserCheck.STILL_THERE },
+        /** Designs the phone already had on its disk before the app started (made while it was signed out, say). */
+        designs: Map<String, DesignSettings> = emptyMap(),
+    ) {
         // a phone started over the disk of an earlier one is the same phone after its process was killed and the app opened again
         val storeKv: MemoryKeyValueStore = previous?.storeKv ?: MemoryKeyValueStore()
         val store: Store = Store(storeKv, File(context.cacheDir, "e2e-b-$tag.jpg"))
         val kv: MemoryKeyValueStore = previous?.kv ?: MemoryKeyValueStore()
+        init { designs.forEach { (name, design) -> store.saveNamed(name, design) } }
         val journal = SyncJournal(kv)
         val manager = FakeAccountManager(AccountState.SignedIn(uid, null))
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -601,7 +610,7 @@ class AccountsEndToEndTest {
                 val engine = SyncEngine(
                     store, journal, remote, scope, AndroidPhotoDownscaler(),
                     CurrentApplier { design -> current.set(design) }, { current.get() },
-                    deviceId = "e2e-b-$tag", deviceLabel = "Phone B", copySuffix = " (copy)",
+                    deviceId = "e2e-b-$tag", deviceLabel = "Phone B", copySuffix = " (copy)", userVerifier = verifier,
                 )
                 store.addObserver(journal)
                 store.addObserver(engine)
@@ -701,6 +710,48 @@ class AccountsEndToEndTest {
      * its first write was refused. Here only the result is asserted, on the real rules: signed out with the notice, and nothing of
      * the new design reached the cloud.
      */
+    /**
+     * A phone that never saw the account's marker (its first session for the account) opens its app after the account was deleted;
+     * its sign-in is still good for up to an hour. Before it looks at the marker it asks the sign-in service whether the user still
+     * exists (a real reload against the Auth emulator): gone, so it creates no marker, uploads nothing and is signed out with the
+     * notice. The cloud's part of the deletion is done directly and the Auth user is deleted in the Auth emulator behind the
+     * client's back, as another phone's deletion does it.
+     */
+    @Test fun aPhoneOnItsFirstSessionFindsTheUserGoneBeforeItCreatesTheMarkerAndWritesNothing() {
+        val phone1 = Phone(1)
+        show(phone1)
+        val uid = signInThroughTheCard(phone1)
+        phone1.store.saveNamed("Night", night)
+        await("the design in the cloud") { designsInCloud(uid) == 1 }
+        waitUntilSynced(phone1)
+        onMain { phone1.controller.setForeground(false) }         // the first phone stays out of it
+        val cloud = FirestoreRemoteStore(FirebaseFirestore.getInstance())
+        runBlocking { cloud.setAccountDeleted(uid, true); cloud.deleteAllUserData(uid) }
+        // the Auth user is deleted, but the client of this process still holds its user (the other phone's token)
+        val asker = FirebaseAccountManager(FirebaseAuth.getInstance(), IdTokenSource { null }, null)
+        var phoneB: SecondPhone? = null
+        try {
+            val url = java.net.URL("http://${FirebaseProvider.EMULATOR_HOST}:${FirebaseProvider.AUTH_EMULATOR_PORT}/identitytoolkit.googleapis.com/v1/projects/$projectId/accounts:delete")
+            val c = url.openConnection() as java.net.HttpURLConnection
+            c.requestMethod = "POST"; c.doOutput = true
+            c.setRequestProperty("Authorization", "Bearer owner"); c.setRequestProperty("Content-Type", "application/json")
+            c.outputStream.use { it.write("""{"localId":"$uid"}""".toByteArray()) }
+            assertEquals(200, c.responseCode); c.disconnect()
+            assertEquals("not a trace of the account in the cloud", 0, documentCount("users/$uid/meta?pageSize=100"))
+
+            phoneB = SecondPhone(uid, verifier = UserVerifier { asker.checkUser(it) }, designs = mapOf("Dawn" to dawn))
+            await("the phone to be signed out") { phoneB.manager.state.value == AccountState.SignedOut }
+            assertEquals(Notice.SignedOutAccountDeleted, phoneB.controller.ui.value.notice)
+            assertEquals(listOf("Dawn"), phoneB.names())
+            assertNull(phoneB.journal.boundUid())
+            assertCloudEmpty(uid, authToo = false)
+            assertEquals("no marker was created", 0, documentCount("users/$uid/meta?pageSize=100"))
+        } finally {
+            phoneB?.stop()
+            asker.close()
+        }
+    }
+
     @Test fun aPhoneInTheBackgroundIsSignedOutByItsNextPassAndWritesNothing() {
         val phone1 = Phone(1)
         show(phone1)

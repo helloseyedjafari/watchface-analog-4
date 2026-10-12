@@ -86,12 +86,6 @@ object AccountsFactory {
 
         val remote = FirestoreRemoteStore(FirebaseFirestore.getInstance())
         val deviceLabel = deviceLabel(app)
-        val engine = SyncEngine(
-            store, journal, remote, scope, AndroidPhotoDownscaler(), applier, currentDesign,
-            deviceId = deviceId(syncKv), deviceLabel = deviceLabel,
-            copySuffix = copyNameSuffix(deviceLabel, { app.getString(R.string.sync_copy_suffix, it) }, app.getString(R.string.sync_copy_fallback)),
-        )
-        store.addObserver(engine)
         // the emulator has no Google account and nothing cached to clear
         val credentialManager = if (setup.mode == FirebaseMode.EMULATOR) null else CredentialManager.create(app)
         val rawTokens = tokenSource ?: if (credentialManager == null) EmulatorSetup.tokenSource { emulatorEmail(app) }
@@ -100,6 +94,13 @@ object AccountsFactory {
         val tokens = PromptAwareTokenSource(rawTokens, PromptWatch.process)
         val accounts = FirebaseAccountManager(FirebaseAuth.getInstance(), tokens, credentialManager)
         closeWhenScopeEnds(scope, accounts)
+        val engine = SyncEngine(
+            store, journal, remote, scope, AndroidPhotoDownscaler(), applier, currentDesign,
+            deviceId = deviceId(syncKv), deviceLabel = deviceLabel,
+            copySuffix = copyNameSuffix(deviceLabel, { app.getString(R.string.sync_copy_suffix, it) }, app.getString(R.string.sync_copy_fallback)),
+            userVerifier = accounts::checkUser,
+        )
+        store.addObserver(engine)
         val backup = BackupService(remote, KeyVault(), KeyStoreKeySource(keyStore), AttemptLimiter(syncKv), markerSeenLive = journal::markerSeenLive)
         return AccountsController(setup.availability, accounts, engine, backup, AccountDeletion(accounts, remote, engine, journal, DeletionMarks(syncKv)), scope)
     }

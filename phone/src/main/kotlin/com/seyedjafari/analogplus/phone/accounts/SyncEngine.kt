@@ -103,6 +103,12 @@ class SyncEngine(
     private val fetchTimeoutMs: Long = 600_000,
     private val writeTimeoutMsPerKb: Long = 20,
     private val random: () -> Double = { Math.random() },
+    /**
+     * Asked once per session, before the first look at the account marker, by a phone that has never seen that marker live (see
+     * [markerAllowsPass]): the sign-in the phone holds can outlive the account by an hour, and such a phone would otherwise create
+     * the marker of a deleted account again and write into it.
+     */
+    private val userVerifier: UserVerifier = UserVerifier { UserCheck.STILL_THERE },
 ) : CloudSync, StoreObserver {
 
     private val _status = MutableStateFlow<SyncStatus>(SyncStatus.Off)
@@ -142,6 +148,9 @@ class SyncEngine(
      * created.
      */
     @Volatile private var markerSeenActive = false
+
+    /** True once in this session the signed-in user was confirmed to exist (see [userVerifier]). */
+    @Volatile private var userConfirmed = false
 
     /** True after the marker was looked at because a write was refused, until the next pass: one look per pass, not one per refusal. */
     @Volatile private var refusalChecked = false
@@ -232,6 +241,7 @@ class SyncEngine(
         currentKnown = false
         currentPushWanted = false
         markerSeenActive = false
+        userConfirmed = false
         refusalChecked = false
         _status.value = SyncStatus.Syncing
         val channel = Channel<Unit>(Channel.CONFLATED)
@@ -308,6 +318,7 @@ class SyncEngine(
         seenCurrentAtMs = 0
         restorePending = false
         markerSeenActive = false
+        userConfirmed = false
         refusalChecked = false
         withoutPhoto.clear()
         _offer.value = null
@@ -837,6 +848,17 @@ class SyncEngine(
      * doubt, and nobody is signed out on one. Returns whether the pass may go on.
      */
     private suspend fun markerAllowsPass(id: String): Boolean {
+        // A phone that has never seen this account's marker live (a first session for the account, or one whose first look never got
+        // through) is the only one that may create it, and its sign-in can be an hour older than the account: ask whether the user
+        // still exists first. Gone: the account is removed (nothing is created or written). No answer: the pass fails like any
+        // offline one (retried, nothing written); never a sign-out on a doubt.
+        if (!markerSeenActive && !userConfirmed) {
+            when (call { userVerifier.check(id) }) {
+                UserCheck.STILL_THERE -> userConfirmed = true
+                UserCheck.GONE -> { accountRemoved(id); return false }
+                UserCheck.NOT_ANSWERED -> throw RemoteException(RemoteErrorKind.OFFLINE, USER_NOT_ANSWERED)
+            }
+        }
         val marker = call { if (markerSeenActive) remote.getAccountMarker(id) else remote.ensureAccountMarker(id) }
         if (marker == AccountMarker.UNREADABLE) throw RemoteException(RemoteErrorKind.OTHER, MARKER_UNREADABLE)
         return !onMarker(id, marker)
@@ -1059,5 +1081,6 @@ class SyncEngine(
     private companion object {
         const val CURRENT = "current"
         const val MARKER_UNREADABLE = "The account marker could not be read"
+        const val USER_NOT_ANSWERED = "The sign-in service did not answer"
     }
 }

@@ -184,6 +184,20 @@ class FirebaseEmulatorTest {
         try { check(c.responseCode == 200) { "REST delete of $path answered ${c.responseCode}" } } finally { c.disconnect() }
     }
 
+    /** Deletes an Auth user in the Auth emulator (the owner token skips the checks), behind the back of the signed-in client. */
+    private fun deleteAuthUser(uid: String) {
+        val url = URL("http://${FirebaseProvider.EMULATOR_HOST}:${FirebaseProvider.AUTH_EMULATOR_PORT}/identitytoolkit.googleapis.com/v1/projects/$projectId/accounts:delete")
+        val c = url.openConnection() as HttpURLConnection
+        c.requestMethod = "POST"
+        c.doOutput = true
+        c.setRequestProperty("Authorization", "Bearer owner")
+        c.setRequestProperty("Content-Type", "application/json")
+        try {
+            c.outputStream.use { it.write("""{"localId":"$uid"}""".toByteArray()) }
+            check(c.responseCode == 200) { "REST delete of Auth user $uid answered ${c.responseCode}" }
+        } finally { c.disconnect() }
+    }
+
     // ---- Auth ---------------------------------------------------------------------------------------------------
 
     /** The class the app itself uses in emulator mode (`EmulatorSetup.tokenSource`), not a lambda that imitates it. */
@@ -1021,6 +1035,26 @@ class FirebaseEmulatorTest {
         assertEquals(AccountMarker.DELETED, remote.getAccountMarker(uid))
         deleteRaw("users/$uid/meta/account")
         assertEquals(AccountMarker.ACTIVE, remote.ensureAccountMarker(uid))
+    }
+
+    // ---- is the signed-in user still there? (UserCheck) ------------------------------------------------------------------
+
+    @Test fun checkUserSaysStillThereForAUserThatExistsAndNotAnsweredForNobodyOrAnotherAccount() = inTest {
+        val m = manager(unique("check-there"))
+        m.signIn()
+        val uid = (m.state.value as AccountState.SignedIn).uid
+        assertEquals(UserCheck.STILL_THERE, m.checkUser(uid))
+        assertEquals("another account than the signed-in one is no answer", UserCheck.NOT_ANSWERED, m.checkUser("someone-else"))
+        m.signOut()
+        assertEquals("nobody signed in is no answer", UserCheck.NOT_ANSWERED, m.checkUser(uid))
+    }
+
+    @Test fun checkUserSaysGoneForAUserThatWasDeletedBehindTheBackOfTheSignedInClient() = inTest {
+        val m = manager(unique("check-gone"))
+        m.signIn()
+        val uid = (m.state.value as AccountState.SignedIn).uid
+        deleteAuthUser(uid)                                  // another phone finished the deletion; this client still holds its user and token
+        assertEquals(UserCheck.GONE, m.checkUser(uid))
     }
 
     @Test fun settingTheMarkerOnAnAccountWithoutOneCreatesItFirst() = inTest {

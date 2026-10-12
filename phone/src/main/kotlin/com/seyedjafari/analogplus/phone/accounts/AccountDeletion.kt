@@ -177,11 +177,11 @@ class AccountDeletion(
 
     /**
      * Another phone deleted the account [uid] this phone was signed in to: forgets this phone's sync binding to it (the
-     * designs stay and count as unsynced). Not for the account whose deletion this phone is running.
+     * designs stay and count as unsynced) and, with it, the note that its marker was seen live. Not for the account whose
+     * deletion this phone is running. Returns whether the journal was bound to [uid]. It must run only AFTER the sign-out: until
+     * then the binding and the note are what make a restart of the app find the removal again instead of creating the marker.
      */
-    suspend fun forgetRemovedAccount(uid: String) {
-        withContext(NonCancellable + io) { journal.unbindIf(uid) }
-    }
+    suspend fun forgetRemovedAccount(uid: String): Boolean = withContext(NonCancellable + io) { journal.unbindIf(uid) }
 
     private fun stillSignedIn(uid: String) = (accounts.state.value as? AccountState.SignedIn)?.uid == uid
 }

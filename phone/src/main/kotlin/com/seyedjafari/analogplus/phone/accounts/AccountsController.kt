@@ -283,22 +283,33 @@ class AccountsController(
      * set), nor while a deletion of it is pending here. The designs on the phone are not touched.
      */
     private suspend fun onAccountRemoved(who: String) {
-        if (uid() != who) return
-        if (deletion.isPending(who)) return
-        if (deletingUid == who) {
-            // The engine stopped itself and will not tell again. If this phone's own deletion ends without touching the cloud
-            // (cancelled at the Google prompt, say), sync must start again so that it finds the marker and signs this phone out.
-            syncedUid = null
-            return
-        }
-        deletion.forgetRemovedAccount(who)
-        showSignedOutNotice()
-        actionLock.withLock {
-            if (uid() != who) return@withLock
-            // again, now that no action runs any more: one that was running (a backup refused by the same marker, say) has put
-            // its own notice over the first one, and the sign-out must not leave the person without the reason
+        val signedIn = uid()
+        // another account is signed in: this is about an account this phone has left
+        if (signedIn != null && signedIn != who) return
+        if (signedIn == who) {
+            if (deletion.isPending(who)) return
+            if (deletingUid == who) {
+                // The engine stopped itself and will not tell again. If this phone's own deletion ends without touching the cloud
+                // (cancelled at the Google prompt, say), sync must start again so that it finds the marker and signs this phone out.
+                syncedUid = null
+                return
+            }
             showSignedOutNotice()
-            accounts.signOut()
+        }
+        actionLock.withLock {
+            val stillSignedIn = uid() == who
+            if (stillSignedIn) {
+                // again, now that no action runs any more: one that was running (a backup refused by the same marker, say) has put
+                // its own notice over the first one, and the sign-out must not leave the person without the reason
+                showSignedOutNotice()
+                accounts.signOut()
+            }
+            // Only now is the binding forgotten, with the note that the marker was seen live: if the process dies before this
+            // point (while a backup runs, say) the next start still knows the account was live, finds the removal and signs out
+            // again, instead of taking the wiped account for a new one and creating its marker.
+            val wasBound = deletion.forgetRemovedAccount(who)
+            // the sign-in service may have signed this phone out first (it found the user gone): the person is still told
+            if (!stillSignedIn && wasBound) showSignedOutNotice()
         }
     }
 

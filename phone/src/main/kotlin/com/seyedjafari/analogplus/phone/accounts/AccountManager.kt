@@ -46,6 +46,26 @@ sealed interface DeleteUserResult {
 }
 
 /**
+ * What asking the sign-in service whether the signed-in user still exists answered. Three states, because "could not ask" is
+ * not "gone": a phone is signed out only for [GONE].
+ */
+enum class UserCheck {
+    /** The user exists and may sign in. */
+    STILL_THERE,
+
+    /** The account is gone: the user was deleted, disabled, or its sign-in was revoked. */
+    GONE,
+
+    /** No answer: offline, a time-out, nobody (or another account) signed in, or anything unexpected. Decides nothing. */
+    NOT_ANSWERED,
+}
+
+/** What the sync engine asks before it first looks at the account marker of a session (see [AccountManager.checkUser]). */
+fun interface UserVerifier {
+    suspend fun check(uid: String): UserCheck
+}
+
+/**
  * Who is signed in. The Firebase implementation lives in `accounts/firebase`; nothing else in the app imports Firebase.
  * Every function reports problems through its result or through [state]; none throws (except cancellation).
  */
@@ -74,6 +94,14 @@ interface AccountManager {
     suspend fun deleteUser(uid: String): DeleteUserResult
 
     suspend fun signOut()
+
+    /**
+     * Asks the sign-in service whether the signed-in user [uid] still exists (Firebase: a refresh of the user). The ID token
+     * that a phone holds stays good for up to an hour after the account was deleted, and the cloud does not look at whether
+     * the user exists, so this is how a phone finds out before it writes anything. Acts only for [uid]: nobody, or another
+     * account, signed in is [UserCheck.NOT_ANSWERED].
+     */
+    suspend fun checkUser(uid: String): UserCheck
 }
 
 /** Used when the build has no Firebase project: the Account screen explains it and offers no sign-in. */
@@ -88,6 +116,7 @@ class UnavailableAccountManager : AccountManager {
     override suspend fun reauthenticate(uid: String): ReauthResult = ReauthResult.NotSignedIn
     override suspend fun deleteUser(uid: String): DeleteUserResult = DeleteUserResult.NotSignedIn
     override suspend fun signOut() { _state.value = AccountState.SignedOut }
+    override suspend fun checkUser(uid: String): UserCheck = UserCheck.NOT_ANSWERED
 }
 
 /** The detail the no-cloud stand-ins give as data; the UI never shows it, it says "not set up in this build" from a resource. */

@@ -13,6 +13,11 @@ class FakeAccountManager(initial: AccountState = AccountState.SignedOut) : Accou
     var nextReauth: ReauthResult = ReauthResult.Ok
     var nextDelete: DeleteUserResult = DeleteUserResult.Deleted
     var signInCalls = 0
+
+    /** What [checkUser] answers (for a signed-in [uid]), and how often it was asked. */
+    var nextCheck: UserCheck = UserCheck.STILL_THERE
+    var checkCalls = 0
+    override suspend fun checkUser(uid: String): UserCheck { checkCalls++; return if (isSignedIn(uid)) nextCheck else UserCheck.NOT_ANSWERED }
     var reauthCalls = 0
     var deleteCalls = 0
 

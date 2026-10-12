@@ -4,6 +4,7 @@ import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
@@ -12,6 +13,7 @@ import com.seyedjafari.analogplus.phone.accounts.AccountManager
 import com.seyedjafari.analogplus.phone.accounts.AccountState
 import com.seyedjafari.analogplus.phone.accounts.DeleteUserResult
 import com.seyedjafari.analogplus.phone.accounts.ReauthResult
+import com.seyedjafari.analogplus.phone.accounts.UserCheck
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -145,6 +147,26 @@ class FirebaseAccountManager(
         _state.update { if (it is AccountState.SignedIn && it.uid == uid) AccountState.SignedOut else it }
         withContext(NonCancellable) { clearCredentialState() }
         return result
+    }
+
+    /**
+     * `reload()` of the signed-in user: Firebase answers [FirebaseAuthInvalidUserException] (user not found, user disabled,
+     * the user's token revoked or expired) when the account is gone; that alone is [UserCheck.GONE]. A network failure, a
+     * time-out, nobody signed in, another account or any other failure is [UserCheck.NOT_ANSWERED]: never a reason to sign
+     * out. Firebase may sign the user out by itself on such an answer; the auth state listener then reports it as usual.
+     */
+    override suspend fun checkUser(uid: String): UserCheck {
+        val user = auth.currentUser
+        if (user == null || user.uid != uid) return UserCheck.NOT_ANSWERED
+        return try {
+            if (answered { user.reload().await() }) UserCheck.STILL_THERE else UserCheck.NOT_ANSWERED
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: FirebaseAuthInvalidUserException) {
+            UserCheck.GONE
+        } catch (e: Exception) {
+            UserCheck.NOT_ANSWERED
+        }
     }
 
     override suspend fun signOut() {
