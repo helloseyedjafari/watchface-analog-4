@@ -1288,6 +1288,20 @@ class AccountsControllerTest {
         assertEquals(AccountMarker.ABSENT, inner.markerOf("u1"))
     }
 
+    @Test fun aCallerThatIsCancelledWhileTheUserCheckRunsDoesNotStopTheRemovalOfAGoneAccount() = runTest(UnconfinedTestDispatcher()) {
+        val gate = CompletableDeferred<Unit>()
+        val c = controllerWithBackupCheck { gate.await(); UserCheck.GONE }   // the sign-in service has not signed the phone out
+        val caller = launch { c.upload(passphrase, BackupExpectation.None) }
+        assertEquals(Busy.BACKING_UP, c.ui.value.busy)
+        caller.cancel()                                                      // the person leaves the tab: the screen's scope ends
+        gate.complete(Unit)
+        assertEquals(AccountState.SignedOut, c.ui.value.account)
+        assertEquals(Notice.SignedOutAccountDeleted, c.ui.value.notice)
+        assertNull("the binding is forgotten", journal.boundUid())
+        assertEquals(Busy.NONE, c.ui.value.busy)
+        assertNull(inner.backupOf("u1"))
+    }
+
     @Test fun theNoticeOfAGoneBackupIsShownEvenWhenThePhoneWasSignedOutFirstAndHadNoBindingToForget() = runTest(UnconfinedTestDispatcher()) {
         val c = controllerWithBackupCheck(bound = false) { accounts.force(AccountState.SignedOut); UserCheck.GONE }
         assertEquals(UploadResult.AccountGone, c.upload(passphrase, BackupExpectation.None))

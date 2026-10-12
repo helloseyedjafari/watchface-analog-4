@@ -181,21 +181,13 @@ class AccountsEndToEndTest {
 
     private fun designsInCloud(uid: String) = documentCount("users/$uid/designs?pageSize=100")
 
-    /** Nothing at all under the user: no design, no current design, no backup, not even an empty parent document. */
     /** Deletes an Auth user in the Auth emulator (the owner token skips the checks), behind the back of the signed-in client. */
     private fun deleteAuthUser(uid: String) {
-        val root = "http://${FirebaseProvider.EMULATOR_HOST}:${FirebaseProvider.AUTH_EMULATOR_PORT}"
-        val c = java.net.URL("$root/identitytoolkit.googleapis.com/v1/projects/$projectId/accounts:delete").openConnection() as java.net.HttpURLConnection
-        c.requestMethod = "POST"
-        c.doOutput = true
-        c.setRequestProperty("Authorization", "Bearer owner")
-        c.setRequestProperty("Content-Type", "application/json")
-        try {
-            c.outputStream.use { it.write("""{"localId":"$uid"}""".toByteArray()) }
-            assertEquals(200, c.responseCode)
-        } finally { c.disconnect() }
+        val url = "$authRoot/identitytoolkit.googleapis.com/v1/projects/$projectId/accounts:delete"
+        assertEquals(200, rest("POST", url, """{"localId":"$uid"}""").first)
     }
 
+    /** Nothing at all under the user: no design, no current design, no backup, not even an empty parent document. */
     private fun assertCloudEmpty(uid: String, authToo: Boolean = true) {
         assertEquals("designs", 0, documentCount("users/$uid/designs?pageSize=100"))
         assertEquals("state", 0, documentCount("users/$uid/state?pageSize=100"))

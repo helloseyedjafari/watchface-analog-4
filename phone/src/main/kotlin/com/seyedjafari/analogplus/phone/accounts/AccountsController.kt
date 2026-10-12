@@ -278,9 +278,10 @@ class AccountsController(
     }
 
     /**
-     * The sync found that another phone deleted the account [who]. This phone is signed out, its binding to the account is
-     * forgotten and the person is told. Not when this phone is the one deleting it (its own engine sees the marker it just
-     * set), nor while a deletion of it is pending here (both checks are for the signed-in case only). The designs on the phone
+     * The account [who] is gone: the sync found that another phone deleted it, or the sign-in service says its user is gone (found
+     * by the sync or by a backup). This phone is signed out, its binding to the account is forgotten and the person is told. Not
+     * when this phone is the one deleting it (its own engine sees the marker it just set), nor while a deletion of it is pending
+     * here (both checks are for the signed-in case only). The designs on the phone
      * are not touched. When nobody is signed in any more (the sign-in service signed this phone out first, on finding the user
      * gone) the binding is forgotten and the person is told if this phone was bound to [who]; an event for another account than the
      * signed-in one is ignored. The binding is forgotten only after the sign-out.
@@ -413,14 +414,15 @@ class AccountsController(
         val uid = uid() ?: return UploadResult.NotSignedIn
         val result = action(uid, Busy.BACKING_UP, UploadResult.NotSignedIn, outlivesAccount = { it == UploadResult.AccountGone }) {
             val result = backup.upload(uid, passphrase, expecting)
-            // the notice of a gone account belongs to no account: the sign-in service may have signed this phone out already, which
-            // would clear a notice of the account
+            // The user is gone: the same removal as the sync engine reports (the notice, the sign-out if the sign-in service has not
+            // done it yet, the binding forgotten after it). Launched from inside the action, so that it carries on to its end like the
+            // action whatever happens to the caller (the person leaves the tab, the screen turns); it waits for this action's lock
+            // and runs right after it. It does not depend on which of the two, this step or the sign-in service's own sign-out,
+            // comes first. The notice of a gone account belongs to no account (`outlivesAccount`): the sign-in service may have
+            // signed this phone out already, which would clear a notice of the account.
+            if (result == UploadResult.AccountGone) scope.launch { onAccountRemoved(uid) }
             ActionOutcome(result, noticeFor(result))
         }
-        // the user is gone: the same removal as the sync engine reports (the notice, the sign-out if the sign-in service has not done it
-        // yet, the binding forgotten after it). It does not depend on which of the two, this call or the sign-in service's own
-        // sign-out, comes first, and it is the action's turn that has ended, so the lock is free
-        if (result == UploadResult.AccountGone) scope.launch { onAccountRemoved(uid) }
         return result
     }
 
