@@ -17,6 +17,8 @@
 # Takes the machine-wide phone emulator lock like the real script (the cases wait for it), about 3 minutes in all.
 # Exit status: 0 when every case passed, 1 when one failed, 2 when the ports of the fake emulator are not free.
 set -u
+# A caller's serial would change which device the script under test picks; the cases that need one set it themselves.
+unset ANDROID_SERIAL
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 S="$ROOT/scripts/accounts_e2e.sh"
 PORT="${ACCOUNTS_E2E_TEST_PORT:-5598}"
